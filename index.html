@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sartor — tailor your resume without giving anyone your data</title>
+    <meta
+      name="description"
+      content="A BYOK resume tailoring tool. Your resume and your API key stay in your browser; there is no backend to send them to."
+    />
+    <!-- No third-party scripts, fonts, or analytics. The API key lives in this
+         page's sessionStorage, so every script on the page can read it — which
+         is exactly why there is only ever first-party code here. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%82%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

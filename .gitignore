@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Never commit a key. There is no .env in this project by design — the key is
+# entered in the app and held in sessionStorage — but this guards against
+# someone adding one out of habit.
+.env
+.env.*

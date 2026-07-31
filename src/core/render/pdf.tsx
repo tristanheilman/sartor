@@ -1,0 +1,149 @@
+import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
+import type { ResumeDocument, DocSection } from './model';
+import { getTemplate, type Template } from './templates';
+
+/**
+ * PDF rendering.
+ *
+ * Structurally this is a stack of `View`s containing `Text`. No tables, no
+ * absolute positioning, no `fixed` header or footer, no images. Text flows in a
+ * single column in reading order, which is exactly what a text extractor walks.
+ */
+
+function makeStyles(t: Template) {
+  return StyleSheet.create({
+    page: {
+      paddingTop: t.pageMargin,
+      paddingBottom: t.pageMargin,
+      paddingHorizontal: t.pageMargin,
+      fontFamily: t.bodyFont,
+      fontSize: t.baseSize,
+      lineHeight: t.lineHeight,
+      color: '#111111',
+    },
+    name: { fontFamily: t.headingFont, fontSize: t.baseSize * 1.9, marginBottom: 2 },
+    label: { fontSize: t.baseSize * 1.05, color: '#333333', marginBottom: 3 },
+    // Contact details render as ordinary body text, inline, at the top of the
+    // page — deliberately not in a PDF header, which extractors often skip.
+    contact: { fontSize: t.baseSize * 0.95, color: '#333333', marginBottom: t.sectionGap },
+    section: { marginBottom: t.sectionGap },
+    heading: {
+      fontFamily: t.headingFont,
+      fontSize: t.baseSize * 1.05,
+      letterSpacing: t.uppercaseHeadings ? 0.8 : 0,
+      marginBottom: 4,
+      paddingBottom: t.headingRule ? 2 : 0,
+      borderBottomWidth: t.headingRule ? 0.75 : 0,
+      borderBottomColor: '#999999',
+    },
+    entry: { marginBottom: t.entryGap },
+    entryTopRow: { flexDirection: 'row', justifyContent: 'space-between' },
+    entryPrimary: { fontFamily: t.headingFont, fontSize: t.baseSize * 1.02 },
+    entryMeta: { fontSize: t.baseSize * 0.95, color: '#444444' },
+    entrySecondRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
+    entrySecondary: { fontSize: t.baseSize },
+    entrySummary: { marginBottom: 2 },
+    bulletRow: { flexDirection: 'row', marginBottom: t.bulletGap, paddingRight: 4 },
+    bulletGlyph: { width: 10 },
+    bulletText: { flex: 1 },
+    skillRow: { flexDirection: 'row', marginBottom: 2 },
+    skillName: { fontFamily: t.headingFont, marginRight: 4 },
+    skillKeywords: { flex: 1 },
+    listItem: { marginBottom: 2 },
+  });
+}
+
+type Styles = ReturnType<typeof makeStyles>;
+
+function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
+  if (section.kind === 'summary') return <Text>{section.summary}</Text>;
+
+  if (section.kind === 'skills') {
+    return (
+      <>
+        {section.skills?.map((g) => (
+          // A two-Text row, not a table cell. Reading order is name then values.
+          <View key={g.sourceId} style={s.skillRow} wrap={false}>
+            <Text style={s.skillName}>{g.name}:</Text>
+            <Text style={s.skillKeywords}>{g.keywords.join(', ')}</Text>
+          </View>
+        ))}
+      </>
+    );
+  }
+
+  if (section.kind === 'list') {
+    return (
+      <>
+        {section.items?.map((i) => (
+          <Text key={i.sourceId} style={s.listItem}>
+            {i.text}
+          </Text>
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {section.entries?.map((e) => (
+        <View key={e.sourceId} style={s.entry} wrap={false}>
+          <View style={s.entryTopRow}>
+            <Text style={s.entryPrimary}>{e.primary}</Text>
+            {e.meta ? <Text style={s.entryMeta}>{e.meta}</Text> : null}
+          </View>
+          {e.secondary || e.aside ? (
+            <View style={s.entrySecondRow}>
+              <Text style={s.entrySecondary}>{e.secondary}</Text>
+              {e.aside ? <Text style={s.entryMeta}>{e.aside}</Text> : null}
+            </View>
+          ) : null}
+          {e.summary ? <Text style={s.entrySummary}>{e.summary}</Text> : null}
+          {e.bullets.map((b) => (
+            <View key={b.sourceId} style={s.bulletRow}>
+              <Text style={s.bulletGlyph}>•</Text>
+              <Text style={s.bulletText}>{b.text}</Text>
+            </View>
+          ))}
+        </View>
+      ))}
+    </>
+  );
+}
+
+export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId: string }) {
+  const t = getTemplate(templateId);
+  const s = makeStyles(t);
+
+  return (
+    <Document
+      title={`${doc.contact.name} — Resume`}
+      author={doc.contact.name}
+      creator="Sartor"
+      producer="Sartor"
+    >
+      <Page size="LETTER" style={s.page}>
+        <View>
+          <Text style={s.name}>{doc.contact.name}</Text>
+          {doc.contact.label ? <Text style={s.label}>{doc.contact.label}</Text> : null}
+          {doc.contact.details.length > 0 ? (
+            <Text style={s.contact}>{doc.contact.details.join('  ·  ')}</Text>
+          ) : null}
+        </View>
+
+        {doc.sections.map((section) => (
+          <View key={section.key} style={s.section}>
+            <Text style={s.heading}>
+              {t.uppercaseHeadings ? section.heading.toUpperCase() : section.heading}
+            </Text>
+            <SectionBody section={section} s={s} />
+          </View>
+        ))}
+      </Page>
+    </Document>
+  );
+}
+
+export async function renderPdfBlob(doc: ResumeDocument, templateId: string): Promise<Blob> {
+  return pdf(<ResumePdf doc={doc} templateId={templateId} />).toBlob();
+}

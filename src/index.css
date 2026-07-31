@@ -1,0 +1,53 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #14161a;
+  --color-paper: #fbfaf8;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* Focus states must stay obvious: this is a form-heavy app used with a keyboard. */
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-sky-600;
+}
+
+/* `@utility` rather than a plain class, so these compose with `@apply` below. */
+@utility field {
+  @apply w-full rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-sm;
+  @apply placeholder:text-stone-400 focus:border-sky-600 focus:outline-none;
+}
+
+@utility btn {
+  @apply inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium;
+  @apply transition-colors disabled:cursor-not-allowed disabled:opacity-45;
+}
+
+@utility btn-primary {
+  @apply btn bg-ink text-white hover:bg-stone-700;
+}
+
+@utility btn-secondary {
+  @apply btn border border-stone-300 bg-white text-stone-800 hover:bg-stone-100;
+}
+
+@utility btn-ghost {
+  @apply btn text-stone-600 hover:bg-stone-200/70;
+}
+
+@utility card {
+  @apply rounded-lg border border-stone-200 bg-white;
+}
+
+@utility label {
+  @apply mb-1 block text-xs font-medium tracking-wide text-stone-500 uppercase;
+}
