@@ -1,7 +1,14 @@
 import { useState } from 'react';
-import { detectAts, fetchFromAts, AtsFetchError } from '../../core/jd/ats';
-import { fromPaste, isEmptyJd, type JobDescription } from '../../core/jd/normalize';
-import { DEFAULT_CONSTRAINTS, type TailorConstraints } from '../../core/tailor/prompt';
+import {
+  AtsFetchError,
+  DEFAULT_CONSTRAINTS,
+  detectAts,
+  fetchFromAts,
+  fromPaste,
+  isEmptyJd,
+  type JobDescription,
+  type TailorConstraints,
+} from '../../index';
 
 /** Job description acquisition: paste always works; ATS URLs are a shortcut. */
 export function JobPanel({

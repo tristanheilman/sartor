@@ -14,8 +14,11 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: {
     index: 'src/index.ts',
-    render: 'src/render.ts',
     parse: 'src/parse.ts',
+    // Split rather than one `render` barrel: offering both output formats
+    // should not mean shipping both engines to everyone.
+    'render/pdf': 'src/render/pdf.ts',
+    'render/docx': 'src/render/docx.ts',
   },
   format: ['esm'],
   // Declarations come from `tsc --emitDeclarationOnly` instead: tsup's bundled

@@ -1,5 +1,4 @@
-import type { TailorRun } from '../../core/tailor/apply';
-import { blockingChanges, reviewProgress } from '../../core/tailor/apply';
+import { blockingChanges, reviewProgress, type TailorRun } from '../../index';
 
 /**
  * Past tailoring runs for the active profile.

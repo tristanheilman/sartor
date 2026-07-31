@@ -1,6 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import { profileSchema, type Profile } from '../core/schema';
-import type { TailorRun } from '../core/tailor/apply';
+import { profileSchema, type Profile, type TailorRun } from '../index';
 
 /**
  * All persistent state lives here, in the user's own browser. There is no

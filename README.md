@@ -190,12 +190,17 @@ const { violations } = checkText(modelOutput, lexicon);
 | Entry | Contains | Optional peers |
 | --- | --- | --- |
 | `sartor` | schema, tailoring, guard, coverage, providers, the document model | — |
-| `sartor/render` | PDF and DOCX renderers | `react`, `@react-pdf/renderer`, `docx` |
 | `sartor/parse` | resume ingestion | `pdfjs-dist`, `mammoth` |
+| `sartor/render/pdf` | PDF renderer | `react`, `@react-pdf/renderer` |
+| `sartor/render/docx` | DOCX renderer | `docx` |
+
+The two renderers are separate entries on purpose: offering both output formats
+should not mean shipping both engines. A DOCX-only consumer installs `sartor`,
+`docx` and `zod`, and never downloads the PDF engine.
 
 Two things worth knowing. `ResumeDocument` is exported from the **main** entry,
-not from `sartor/render`, so you can write your own renderer without depending
-on ours. And `extractResumeText` needs you to pass `pdfWorkerSrc` — there is no
+not from a render subpath, so you can write your own renderer without depending
+on either of ours. And `extractResumeText` needs you to pass `pdfWorkerSrc` — there is no
 portable way for a library to locate the pdf.js worker, so the bundler-specific
 incantation stays in your application code where it belongs.
 

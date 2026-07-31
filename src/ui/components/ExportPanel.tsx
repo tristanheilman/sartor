@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { saveAs } from 'file-saver';
-import type { ResumeDocument } from '../../core/render/model';
-import { parseSafetyChecks, type ParseCheck } from '../../core/render/parseSafety';
-import { TEMPLATES } from '../../core/render/templates';
-import type { CoverageReport } from '../../core/tailor/coverage';
-import type { Change } from '../../core/tailor/apply';
+import {
+  TEMPLATES,
+  parseSafetyChecks,
+  type Change,
+  type CoverageReport,
+  type ParseCheck,
+  type ResumeDocument,
+} from '../../index';
 
 /**
  * Coverage signals, the parse-safety checklist, and export.
@@ -40,8 +43,8 @@ export function ExportPanel({
     try {
       const blob =
         kind === 'pdf'
-          ? await (await import('../../core/render/pdf')).renderPdfBlob(doc, templateId)
-          : await (await import('../../core/render/docx')).renderDocxBlob(doc, templateId);
+          ? await (await import('../../render/pdf')).renderPdfBlob(doc, templateId)
+          : await (await import('../../render/docx')).renderDocxBlob(doc, templateId);
       saveAs(blob, `${fileBase}.${kind}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

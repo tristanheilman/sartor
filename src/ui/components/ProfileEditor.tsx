@@ -1,6 +1,13 @@
 import { useState } from 'react';
-import type { Profile, Bullet, Work, Education, Project, SkillGroup } from '../../core/schema';
-import { ids } from '../../core/ids';
+import {
+  ids,
+  type Bullet,
+  type Education,
+  type Profile,
+  type Project,
+  type SkillGroup,
+  type Work,
+} from '../../index';
 
 /**
  * The master profile editor.

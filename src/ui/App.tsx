@@ -7,13 +7,17 @@ import { JobPanel } from './components/JobPanel';
 import { ReviewPanel } from './components/ReviewPanel';
 import { ExportPanel } from './components/ExportPanel';
 import { HistoryPanel } from './components/HistoryPanel';
-import type { Profile } from '../core/schema';
-import type { JobDescription } from '../core/jd/normalize';
-import { DEFAULT_CONSTRAINTS, type TailorConstraints } from '../core/tailor/prompt';
-import { runTailor } from '../core/tailor/run';
-import { buildDocument, blockingChanges } from '../core/tailor/apply';
-import { buildCoverage } from '../core/tailor/coverage';
-import { documentToSlices } from '../core/render/model';
+import {
+  DEFAULT_CONSTRAINTS,
+  blockingChanges,
+  buildCoverage,
+  buildDocument,
+  documentToSlices,
+  runTailor,
+  type JobDescription,
+  type Profile,
+  type TailorConstraints,
+} from '../index';
 
 type Step = 'profile' | 'job' | 'review' | 'export';
 

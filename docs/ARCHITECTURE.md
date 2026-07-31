@@ -127,9 +127,10 @@ src/
     db.ts              IndexedDB: profiles + run history. Re-validates on read.
     keys.ts            sessionStorage only. Never disk.
   ui/                  React. Knows nothing about which provider is in use.
-  index.ts             `sartor`         public API (semver-covered)
-  render.ts            `sartor/render`  PDF + DOCX  (optional peers)
-  parse.ts             `sartor/parse`   ingestion   (optional peers)
+  index.ts             `sartor`              public API (semver-covered)
+  parse.ts             `sartor/parse`        ingestion  (optional peers)
+  render/pdf.ts        `sartor/render/pdf`   PDF        (optional peers)
+  render/docx.ts       `sartor/render/docx`  DOCX       (optional peers)
 extension/             MV3 scaffold (phase 2)
 ```
 
@@ -169,6 +170,20 @@ capitalised mid-sentence, and anything containing a digit is `high` severity and
 checked strictly, wherever it appears. A capitalised sentence-opener that is not
 in the common-English list is `medium`. Both block export; the severity tells you
 how hard to look.
+
+### Why the app imports its own public API
+
+`src/ui` and `src/storage` import from `src/index.ts` rather than reaching into
+`src/core`. That is not tidiness — it is the only continuous check that the
+published surface is actually usable. An API that nothing consumes is an API
+that has been guessed at, and the guesses only surface when a stranger hits
+them.
+
+It paid for itself immediately. The app lazy-loads the PDF and DOCX renderers
+separately, so a user exporting a DOCX never downloads the PDF engine. Routing
+those imports through a single `sartor/render` barrel would have silently
+undone that — for our own app and for every consumer. The barrel was split into
+`sartor/render/pdf` and `sartor/render/docx` as a direct result.
 
 ### Why the library has no path alias
 

@@ -1,9 +1,6 @@
 import { useRef, useState } from 'react';
-import { extractResumeText, ExtractionError } from '../../core/parse/extract';
-import { ingestResume } from '../../core/parse/ingest';
-import { emptyProfile } from '../../core/schema';
-import type { Profile } from '../../core/schema';
-import { ids } from '../../core/ids';
+import { ExtractionError, extractResumeText, ingestResume } from '../../parse';
+import { emptyProfile, ids, type Profile } from '../../index';
 import { useActiveProvider } from '../store';
 
 type Phase = 'idle' | 'extracting' | 'structuring' | 'error';
