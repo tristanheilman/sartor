@@ -1,6 +1,6 @@
 import { tokenize, buildLexicon, isGrounded } from './lexicon';
 import { SENTENCE_START_ALLOWLIST, GENERIC_TERMS, CALENDAR_WORDS } from './stopwords';
-import type { Profile } from '@/core/schema';
+import type { Profile } from '../schema';
 
 /**
  * Honest coverage signals.

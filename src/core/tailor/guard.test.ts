@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { checkText, profileLexicon } from './guard';
 import { buildLexicon, tokenize, equivalentForms } from './lexicon';
-import { profileSchema, type Profile } from '@/core/schema';
+import { profileSchema, type Profile } from '../schema';
 
 function makeProfile(over: Partial<Profile> = {}): Profile {
   return profileSchema.parse({

@@ -41,12 +41,12 @@ jobs:
       - name: SPA fallback
         # Pages has no rewrite rules; copying index.html to 404.html makes deep
         # links resolve instead of 404ing.
-        run: cp dist/index.html dist/404.html
+        run: cp dist-app/index.html dist-app/404.html
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: dist-app
 
   deploy:
     needs: build

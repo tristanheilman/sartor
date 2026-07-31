@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { extractResumeText, ExtractionError } from '@/core/parse/extract';
-import { ingestResume } from '@/core/parse/ingest';
-import { emptyProfile } from '@/core/schema';
-import type { Profile } from '@/core/schema';
-import { ids } from '@/core/ids';
+import { extractResumeText, ExtractionError } from '../../core/parse/extract';
+import { ingestResume } from '../../core/parse/ingest';
+import { emptyProfile } from '../../core/schema';
+import type { Profile } from '../../core/schema';
+import { ids } from '../../core/ids';
 import { useActiveProvider } from '../store';
 
 type Phase = 'idle' | 'extracting' | 'structuring' | 'error';
@@ -46,7 +46,14 @@ export function ImportPanel({
     setPhase('extracting');
     setError(null);
     try {
-      const extracted = await extractResumeText(file);
+      // Vite-specific: `?url` makes the worker a first-party asset in our own
+      // bundle. The library takes this as a parameter precisely so that this
+      // bundler-specific line lives here, in application code, and not in
+      // something we publish.
+      const { default: pdfWorkerSrc } = await import(
+        'pdfjs-dist/build/pdf.worker.min.mjs?url'
+      );
+      const extracted = await extractResumeText(file, { pdfWorkerSrc });
       await structure(extracted.text, file.name.replace(/\.[^.]+$/, ''));
     } catch (err) {
       setPhase('error');

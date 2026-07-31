@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import type { Change, TailorRun } from '@/core/tailor/apply';
-import { blockingChanges, reviewProgress } from '@/core/tailor/apply';
-import type { Violation } from '@/core/tailor/guard';
+import type { Change, TailorRun } from '../../core/tailor/apply';
+import { blockingChanges, reviewProgress } from '../../core/tailor/apply';
+import type { Violation } from '../../core/tailor/guard';
 import { diffWords } from '../diff';
 
 /**

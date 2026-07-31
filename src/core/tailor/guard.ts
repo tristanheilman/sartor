@@ -1,6 +1,6 @@
 import { tokenize, buildLexicon, isGrounded, type Token } from './lexicon';
 import { isCommonSentenceOpener, CALENDAR_WORDS, GENERIC_TERMS } from './stopwords';
-import type { Profile } from '@/core/schema';
+import type { Profile } from '../schema';
 
 /**
  * The fabrication guard.

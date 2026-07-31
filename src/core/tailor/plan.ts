@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SECTION_KEYS } from '@/core/schema';
+import { SECTION_KEYS } from '../schema';
 
 /**
  * The tailoring plan is the *only* thing the model produces. It is a selection

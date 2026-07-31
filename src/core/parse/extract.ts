@@ -10,14 +10,50 @@ export interface ExtractedText {
   kind: 'pdf' | 'docx' | 'text';
 }
 
+export interface ExtractOptions {
+  /**
+   * URL of the pdf.js worker script, required for PDF input.
+   *
+   * There is no portable way for a library to locate this: every bundler wants
+   * a different incantation, and each one is a compile-time transform rather
+   * than something resolvable at runtime. So the caller supplies it, which
+   * keeps bundler-specific syntax in application code where it belongs.
+   *
+   * Vite:      `import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'`
+   * webpack 5: `new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href`
+   * Node:      a `file://` URL to the file in node_modules
+   *
+   * Host it yourself rather than pointing at a CDN — a CDN fetch would be a
+   * third-party request on a page holding the user's resume.
+   */
+  pdfWorkerSrc?: string;
+}
+
 export class ExtractionError extends Error {}
 
-async function extractPdf(file: File): Promise<ExtractedText> {
+async function extractPdf(file: File, opts: ExtractOptions): Promise<ExtractedText> {
+  // pdf.js needs browser graphics primitives. Without this check a Node caller
+  // gets `ReferenceError: DOMMatrix is not defined` from deep inside the
+  // dependency, which says nothing about what to do next.
+  if (typeof globalThis.DOMMatrix === 'undefined') {
+    throw new ExtractionError(
+      'PDF extraction needs a browser environment — pdf.js depends on DOMMatrix and other DOM ' +
+        'graphics primitives that Node does not provide. DOCX and plain-text extraction work ' +
+        'anywhere. To read PDFs server-side, use the `pdfjs-dist/legacy` build directly.',
+    );
+  }
+
   const pdfjs = await import('pdfjs-dist');
-  // The worker ships with the app rather than being fetched from a CDN — a CDN
-  // fetch would be a third-party request on a page holding the user's resume.
-  const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+
+  if (opts.pdfWorkerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = opts.pdfWorkerSrc;
+  } else if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    throw new ExtractionError(
+      'Reading a PDF needs the pdf.js worker. Pass `pdfWorkerSrc` to extractResumeText, ' +
+        'or set pdfjs.GlobalWorkerOptions.workerSrc yourself. See ExtractOptions for the ' +
+        'per-bundler incantation.',
+    );
+  }
 
   const buffer = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
@@ -65,12 +101,15 @@ async function extractDocx(file: File): Promise<ExtractedText> {
   return { text: result.value, pages: 0, kind: 'docx' };
 }
 
-export async function extractResumeText(file: File): Promise<ExtractedText> {
+export async function extractResumeText(
+  file: File,
+  opts: ExtractOptions = {},
+): Promise<ExtractedText> {
   const name = file.name.toLowerCase();
 
   let extracted: ExtractedText;
   if (name.endsWith('.pdf') || file.type === 'application/pdf') {
-    extracted = await extractPdf(file);
+    extracted = await extractPdf(file, opts);
   } else if (name.endsWith('.docx') || file.type.includes('wordprocessingml')) {
     extracted = await extractDocx(file);
   } else if (name.endsWith('.txt') || name.endsWith('.md') || file.type.startsWith('text/')) {

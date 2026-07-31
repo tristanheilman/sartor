@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { extractRequirements, buildCoverage } from './coverage';
-import { profileSchema } from '@/core/schema';
+import { profileSchema } from '../schema';
 
 const JD = `
 Senior Backend Engineer
@@ -79,6 +79,23 @@ describe('extractRequirements', () => {
       expect(norms).not.toContain(w);
     }
     expect(norms).toEqual(expect.arrayContaining(['terraform', 'kafka']));
+  });
+
+  it('excludes ordinary verbs that open a sentence in a posting', () => {
+    // Caught by running the published package against a real posting: "Need
+    // Kubernetes and Rust" was reporting "Need" as a required skill.
+    const norms = extractRequirements(
+      'Need Kubernetes and Rust. Looking for someone great. We offer equity. Bring curiosity.',
+    ).map((t) => t.norm);
+    for (const w of ['need', 'looking', 'offer', 'bring']) expect(norms).not.toContain(w);
+    expect(norms).toEqual(expect.arrayContaining(['kubernetes', 'rust']));
+  });
+
+  it('keeps technology names that collide with ordinary verbs', () => {
+    // Guards the regression note in stopwords.ts: adding `go` to the
+    // sentence-opener allowlist silently stopped Go being recognised at all.
+    const norms = extractRequirements('You will write Go and Rust daily.').map((t) => t.norm);
+    expect(norms).toEqual(expect.arrayContaining(['go', 'rust']));
   });
 
   it('excludes sentence-opening pronouns and boilerplate', () => {

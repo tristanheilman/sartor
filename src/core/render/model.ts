@@ -1,5 +1,5 @@
-import type { SectionKey } from '@/core/schema';
-import type { ResumeSlice } from '@/core/tailor/coverage';
+import type { SectionKey } from '../schema';
+import type { ResumeSlice } from '../tailor/coverage';
 
 /**
  * The render model: a fully resolved, plain-data description of one tailored

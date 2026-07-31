@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { profileSchema, type Profile } from '@/core/schema';
+import { profileSchema, type Profile } from '../schema';
 import { tailorPlanSchema, type TailorPlan } from './plan';
 import { buildChanges, buildDocument, writeBackVariants, blockingChanges, type TailorRun } from './apply';
-import { documentToText } from '@/core/render/model';
+import { documentToText } from '../render/model';
 
 const profile: Profile = profileSchema.parse({
   id: 'prf_1',

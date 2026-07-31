@@ -1,7 +1,7 @@
-import type { Profile } from '@/core/schema';
-import { ids } from '@/core/ids';
-import type { LLMProvider, ProviderConfig } from '@/core/provider';
-import type { JobDescription } from '@/core/jd/normalize';
+import type { Profile } from '../schema';
+import { ids } from '../ids';
+import type { LLMProvider, ProviderConfig } from '../provider';
+import type { JobDescription } from '../jd/normalize';
 import { tailorPlanSchema, TAILOR_PLAN_JSON_SCHEMA, type TailorPlan } from './plan';
 import { TAILOR_SYSTEM_PROMPT, buildTailorUserPrompt, type TailorConstraints } from './prompt';
 import { buildChanges, type TailorRun } from './apply';

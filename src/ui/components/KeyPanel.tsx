@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore, useActiveProvider } from '../store';
-import { maskKey } from '@/storage/keys';
+import { maskKey } from '../../storage/keys';
 
 /**
  * Key entry.

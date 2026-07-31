@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { profileSchema, type Profile } from '@/core/schema';
-import { ids } from '@/core/ids';
-import type { LLMProvider, ProviderConfig } from '@/core/provider';
+import { profileSchema, type Profile } from '../schema';
+import { ids } from '../ids';
+import type { LLMProvider, ProviderConfig } from '../provider';
 
 /**
  * Resume text -> structured profile, via one LLM call.

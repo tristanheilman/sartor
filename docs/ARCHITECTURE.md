@@ -127,8 +127,16 @@ src/
     db.ts              IndexedDB: profiles + run history. Re-validates on read.
     keys.ts            sessionStorage only. Never disk.
   ui/                  React. Knows nothing about which provider is in use.
+  index.ts             `sartor`         public API (semver-covered)
+  render.ts            `sartor/render`  PDF + DOCX  (optional peers)
+  parse.ts             `sartor/parse`   ingestion   (optional peers)
 extension/             MV3 scaffold (phase 2)
 ```
+
+Two artifacts come out of this one tree: `vite build` produces the deployable
+site in `dist-app/`, and `tsup` + `tsc --emitDeclarationOnly` produce the npm
+package in `dist/`. Only `src/core` is reachable from the published entry
+points — `src/ui` and `src/storage` are application code and are never emitted.
 
 ---
 
@@ -162,6 +170,14 @@ checked strictly, wherever it appears. A capitalised sentence-opener that is not
 in the common-English list is `medium`. Both block export; the severity tells you
 how hard to look.
 
+### Why the library has no path alias
+
+`@/core/schema` is pleasant to write and impossible to publish: `tsc` does not
+rewrite path aliases on emit, so the published JavaScript would have carried
+imports that resolve to nothing on a consumer's machine. Rather than add a
+post-processing step, the alias was removed outright. Relative imports are
+slightly noisier to read and have the useful property of being true.
+
 ### Why storage re-validates on read
 
 `listProfiles()` runs every stored record back through the zod schema and drops
@@ -181,7 +197,7 @@ the first hand-built profile.
 
 ## Testing
 
-159 tests. The ones that matter most:
+161 tests. The ones that matter most:
 
 - **`guard.test.ts`** — tokenisation of real-world resume tokens, and the
   precise boundary between allowed rephrasing and fabrication.

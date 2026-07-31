@@ -1,17 +1,17 @@
-import type { Profile, Bullet, SectionKey } from '@/core/schema';
-import { SECTION_KEYS } from '@/core/schema';
-import { ids } from '@/core/ids';
+import type { Profile, Bullet, SectionKey } from '../schema';
+import { SECTION_KEYS } from '../schema';
+import { ids } from '../ids';
 import type { TailorPlan, PlannedBullet } from './plan';
 import type { Violation } from './guard';
 import { checkText, profileLexicon } from './guard';
-import type { JobDescription } from '@/core/jd/normalize';
+import type { JobDescription } from '../jd/normalize';
 import type { TailorConstraints } from './prompt';
 import {
   SECTION_HEADINGS,
   type DocEntry,
   type DocSection,
   type ResumeDocument,
-} from '@/core/render/model';
+} from '../render/model';
 
 /**
  * Turns a tailoring plan into a reviewable set of changes and a rendered

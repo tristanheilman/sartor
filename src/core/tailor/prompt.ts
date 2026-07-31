@@ -1,5 +1,5 @@
-import type { Profile } from '@/core/schema';
-import type { JobDescription } from '@/core/jd/normalize';
+import type { Profile } from '../schema';
+import type { JobDescription } from '../jd/normalize';
 
 export interface TailorConstraints {
   pageTarget: 1 | 2;

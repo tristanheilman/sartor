@@ -12,6 +12,13 @@
  * Mid-sentence capitals, all-caps tokens, internal capitals, and anything
  * containing a digit are never exempted by this list — those are checked
  * strictly regardless of position.
+ *
+ * ⚠️ Never add a word that is also a technology name. `go` belongs here as an
+ * ordinary verb and was briefly added, which silently stopped Go from being
+ * recognised as a skill. The asymmetry decides it: a lowercase verb is never a
+ * candidate in the first place (candidates must be capitalised), so listing one
+ * of these buys nothing and costs a real detection. The same trap is waiting in
+ * `rust`, `swift`, `dart`, `ruby`, `julia`, `crystal`, `elm`, and `nim`.
  */
 
 const WORDS = `
@@ -41,6 +48,13 @@ build collaborate communicate contribute coordinate create define deliver design
 evaluate execute experience grow guide identify implement improve integrate iterate join lead learn maintain
 manage mentor operate optimize own partner perform plan prepare present prioritize provide report research
 review scale ship solve support test troubleshoot understand write
+
+apply bring come demonstrate enjoy expect explore fit gain get give handle hire join keep know look love make
+meet need offer prefer seek share start stay take thrive use want welcome
+applying bringing expecting exploring hiring joining looking making meeting needing offering seeking sharing
+starting taking using wanting
+comes expects gets gives goes handles helps includes keeps knows looks makes means meets needs offers prefers
+requires seeks takes uses wants works
 `
   .trim()
   .split(/\s+/);

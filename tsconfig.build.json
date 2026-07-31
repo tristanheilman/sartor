@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    // The app's ambient Vite types are irrelevant to consumers of the library,
+    // and pulling them in would leak `import.meta.env` into published .d.ts.
+    "types": []
+  },
+  // Only the three published entry points. tsc follows their imports, so
+  // `src/ui` and `src/storage` are never reached and never emitted.
+  "include": ["src/index.ts", "src/render.ts", "src/parse.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

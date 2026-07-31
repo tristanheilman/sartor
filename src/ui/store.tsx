@@ -7,12 +7,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import type { Profile } from '@/core/schema';
-import type { TailorRun, Change } from '@/core/tailor/apply';
-import { writeBackVariants } from '@/core/tailor/apply';
-import * as db from '@/storage/db';
-import { getApiKey, setApiKey as persistKey, clearApiKey } from '@/storage/keys';
-import { getProvider, PROVIDER_LIST } from '@/core/provider';
+import type { Profile } from '../core/schema';
+import type { TailorRun, Change } from '../core/tailor/apply';
+import { writeBackVariants } from '../core/tailor/apply';
+import * as db from '../storage/db';
+import { getApiKey, setApiKey as persistKey, clearApiKey } from '../storage/keys';
+import { getProvider, PROVIDER_LIST } from '../core/provider';
 
 interface Store {
   ready: boolean;

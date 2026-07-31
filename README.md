@@ -145,12 +145,13 @@ Requires Node 20.19+.
 
 ```sh
 npm install
-npm run dev        # http://localhost:5173
-npm test           # 159 tests
-npm run build      # typecheck + static build into dist/
+npm run dev          # http://localhost:5173
+npm test             # 161 tests
+npm run build:app    # static site  -> dist-app/
+npm run build:lib    # npm package  -> dist/
 ```
 
-Deploying is copying `dist/` to any static host. A GitHub Pages workflow is
+Deploying is copying `dist-app/` to any static host. A GitHub Pages workflow is
 included at `.github/workflows/deploy.yml`; it sets `BASE_PATH` for you. For a
 root-path deploy (Cloudflare Pages, Netlify, S3), the default `BASE_PATH=/` is
 already correct.
@@ -162,6 +163,44 @@ Ships with Anthropic, OpenAI, and Google. All model access goes through a single
 the registry — it touches no application logic. A future hosted mode, where a
 server holds the key, is just another implementation of that interface rather
 than a rewrite.
+
+---
+
+## Using it as a library
+
+The pieces this app is built from are published as `sartor`. The main entry
+needs only `zod`; the heavy parts sit behind subpaths so using the guard does
+not pull a PDF engine into your bundle.
+
+```sh
+npm i sartor
+```
+
+```ts
+import { buildLexicon, checkText } from 'sartor';
+
+// Nothing here is resume-specific. `buildLexicon` takes any JSON-like source
+// and `checkText` reports proper nouns and numbers that are not grounded in it
+// — as useful for summarisation or RAG output as it is for resumes.
+const lexicon = buildLexicon(sourceDocuments);
+const { violations } = checkText(modelOutput, lexicon);
+// [{ token: 'Kubernetes', kind: 'proper-noun', severity: 'high', ... }]
+```
+
+| Entry | Contains | Optional peers |
+| --- | --- | --- |
+| `sartor` | schema, tailoring, guard, coverage, providers, the document model | — |
+| `sartor/render` | PDF and DOCX renderers | `react`, `@react-pdf/renderer`, `docx` |
+| `sartor/parse` | resume ingestion | `pdfjs-dist`, `mammoth` |
+
+Two things worth knowing. `ResumeDocument` is exported from the **main** entry,
+not from `sartor/render`, so you can write your own renderer without depending
+on ours. And `extractResumeText` needs you to pass `pdfWorkerSrc` — there is no
+portable way for a library to locate the pdf.js worker, so the bundler-specific
+incantation stays in your application code where it belongs.
+
+ESM only. Everything exported from the three entry points is covered by semver;
+anything reachable by deep import into `dist/` is not.
 
 ---
 

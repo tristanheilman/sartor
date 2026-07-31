@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
-import { profileSchema, type Profile } from '@/core/schema';
-import type { TailorRun } from '@/core/tailor/apply';
+import { profileSchema, type Profile } from '../core/schema';
+import type { TailorRun } from '../core/tailor/apply';
 import * as db from './db';
 
 /**

@@ -17,4 +17,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npx vite build
+      - run: npm run build:app
+      - run: npm run build:lib
+      # Catches an exports map or `files` list that does not match reality.
+      - run: npm pack --dry-run

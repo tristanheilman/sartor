@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { profileSchema } from '@/core/schema';
-import { tailorPlanSchema } from '@/core/tailor/plan';
-import { buildChanges, buildDocument } from '@/core/tailor/apply';
+import { profileSchema } from '../schema';
+import { tailorPlanSchema } from '../tailor/plan';
+import { buildChanges, buildDocument } from '../tailor/apply';
 import { documentToSlices, documentToText, estimateLines } from './model';
 import { parseSafetyChecks, worstStatus } from './parseSafety';
 import { TEMPLATES, getTemplate } from './templates';

@@ -4,7 +4,7 @@ import { openaiProvider } from './openai';
 import { toGeminiSchema } from './google';
 import { extractJson, ProviderError, type CompletionResult } from './types';
 import { PROVIDERS, PROVIDER_LIST, getProvider } from './index';
-import { TAILOR_PLAN_JSON_SCHEMA } from '@/core/tailor/plan';
+import { TAILOR_PLAN_JSON_SCHEMA } from '../tailor/plan';
 
 /**
  * Provider contract tests.
