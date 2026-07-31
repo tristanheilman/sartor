@@ -63,6 +63,45 @@ describe('the app consumes its own public API', () => {
   });
 });
 
+describe('every imported package is declared', () => {
+  /**
+   * A dependency that is used but undeclared works fine locally — `node_modules`
+   * still has it from an earlier install — and fails only on a clean `npm ci`.
+   * That is exactly how `file-saver` reached CI: it was dropped from the
+   * manifest while splitting deps for the library, and nothing local noticed.
+   */
+  it('declares every bare specifier imported anywhere in src/', () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as Record<
+      string,
+      Record<string, string>
+    >;
+    const declared = new Set([
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.devDependencies ?? {}),
+      ...Object.keys(pkg.peerDependencies ?? {}),
+    ]);
+
+    const undeclared = new Set<string>();
+    for (const file of [...appFiles, ...walk('src/core'), 'src/index.ts', 'src/parse.ts']) {
+      // Strip comments first: the entry points document their own usage with
+      // `import('sartor/render/pdf')` in prose, which is not a real import.
+      const src = readFileSync(file, 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+
+      for (const m of src.matchAll(/(?:from\s+|import\s*\(\s*)'([^'.][^']*)'/g)) {
+        const spec = m[1]!;
+        if (spec.startsWith('node:')) continue;
+        const parts = spec.split('/');
+        const name = spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]!;
+        // `react/jsx-runtime` resolves through `react`.
+        if (!declared.has(name)) undeclared.add(`${name} (in ${file})`);
+      }
+    }
+    expect([...undeclared]).toEqual([]);
+  });
+});
+
 describe('render engines stay separately loadable', () => {
   it('exposes PDF and DOCX as distinct entry points', () => {
     const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
