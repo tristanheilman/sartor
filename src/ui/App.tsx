@@ -6,6 +6,7 @@ import { ImportPanel } from './components/ImportPanel';
 import { JobPanel } from './components/JobPanel';
 import { ReviewPanel } from './components/ReviewPanel';
 import { ExportPanel } from './components/ExportPanel';
+import { HistoryPanel } from './components/HistoryPanel';
 import type { Profile } from '@/core/schema';
 import type { JobDescription } from '@/core/jd/normalize';
 import { DEFAULT_CONSTRAINTS, type TailorConstraints } from '@/core/tailor/prompt';
@@ -43,6 +44,12 @@ function Shell() {
     { id: 'export', label: '4. Export', enabled: hasRun },
   ];
 
+  // Deleting a profile or erasing all data can pull the ground out from under
+  // the step the user is standing on. Fall back rather than leaving them on a
+  // screen the nav has just disabled — derived, not an effect, so there is no
+  // frame where the stale step is still painted.
+  const activeStep: Step = steps.find((s) => s.id === step)?.enabled ? step : 'profile';
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">
       <header className="mb-6">
@@ -62,7 +69,7 @@ function Shell() {
             disabled={!s.enabled}
             onClick={() => setStep(s.id)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:text-stone-300 ${
-              step === s.id
+              activeStep === s.id
                 ? 'border-ink text-ink'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
@@ -82,15 +89,15 @@ function Shell() {
       <div className="space-y-6">
         <KeyPanel />
 
-        {step === 'profile' && <ProfileStep onDone={() => setStep('job')} />}
-        {step === 'job' && (
+        {activeStep === 'profile' && <ProfileStep onDone={() => setStep('job')} />}
+        {activeStep === 'job' && (
           <JobStep
             keyReady={keyReady}
             onDone={() => setStep('review')}
           />
         )}
-        {step === 'review' && <ReviewStep onDone={() => setStep('export')} />}
-        {step === 'export' && <ExportStep />}
+        {activeStep === 'review' && <ReviewStep onDone={() => setStep('export')} />}
+        {activeStep === 'export' && <ExportStep />}
       </div>
 
       <Footer />
@@ -216,7 +223,7 @@ function ProfileStep({ onDone }: { onDone(): void }) {
 }
 
 function JobStep({ keyReady, onDone }: { keyReady: boolean; onDone(): void }) {
-  const { profile, setRun } = useStore();
+  const { profile, setRun, runs, run: currentRun, openRun, removeRun } = useStore();
   const { provider, config } = useActiveProvider();
   const [jd, setJd] = useState<JobDescription | null>(null);
   const [constraints, setConstraints] = useState<TailorConstraints>(DEFAULT_CONSTRAINTS);
@@ -268,6 +275,15 @@ function JobStep({ keyReady, onDone }: { keyReady: boolean; onDone(): void }) {
           {error}
         </div>
       )}
+
+      <HistoryPanel
+        runs={runs}
+        currentRunId={currentRun?.id ?? null}
+        onOpen={(id) => {
+          void openRun(id).then(onDone);
+        }}
+        onDelete={(id) => void removeRun(id)}
+      />
     </div>
   );
 }

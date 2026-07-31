@@ -133,6 +133,10 @@ Accepted rephrasings are written back into your master profile as *variants* —
 alternate wordings of the same underlying fact. Your original text is never
 overwritten. The profile gets richer the more you use it.
 
+Every run is kept in browser storage, so reopening a previous tailoring — to
+re-export it, or to reuse it for a similar posting — is a local read that costs
+nothing and calls no model.
+
 ---
 
 ## Running it
@@ -142,7 +146,7 @@ Requires Node 20.19+.
 ```sh
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 113 tests
+npm test           # 159 tests
 npm run build      # typecheck + static build into dist/
 ```
 
@@ -164,8 +168,8 @@ than a rewrite.
 ## Status
 
 Working end to end: profile management, resume import, tailoring, the
-fabrication guard, coverage signals, diff review with write-back, and PDF/DOCX
-export. Greenhouse/Lever/Ashby URL loading works subject to their CORS policy,
+fabrication guard, coverage signals, diff review with write-back, run history,
+and PDF/DOCX export. Greenhouse/Lever/Ashby URL loading works subject to their CORS policy,
 which changes without notice — paste always works and is the default.
 
 The browser extension is scaffolded but not implemented. See

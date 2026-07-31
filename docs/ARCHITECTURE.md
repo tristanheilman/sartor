@@ -124,7 +124,7 @@ src/
       normalize.ts     Paste + HTML → JobDescription
       ats.ts           Greenhouse / Lever / Ashby public JSON
   storage/
-    db.ts              IndexedDB. Re-validates on read.
+    db.ts              IndexedDB: profiles + run history. Re-validates on read.
     keys.ts            sessionStorage only. Never disk.
   ui/                  React. Knows nothing about which provider is in use.
 extension/             MV3 scaffold (phase 2)
@@ -181,7 +181,7 @@ the first hand-built profile.
 
 ## Testing
 
-113 tests. The ones that matter most:
+159 tests. The ones that matter most:
 
 - **`guard.test.ts`** — tokenisation of real-world resume tokens, and the
   precise boundary between allowed rephrasing and fabrication.
@@ -193,6 +193,15 @@ the first hand-built profile.
 - **`render.test.ts`** — renders an actual PDF and an actual DOCX for all three
   templates. Both libraries validate at render time, so this is the only way to
   catch an invalid style prop.
+- **`provider.test.ts`** — intercepts `fetch` to pin each provider's request
+  shape without needing a key: that Anthropic's browser-access header is
+  actually sent, that each provider constrains output to our schema in its own
+  dialect, and that a streamed response is assembled correctly. The failure it
+  exists to catch is an SDK upgrade silently changing a request shape, which
+  would otherwise surface as a 400 in a user's browser.
+- **`db.test.ts`** — that reads re-validate (a corrupted record must not reach
+  a renderer) and that deleting a profile also deletes its run history.
 - **`App.test.tsx`** — that the app mounts, that the key lands in
-  `sessionStorage` and not `localStorage` or a cookie, and that it is never
-  rendered in full.
+  `sessionStorage` and not `localStorage` or a cookie, that it is never
+  rendered in full, and that erasing data does not strand the user on a step
+  the nav has just disabled.

@@ -33,7 +33,7 @@ const info: ProviderInfo = {
  * and `additionalProperties`, so the shared schema is inlined and stripped
  * before it is sent. Everything else about the contract is identical.
  */
-function toGeminiSchema(schema: unknown): unknown {
+export function toGeminiSchema(schema: unknown): unknown {
   const defs = (schema as { $defs?: Record<string, unknown> }).$defs ?? {};
 
   const walk = (node: unknown): unknown => {

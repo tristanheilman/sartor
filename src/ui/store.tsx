@@ -20,6 +20,8 @@ interface Store {
   profiles: Profile[];
   profile: Profile | null;
   run: TailorRun | null;
+  /** Past runs for the active profile, newest first. */
+  runs: TailorRun[];
   /** Present only for the current tab session. */
   apiKey: string | null;
 
@@ -28,6 +30,8 @@ interface Store {
   upsertProfile(profile: Profile): Promise<Profile>;
   removeProfile(id: string): Promise<void>;
   setRun(run: TailorRun | null): void;
+  openRun(id: string): Promise<void>;
+  removeRun(id: string): Promise<void>;
   updateChange(changeId: string, patch: Partial<Change>): void;
   commitRun(): Promise<void>;
   saveKey(key: string): void;
@@ -43,6 +47,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [run, setRun] = useState<TailorRun | null>(null);
+  const [runs, setRuns] = useState<TailorRun[]>([]);
   const [apiKey, setKeyState] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,6 +62,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setReady(true);
     })();
   }, []);
+
+  // History follows whichever profile is active. Runs belong to a profile, and
+  // showing another profile's history would be actively misleading.
+  useEffect(() => {
+    if (!profile) {
+      setRuns([]);
+      return;
+    }
+    void db.listRuns(profile.id).then(setRuns);
+  }, [profile?.id, run]);
 
   const updateSettings = useCallback(async (patch: Partial<db.StoredSettings>) => {
     setSettings((prev) => {
@@ -109,6 +124,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /** Reopens a past run for re-review and re-export. Nothing is recomputed. */
+  const openRun = useCallback(async (id: string) => {
+    const found = await db.getRun(id);
+    if (found) setRun(found);
+  }, []);
+
+  const removeRun = useCallback(
+    async (id: string) => {
+      await db.deleteRun(id);
+      setRuns((prev) => prev.filter((r) => r.id !== id));
+      setRun((prev) => (prev?.id === id ? null : prev));
+    },
+    [],
+  );
+
   const updateChange = useCallback((changeId: string, patch: Partial<Change>) => {
     setRun((prev) => {
       if (!prev) return prev;
@@ -128,6 +158,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const commitRun = useCallback(async () => {
     if (!run || !profile) return;
     await db.saveRun(run);
+    setRuns(await db.listRuns(profile.id));
     const next = writeBackVariants(profile, run);
     if (next !== profile) {
       const saved = await db.saveProfile(next);
@@ -154,6 +185,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProfiles([]);
     setProfile(null);
     setRun(null);
+    setRuns([]);
     setSettings(db.DEFAULT_SETTINGS);
   }, []);
 
@@ -164,12 +196,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       profiles,
       profile,
       run,
+      runs,
       apiKey,
       updateSettings,
       selectProfile,
       upsertProfile,
       removeProfile,
       setRun,
+      openRun,
+      removeRun,
       updateChange,
       commitRun,
       saveKey,
@@ -182,11 +217,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       profiles,
       profile,
       run,
+      runs,
       apiKey,
       updateSettings,
       selectProfile,
       upsertProfile,
       removeProfile,
+      openRun,
+      removeRun,
       updateChange,
       commitRun,
       saveKey,

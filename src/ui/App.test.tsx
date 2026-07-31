@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import 'fake-indexeddb/auto';
 import { App } from './App';
@@ -96,6 +96,29 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByText('Sartor')).toBeDefined());
     expect(screen.getByRole('button', { name: /3\. review changes/i })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: /4\. export/i })).toHaveProperty('disabled', true);
+  });
+
+  it('never strands the user on a step that has just become unavailable', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('Sartor')).toBeDefined());
+
+    // Build and save a profile, which unlocks step 2 and navigates there.
+    fireEvent.click(screen.getByRole('button', { name: /create an empty profile/i }));
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Dana Reyes' } });
+    fireEvent.click(screen.getByRole('button', { name: /save profile and continue/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: /the job posting/i })).toBeDefined());
+
+    // Erase everything from under it. The nav disables step 2, so the app must
+    // not keep rendering step 2's content.
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: /erase all local data/i }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /start from an existing resume/i })).toBeDefined(),
+    );
+    expect(screen.queryByRole('heading', { name: /the job posting/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /2\. job posting/i })).toHaveProperty('disabled', true);
   });
 
   it('states where the key goes, at the point of entry', async () => {
