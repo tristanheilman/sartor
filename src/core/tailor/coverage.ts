@@ -120,16 +120,90 @@ const NOISE = new Set([
   'partners',
   'stakeholder',
   'stakeholders',
+  // Job-posting boilerplate nouns. These frequently open a sentence and are
+  // therefore capitalised ("Familiarity with Terraform is required"), which
+  // would otherwise make them look like named technologies.
+  'familiarity',
+  'proficiency',
+  'proficient',
+  'knowledge',
+  'expertise',
+  'background',
+  'exposure',
+  'understanding',
+  'experienced',
+  'passion',
+  'willingness',
+  'track',
+  'record',
+  'must',
+  'should',
+  'ideally',
+  'ideal',
+  'minimum',
+  'degree',
+  'equivalent',
+  'related',
+  'field',
+  'industry',
+  'environment',
+  'environments',
+  'tools',
+  'technologies',
+  'systems',
+  'solutions',
+  'practices',
+  'processes',
+  'standards',
+  'quality',
+  'performance',
+  'scale',
+  'scalable',
+  'growth',
+  'impact',
+  'ownership',
+  'collaboration',
+  'communication',
+  'leadership',
+  'mentorship',
+  'responsibilities',
+  'qualifications',
+  'duties',
+  'overview',
+  'description',
+  'about',
+  'department',
+  'nice',
+  'must-have',
 ]);
 
+/**
+ * Is this token plausibly a named skill, tool, or technology?
+ *
+ * Shape alone is not enough. `PostgreSQL`, `gRPC`, and `AWS` announce
+ * themselves through an internal capital or all-caps, but `Kubernetes`,
+ * `Terraform`, `Django`, and `Kafka` are ordinary capitalised words — and they
+ * are just as much requirements. Relying on shape meant those were only picked
+ * up when they happened to sit near a phrase like "experience with", which is
+ * luck, not detection.
+ *
+ * So any capitalised token that is not ordinary English and not boilerplate
+ * counts. `NOISE` carries the weight here: it includes the common-word and
+ * imperative-verb lists, which is what keeps "Design", "Build", and "We" out.
+ */
 function looksLikeSkill(raw: string, norm: string): boolean {
   if (NOISE.has(norm)) return false;
   if (norm.length < 2) return false;
+
   // Acronyms, internal capitals, versioned or punctuated tech names.
   const letters = raw.replace(/[^A-Za-z]/g, '');
   if (letters.length >= 2 && letters === letters.toUpperCase()) return true;
   if (/[A-Z]/.test(raw.slice(1))) return true;
   if (/[.+#/]/.test(raw) && /[A-Za-z]/.test(raw)) return true;
+
+  // A plain capitalised word that survived the noise filter.
+  if (/^[A-Z]/.test(raw)) return true;
+
   return false;
 }
 

@@ -49,6 +49,44 @@ describe('extractRequirements', () => {
     const pg = extractRequirements(JD).find((t) => t.norm === 'postgresql');
     expect(pg?.emphasised).toBe(true);
   });
+
+  it('detects plain capitalised technologies with no distinguishing shape', () => {
+    // Most tech names are ordinary capitalised words — no internal capital, no
+    // acronym, no punctuation. Detecting these must not depend on them
+    // happening to sit next to a phrase like "experience with".
+    const norms = extractRequirements(
+      'The stack is Kubernetes, Terraform, Django and Kafka. Deploys run nightly.',
+    ).map((t) => t.norm);
+    expect(norms).toEqual(expect.arrayContaining(['kubernetes', 'terraform', 'django', 'kafka']));
+  });
+
+  it('still excludes imperative verbs that open a requirement bullet', () => {
+    const norms = extractRequirements(
+      '• Design and build scalable systems\n• Mentor engineers\n• Own delivery end to end',
+    ).map((t) => t.norm);
+    for (const verb of ['design', 'build', 'mentor', 'own', 'scalable']) {
+      expect(norms).not.toContain(verb);
+    }
+  });
+
+  it('excludes capitalised job-posting boilerplate nouns', () => {
+    // These open sentences constantly, so they arrive capitalised and would
+    // otherwise be mistaken for named technologies.
+    const norms = extractRequirements(
+      'Familiarity with Terraform is required. Proficiency in Go expected. Knowledge of Kafka helps. Responsibilities include on-call.',
+    ).map((t) => t.norm);
+    for (const w of ['familiarity', 'proficiency', 'knowledge', 'responsibilities']) {
+      expect(norms).not.toContain(w);
+    }
+    expect(norms).toEqual(expect.arrayContaining(['terraform', 'kafka']));
+  });
+
+  it('excludes sentence-opening pronouns and boilerplate', () => {
+    const norms = extractRequirements('We are hiring. You will report to the Engineering lead.').map(
+      (t) => t.norm,
+    );
+    for (const w of ['we', 'you', 'the', 'are', 'hiring']) expect(norms).not.toContain(w);
+  });
 });
 
 describe('buildCoverage', () => {

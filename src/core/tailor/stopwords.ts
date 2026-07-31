@@ -36,6 +36,11 @@ taught team ten tested than that the their them then there these they this those
 together took tracked trained transformed translated tripled turned two under unified until up updated upgraded
 used using validated very via was we were what when where whether which while who why will with within without
 worked would wrote yet
+
+build collaborate communicate contribute coordinate create define deliver design develop drive ensure establish
+evaluate execute experience grow guide identify implement improve integrate iterate join lead learn maintain
+manage mentor operate optimize own partner perform plan prepare present prioritize provide report research
+review scale ship solve support test troubleshoot understand write
 `
   .trim()
   .split(/\s+/);

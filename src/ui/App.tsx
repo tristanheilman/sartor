@@ -124,11 +124,15 @@ function ProfileStep({ onDone }: { onDone(): void }) {
     );
   }
 
-  const isUnsaved = draft !== null;
+  // Two different states share this screen, and conflating them is misleading:
+  // a profile that has never been persisted, and a saved profile with pending
+  // edits. Only the first one warrants "nothing has been saved yet".
+  const hasEdits = draft !== null;
+  const isNew = hasEdits && !profiles.some((p) => p.id === editing.id);
 
   return (
     <div className="space-y-4">
-      {profiles.length > 1 && !isUnsaved && (
+      {profiles.length > 1 && !hasEdits && (
         <div className="card flex flex-wrap items-center gap-2 p-3">
           <span className="label mb-0">Profile</span>
           <select
@@ -145,12 +149,20 @@ function ProfileStep({ onDone }: { onDone(): void }) {
         </div>
       )}
 
-      {isUnsaved && (
+      {isNew && (
         <div className="rounded-lg border border-sky-300 bg-sky-50 p-4">
           <h2 className="text-sm font-semibold text-sky-900">Confirm before saving</h2>
           <p className="mt-1 text-sm text-sky-900">
             Nothing has been saved yet. Read through the fields below and fix anything that came
             across wrong — every resume you tailor is built from this.
+          </p>
+        </div>
+      )}
+
+      {hasEdits && !isNew && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
+          <p className="text-sm text-amber-900">
+            You have unsaved edits to this profile.
           </p>
         </div>
       )}
@@ -171,9 +183,9 @@ function ProfileStep({ onDone }: { onDone(): void }) {
             onDone();
           }}
         >
-          {isUnsaved ? 'Save profile and continue' : 'Save changes and continue'}
+          {isNew ? 'Save profile and continue' : 'Save changes and continue'}
         </button>
-        {isUnsaved && (
+        {hasEdits && (
           <button
             type="button"
             className="btn-secondary"
@@ -185,7 +197,7 @@ function ProfileStep({ onDone }: { onDone(): void }) {
             Discard
           </button>
         )}
-        {!isUnsaved && profile && (
+        {!hasEdits && profile && (
           <button
             type="button"
             className="btn-ghost ml-auto text-red-700"
