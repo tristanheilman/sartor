@@ -42,17 +42,37 @@ export interface EvalCase {
   /** Bullet IDs that would be padding or noise for this posting. */
   mustExclude: string[];
   /**
+   * Work entries that must survive as employment history.
+   *
+   * Separate from `mustInclude` because a role earns its place on two
+   * different grounds. Its bullets may be worth reading — or the job may
+   * simply have happened, and dropping it leaves an unexplained gap in the
+   * timeline that a reader fills in with the worst explanation available.
+   * Only the first is a bullet-selection question.
+   */
+  mustKeepEntries: string[];
+  /**
    * Strings that must appear nowhere in the output. Fabrication traps: a term
    * the posting demands and the profile does not have, which the model will be
    * tempted to supply.
    */
   forbidden: string[];
+  /**
+   * Gate name -> why it is known to fail.
+   *
+   * A measured defect we cannot fix yet. Tracked here rather than deleted so
+   * the report stays honest about it, and so the harness can require it to
+   * still be failing — see the assertion in `harness.test.ts`.
+   */
+  knownFailures: Record<string, string>;
 }
 
 export interface Gate {
   name: string;
   passed: boolean;
   detail: string;
+  /** Set when this failure is a documented, accepted defect. */
+  known?: string;
 }
 
 export interface EvalScores {
@@ -64,6 +84,8 @@ export interface EvalScores {
    * excluded — failing to show evidence that does not exist is not a miss.
    */
   requirementCoverage: number;
+  /** Fraction of `mustKeepEntries` that appear in the document. */
+  entryRetention: number;
   estimatedLines: number;
   lineBudget: number;
 }
@@ -159,17 +181,29 @@ export function scorePlan(testCase: EvalCase, rawPlan: TailorPlan): EvalResult {
   // --- Scores ------------------------------------------------------------
   const keptEssential = testCase.mustInclude.filter((id) => included.has(id));
 
+  const renderedEntries = new Set(
+    doc.sections.flatMap((s) => s.entries ?? []).map((e) => e.sourceId),
+  );
+  const keptEntries = testCase.mustKeepEntries.filter((id) => renderedEntries.has(id));
+
   const coverage = buildCoverage(posting, documentToSlices(doc), profile);
   const supportable = coverage.terms.filter((t) => t.emphasised && t.status !== 'missing');
   const surfaced = supportable.filter((t) => t.status === 'present');
 
+  for (const gate of gates) {
+    if (!gate.passed && testCase.knownFailures[gate.name]) gate.known = testCase.knownFailures[gate.name];
+  }
+
   return {
     name: testCase.name,
-    passed: gates.every((g) => g.passed),
+    // A known failure is not a pass, but it is not a surprise either. It is
+    // reported separately so a real regression cannot hide behind it.
+    passed: gates.every((g) => g.passed || g.known),
     gates,
     scores: {
       recall: ratio(keptEssential.length, testCase.mustInclude.length),
       requirementCoverage: ratio(surfaced.length, supportable.length),
+      entryRetention: ratio(keptEntries.length, testCase.mustKeepEntries.length),
       estimatedLines,
       lineBudget,
     },
@@ -194,6 +228,7 @@ export interface CaseResult {
   runs: EvalResult[];
   recall: Spread;
   requirementCoverage: Spread;
+  entryRetention: Spread;
   /**
    * How much the recordings agree on *what to include*, 0–1.
    *
@@ -262,6 +297,7 @@ export function scoreCase(testCase: EvalCase, plans: TailorPlan[]): CaseResult {
     runs,
     recall: spread(runs.map((r) => r.scores.recall)),
     requirementCoverage: spread(runs.map((r) => r.scores.requirementCoverage)),
+    entryRetention: spread(runs.map((r) => r.scores.entryRetention)),
     selectionAgreement: agreement(runs),
   };
 }
@@ -276,6 +312,7 @@ export interface Baseline {
     requirementCoverage: number;
     /** Instability is itself a regression: see `CaseResult.selectionAgreement`. */
     selectionAgreement: number;
+    entryRetention: number;
   };
 }
 
@@ -309,6 +346,7 @@ export function compareToBaseline(results: CaseResult[], baseline: Baseline, tol
       recall: result.recall.mean,
       requirementCoverage: result.requirementCoverage.mean,
       selectionAgreement: result.selectionAgreement,
+      entryRetention: result.entryRetention.mean,
     };
 
     for (const [metric, after] of Object.entries(current)) {
@@ -331,6 +369,7 @@ export function toBaseline(results: CaseResult[]): Baseline {
         recall: round(r.recall.mean),
         requirementCoverage: round(r.requirementCoverage.mean),
         selectionAgreement: round(r.selectionAgreement),
+        entryRetention: round(r.entryRetention.mean),
       },
     ]),
   );
@@ -342,8 +381,8 @@ export function formatReport(results: CaseResult[]): string {
     s.min === s.max ? s.mean.toFixed(2) : `${s.mean.toFixed(2)} (${s.min.toFixed(2)}-${s.max.toFixed(2)})`;
 
   const lines = [
-    'case                      runs  pass  agree  recall             reqs',
-    '------------------------  ----  ----  -----  -----------------  -----------------',
+    'case                      runs  pass  agree  keep   recall             reqs',
+    '------------------------  ----  ----  -----  -----  -----------------  -----------------',
   ];
 
   for (const r of results) {
@@ -351,8 +390,13 @@ export function formatReport(results: CaseResult[]): string {
       [
         r.name.padEnd(24),
         String(r.runs.length).padStart(4),
-        (r.passed ? ' ok ' : 'FAIL').padEnd(4),
+        (r.passed
+          ? r.runs.some((run) => run.gates.some((g) => g.known))
+            ? 'ok* '
+            : ' ok '
+          : 'FAIL').padEnd(4),
         r.selectionAgreement.toFixed(2).padStart(5),
+        r.entryRetention.mean.toFixed(2).padStart(5),
         range(r.recall).padStart(17),
         range(r.requirementCoverage).padStart(17),
       ].join('  '),
@@ -362,9 +406,22 @@ export function formatReport(results: CaseResult[]): string {
     // worse than a consistent one.
     r.runs.forEach((run, i) => {
       for (const gate of run.gates.filter((g) => !g.passed)) {
-        lines.push(`    run ${i + 1}: \u2717 ${gate.name} \u2014 ${gate.detail}`);
+        const mark = gate.known ? '\u2717 known' : '\u2717';
+        lines.push(`    run ${i + 1}: ${mark} ${gate.name} \u2014 ${gate.detail}`);
       }
     });
+
+    const known = [...new Set(r.runs.flatMap((run) => run.gates.filter((g) => g.known).map((g) => g.name)))];
+    for (const name of known) {
+      const why = r.runs.flatMap((run) => run.gates.filter((g) => g.name === name && g.known))[0]?.known ?? '';
+      lines.push(`    known: ${name} \u2014 ${why.split('.')[0]}.`);
+    }
+
+    if (r.entryRetention.mean < 1 && r.entryRetention.max > r.entryRetention.min) {
+      lines.push(
+        `    note: a role marked as required employment history survived only ${(r.entryRetention.mean * 100).toFixed(0)}% of runs`,
+      );
+    }
 
     if (r.selectionAgreement < 0.85 && r.runs.length > 1) {
       lines.push(

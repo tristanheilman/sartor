@@ -66,7 +66,12 @@ function loadPlans(dir: string): ReturnType<typeof tailorPlanSchema.parse>[] {
   return sources.map((p) => tailorPlanSchema.parse(JSON.parse(readFileSync(p, 'utf8'))));
 }
 
-function loadCase(name: string): { testCase: EvalCase; plans: ReturnType<typeof tailorPlanSchema.parse>[] } {
+function loadCase(name: string): {
+  testCase: EvalCase;
+  plans: ReturnType<typeof tailorPlanSchema.parse>[];
+  /** Gate name -> why it is known to fail. See the assertion below. */
+  knownFailures: Record<string, string>;
+} {
   const dir = join(CASES, name);
   const json = (f: string) => JSON.parse(readFileSync(join(dir, f), 'utf8')) as Record<string, unknown>;
   const labels = json('labels.json');
@@ -80,9 +85,12 @@ function loadCase(name: string): { testCase: EvalCase; plans: ReturnType<typeof 
       pageTarget: labels.pageTarget as 1 | 2,
       mustInclude: labels.mustInclude as string[],
       mustExclude: labels.mustExclude as string[],
+      mustKeepEntries: (labels.mustKeepEntries ?? []) as string[],
       forbidden: labels.forbidden as string[],
+      knownFailures: (labels.knownFailures ?? {}) as Record<string, string>,
     },
     plans: loadPlans(dir),
+    knownFailures: (labels.knownFailures ?? {}) as Record<string, string>,
   };
 }
 
@@ -99,19 +107,41 @@ describe('gold-standard cases', () => {
   });
 
   describe.each(caseNames)('%s', (name) => {
-    const { testCase, plans } = loadCase(name);
+    const { testCase, plans, knownFailures } = loadCase(name);
     const result = scoreCase(testCase, plans);
     results.push(result);
 
     // Every gate, on every recording. A gate that holds four times out of
     // five has not held, and the label names the run so an intermittent
     // failure can be located.
-    it.each(
-      result.runs.flatMap((run, i) =>
-        run.gates.map((g) => [`run ${i + 1} · ${g.name}`, g] as const),
-      ),
-    )('%s', (_label, gate) => {
-      expect(gate.passed, gate.detail).toBe(true);
+    //
+    // A gate listed in `knownFailures` is a defect we have measured and cannot
+    // fix yet. Rather than tolerate it silently, the assertion inverts: it
+    // requires the gate to still be failing somewhere. The day a change fixes
+    // it, this test goes red and whoever fixed it deletes the marker — so a
+    // known defect can never quietly become an unnoticed one.
+    const gateNames = [...new Set(result.runs.flatMap((r) => r.gates.map((g) => g.name)))];
+
+    it.each(gateNames)('%s', (gateName) => {
+      const outcomes = result.runs.map((run, i) => ({
+        run: i + 1,
+        gate: run.gates.find((g) => g.name === gateName)!,
+      }));
+      const failed = outcomes.filter((o) => !o.gate.passed);
+      const known = knownFailures[gateName];
+
+      if (known) {
+        expect(
+          failed.length,
+          `"${gateName}" is marked as known-failing (${known}) but now passes on every run — delete it from knownFailures in labels.json`,
+        ).toBeGreaterThan(0);
+        return;
+      }
+
+      expect(
+        failed.map((o) => `run ${o.run}: ${o.gate.detail}`),
+        `${gateName} failed`,
+      ).toEqual([]);
     });
 
     it('keeps the essential bullets in every run', () => {

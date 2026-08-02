@@ -1,0 +1,32 @@
+Senior Mobile Engineer (React Native) — Waypoint Mobility
+
+Waypoint builds the driver-facing app for regional delivery fleets. About 60,000
+drivers open it every morning and it has to work on a five-year-old Android
+phone with two bars of signal. The mobile team is six people and owns the app
+end to end: the React Native codebase, the native modules underneath it, and
+the release pipeline that ships both stores every week.
+
+What you will own
+- The reliability of background location tracking. This is the heart of the
+  product and the hardest thing we do — battery, OS restrictions, and accuracy
+  all pull against each other.
+- Release engineering. We ship weekly to both stores and want that to be dull.
+- Payments. Drivers get paid through the app and we are mid-migration to a new
+  processor.
+- Mentoring two junior engineers who joined this year.
+
+What we need
+- Strong production experience with React Native and TypeScript. Required —
+  this is the whole codebase.
+- Experience with native iOS development in Swift or Objective-C. You will be
+  writing bridge modules, not just JavaScript.
+- Proficiency with CI/CD for mobile — Fastlane, GitHub Actions, or similar.
+  Required. Weekly releases do not happen by hand.
+- Experience integrating a payment processor such as Stripe.
+- Familiarity with Firebase, particularly Cloud Messaging and Firestore.
+- Track record of shipping to a large installed user base.
+
+Nice to have
+- Detox or Maestro for end-to-end mobile testing.
+- GraphQL experience — we are moving that way next year.
+- Kotlin for the Android side of bridge modules.

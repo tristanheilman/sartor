@@ -1,0 +1,233 @@
+{
+  "$recorded": "claude-sonnet-5, sample 3 of 5, recorded 2026-08-02. Real model output against a real profile; employer and project names replaced, bullet IDs and every include/exclude decision left exactly as recorded \u2014 those are what the case measures.",
+  "summary": {
+    "text": "Mobile developer with production experience building and maintaining React Native applications for a live user base of 20k+ iOS and Android users. Worked on background location tracking reliability, led a Stripe payment processor integration under a 40-day deadline, and built CI/CD pipelines with Fastlane and GitHub Actions for weekly app releases. Also builds native iOS bridge modules connecting Swift frameworks to React Native.",
+    "rationale": "Summary foregrounds the profile facts that map directly to the posting's core ownership areas (location tracking, payments, release engineering, native bridge work) without introducing any unsupported claims like the 60k driver scale or GraphQL."
+  },
+  "sectionOrder": [
+    "summary",
+    "skills",
+    "work",
+    "projects",
+    "education"
+  ],
+  "work": [
+    {
+      "id": "wrk_32d7ae9a97ce54c4",
+      "include": true,
+      "order": 1,
+      "bullets": [
+        {
+          "bulletId": "blt_fab954c9b7163fa6",
+          "include": true,
+          "order": 1,
+          "text": "Refactored driver tracking geolocation logic by optimizing GPS polling and background task handling, significantly reducing battery drain and improving real-time accuracy under variable network conditions",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Directly matches the posting's core ownership area of background location tracking reliability; kept verbatim since it already states the fact precisely."
+        },
+        {
+          "bulletId": "blt_ccacc95d8c92487f",
+          "include": true,
+          "order": 2,
+          "text": "Co-led the integration of Stripe as a new payment processor with a strict 40-day timeline, ensuring seamless transition and business continuity",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Matches the posting's payments requirement (Stripe integration) exactly; no changes needed."
+        },
+        {
+          "bulletId": "blt_3b32a911c8aab11a",
+          "include": true,
+          "order": 3,
+          "text": "Developed CI/CD pipelines using Fastlane and GitHub Actions, improving testing and deployment efficiency by reducing deployment times by over 15 minutes per deployment",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Directly matches the required CI/CD stack (Fastlane, GitHub Actions) for weekly release engineering."
+        },
+        {
+          "bulletId": "blt_90233d035d12793e",
+          "include": true,
+          "order": 4,
+          "text": "Supported a user base of 20k+ iOS and Android users",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Provides evidence of shipping to a real installed user base, relevant to the posting's track-record requirement, without inflating the number."
+        },
+        {
+          "bulletId": "blt_e3298d71e0195516",
+          "include": true,
+          "order": 5,
+          "text": "Served as the main technical point of contact between two development teams during a parallel backend system transition; delivered technical guidance that resolved 90% of integration roadblocks",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Shows cross-team technical guidance, loosely relevant to the mentoring aspect of the role, kept as-is."
+        },
+        {
+          "bulletId": "blt_cb8e9864be839834",
+          "include": true,
+          "order": 6,
+          "text": "Collaborated directly with business to prioritize roadmap features, design intuitive UI flows, resolve issues, and implement custom mobile solutions that addressed real user needs",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "General mobile ownership bullet, kept for context on end-to-end product involvement."
+        }
+      ]
+    },
+    {
+      "id": "wrk_faeef87d78866064",
+      "include": true,
+      "order": 2,
+      "bullets": [
+        {
+          "bulletId": "blt_4160e06c5c18d1c4",
+          "include": true,
+          "order": 1,
+          "text": "Reduced manual testing time by roughly 20% through automation of a regression testing suite using Jenkins",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Shows prior CI/CD and automation experience relevant to the release engineering requirement, using Jenkins."
+        },
+        {
+          "bulletId": "blt_f58d6f8c9685fed8",
+          "include": true,
+          "order": 2,
+          "text": "Improved application reliability by implementing Selenium and improving test coverage of UI/UX features by 30%",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Shows general testing background, loosely relevant to the team's quality practices; kept as supporting evidence."
+        },
+        {
+          "bulletId": "blt_89aac8cc0e96af52",
+          "include": false,
+          "order": 3,
+          "text": "Restructured multiple pages on the front-end Lattice application using YUI (Yahoo\u2019s UI library) and Tabulator to improve datatable features",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Front-end web datatable work using YUI has no relevance to a React Native mobile role; dropped to save space."
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "prj_744403bdbb1b0f1a",
+      "include": true,
+      "order": 1,
+      "bullets": [
+        {
+          "bulletId": "blt_180af7d839485368",
+          "include": true,
+          "order": 1,
+          "text": "Built a public React Native library to bridge iOS ObjectCapture and PhotogrammatrySession views and classes to the javascript scope",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Directly demonstrates native iOS bridge module development in Swift-based frameworks exposed to React Native, matching the posting's native bridge requirement."
+        },
+        {
+          "bulletId": "blt_27989065f4c4bdef",
+          "include": true,
+          "order": 2,
+          "text": "Published and maintaining a public NPM package",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Supports credibility of independent mobile library maintenance; kept as-is."
+        }
+      ]
+    },
+    {
+      "id": "prj_19ab89e80d17c2e7",
+      "include": true,
+      "order": 2,
+      "bullets": [
+        {
+          "bulletId": "blt_7a6d0f4e856a72e2",
+          "include": true,
+          "order": 1,
+          "text": "Developed a full stack mobile application originally using Firebase and React Native (2020)",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Shows direct production experience with Firebase and React Native, both required/nice-to-have in the posting."
+        },
+        {
+          "bulletId": "blt_18aae2e3e4b28ca1",
+          "include": false,
+          "order": 2,
+          "text": "Reengineered the backend system to utilize AWS services: EC2, ELB, RDS (PostgreSQL), VPC, ECR, WAF, CloudWatch, and Cognito (2025)",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "AWS backend work is unrelated to this mobile-focused posting; excluded to keep resume focused."
+        },
+        {
+          "bulletId": "blt_87e32920ba749e13",
+          "include": false,
+          "order": 3,
+          "text": "Built website using Vue.js and implemented SSR pages to allow for metatags to be associated with app links for event and user sharing",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Vue.js web SSR work is unrelated to the React Native mobile role; excluded."
+        }
+      ]
+    }
+  ],
+  "education": [
+    {
+      "id": "edu_ea257595d85775f0",
+      "include": true,
+      "order": 1,
+      "bullets": []
+    }
+  ],
+  "skills": [
+    {
+      "id": "skl_123b7449b675b68f",
+      "include": true,
+      "order": 1,
+      "keywords": [
+        "React / React Native",
+        "Javascript / Typescript",
+        "Swift / Objective-C",
+        "Java / Kotlin"
+      ]
+    },
+    {
+      "id": "skl_fcc510beb6e24205",
+      "include": true,
+      "order": 2,
+      "keywords": [
+        "iOS / Android Development",
+        "App / Play Store Deployment",
+        "Push Notification Support",
+        "State Management (Redux / Context API)"
+      ]
+    },
+    {
+      "id": "skl_9c6330402eba8b80",
+      "include": true,
+      "order": 3,
+      "keywords": [
+        "Firebase (Authentication, Cloud Messaging, Hosting, Firestore)"
+      ]
+    },
+    {
+      "id": "skl_e436a903ace6fa70",
+      "include": true,
+      "order": 4,
+      "keywords": [
+        "Fastlane",
+        "Github / Git",
+        "Jenkins"
+      ]
+    },
+    {
+      "id": "skl_36b4757e7a37b0fa",
+      "include": true,
+      "order": 5,
+      "keywords": [
+        "Jest / Detox / Appium",
+        "Unit / Integration / Regression",
+        "App Automation Testing"
+      ]
+    }
+  ],
+  "notes": "The profile does not support several posting requirements: no evidence of a 60,000-user scale (profile shows 20k+ users); no GraphQL experience anywhere in the profile; no Maestro end-to-end testing experience (only Detox/Appium/Jest listed); Kotlin appears only as a general language skill, not specifically tied to Android bridge-module work; and there is no direct mention of Firestore usage in production beyond the general Firebase keyword listing."
+}

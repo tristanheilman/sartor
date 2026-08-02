@@ -1,0 +1,27 @@
+{
+  "intent": "A role whose bullets are genuinely marginal for the posting, which is where the selector stops being deterministic. Ardent Systems is a 2019-2020 co-op with three QA and web bullets, none of which matter much to a React Native posting \u2014 so whether it survives is a judgement call, and across five recordings of the same profile and posting the model made it differently: the role was kept twice and dropped three times. Nothing in the prompt says a job has value as employment history independent of its bullets, so there is no tie-break and the dice decide. platform-stretch cannot show this, because its second employer has obviously relevant work and every recording keeps it.",
+  "pageTarget": 1,
+  "mustInclude": [
+    "blt_90233d035d12793e",
+    "blt_fab954c9b7163fa6",
+    "blt_ccacc95d8c92487f",
+    "blt_3b32a911c8aab11a",
+    "blt_e3298d71e0195516"
+  ],
+  "mustExclude": [
+    "blt_89aac8cc0e96af52",
+    "blt_18aae2e3e4b28ca1",
+    "blt_87e32920ba749e13"
+  ],
+  "mustKeepEntries": [
+    "wrk_faeef87d78866064"
+  ],
+  "forbidden": [
+    "Detox",
+    "Maestro",
+    "GraphQL"
+  ],
+  "knownFailures": {
+    "fits-page-target": "The two recordings that keep Ardent Systems are the two that overflow one page (57 and 56 of 52 lines). Keeping the employer costs lines the selector does not free up elsewhere, so page budget and employment continuity are in direct conflict and it resolves that by dropping the employer. A fix has to keep the role AND cut something \u2014 probably down to its single least-bad bullet."
+  }
+}
