@@ -218,6 +218,7 @@ if (profile) {
     const drafted = [];
     const newRoles = [];
     const endedRoles = [];
+    let draftedSummary = '';
     let n = 0;
 
     for (const q of questions) {
@@ -241,7 +242,11 @@ if (profile) {
         cfg,
       );
       const parsed = lib.draftedBulletsSchema.parse(reply.json);
-      const bullets = parsed.bullets;
+      // A summary describes a career, so nothing from that question belongs
+      // under a job — enforced here as well as asked for, because the model
+      // can ignore an instruction and the merge cannot tell the difference.
+      const bullets = gap.kind === 'no-summary' ? [] : parsed.bullets;
+      if (gap.kind === 'no-summary' && parsed.summary.trim()) draftedSummary = parsed.summary.trim();
       // An answer can describe a job the profile has never heard of.
       if (parsed.newRole?.name?.trim()) newRoles.push({ role: parsed.newRole, gapId: gap.id });
       if (parsed.endedRole?.ownerId?.trim() && parsed.endedRole?.endDate?.trim()) {
@@ -256,6 +261,8 @@ if (profile) {
         answer,
         bullets,
         newRole: parsed.newRole?.name?.trim() ? parsed.newRole : null,
+        summary: gap.kind === 'no-summary' ? parsed.summary : '',
+        droppedBullets: gap.kind === 'no-summary' ? parsed.bullets.length : 0,
         endedRole: parsed.endedRole?.ownerId?.trim() ? parsed.endedRole : null,
         remainingAfter: lib.remainingGaps(gaps, [answer]).length,
       });
@@ -299,7 +306,9 @@ if (profile) {
 
     const incoming = lib.profileSchema.parse({
       ...lib.emptyProfile(lib.ids.profile()),
-      basics: profile.basics,
+      // The summary goes through planMerge's field-level basics path, so an
+      // existing one is a conflict the user resolves rather than an overwrite.
+      basics: { ...profile.basics, summary: draftedSummary || profile.basics.summary },
       work: incomingWork,
     });
 
@@ -316,7 +325,7 @@ if (profile) {
       name: 'gap interview',
       status: 'ran',
       outputs: ['03-gaps.json', '03-turns.json', '03-interview/'],
-      note: `${turns.filter((t) => t.answered).length} answered, ${drafted.length} bullets drafted${newRoles.length ? `, ${newRoles.length} new role(s)` : ''}`,
+      note: `${turns.filter((t) => t.answered).length} answered, ${drafted.length} bullets drafted${newRoles.length ? `, ${newRoles.length} new role(s)` : ''}${draftedSummary ? ', summary written' : ''}`,
     });
     record({
       id: '04',

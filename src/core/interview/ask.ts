@@ -97,10 +97,22 @@ export const draftedBulletsSchema = z.object({
   bullets: z.array(draftedBulletSchema).default([]),
   newRole: draftedRoleSchema.prefault({}),
   endedRole: endedRoleSchema.prefault({}),
+  /**
+   * The professional summary, when that is what was asked about.
+   *
+   * Not every answer belongs to a job. With nowhere for this to go, an answer
+   * describing a whole career was written as bullets and attached to whichever
+   * role was most recent — so "Enjoys owning a feature end to end" appeared
+   * under one employer, as though it were something that happened there.
+   */
+  summary: z.string().default(''),
 });
 export type DraftedBullet = z.infer<typeof draftedBulletSchema>;
 
 const S = { type: 'string' } as const;
+
+/** Fences the answer so the model cannot mistake it for instructions. */
+const quote = (text: string) => `"""\n${text}\n"""`;
 
 export const QUESTIONS_JSON_SCHEMA = {
   type: 'object',
@@ -122,8 +134,9 @@ export const QUESTIONS_JSON_SCHEMA = {
 export const DRAFTED_BULLETS_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['bullets', 'newRole', 'endedRole'],
+  required: ['bullets', 'newRole', 'endedRole', 'summary'],
   properties: {
+    summary: S,
     endedRole: {
       type: 'object',
       additionalProperties: false,
@@ -200,12 +213,26 @@ export function buildAnswerPrompt(
     dates: `${w.startDate}–${w.endDate || 'present'}`,
   }));
 
+  // A summary describes a career, not something that happened at one employer.
+  // Asking for bullets here and then placing them is how an answer about the
+  // whole of someone's work ended up filed under their current job.
+  if (gap.kind === 'no-summary') {
+    return `Question asked: ${question}
+
+Their answer, verbatim:
+${quote(answer)}
+
+Write this as their professional summary: two or three sentences, in their own
+words, stating only what the answer states. Put it in "summary".
+
+Return no bullets. This describes their career as a whole, not work done at any
+one employer, so none of it belongs under a job.`;
+  }
+
   return `Question asked: ${question}
 
 Their answer, verbatim:
-"""
-${answer}
-"""
+${quote(answer)}
 
 This was about: ${gap.subject}
 
@@ -233,6 +260,8 @@ same format the other dates use. Only when they say so — a role you assume has
 ended because a newer one started is a guess, and dates are checked.
 
 Otherwise leave both fields of "endedRole" empty.
+
+Leave "summary" empty; this question was not about their profile as a whole.
 
 Write the resume bullet or bullets this answer supports. Use only what the answer says.`;
 }
