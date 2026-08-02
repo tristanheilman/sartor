@@ -182,3 +182,29 @@ export {
 } from './core/render/parseSafety';
 
 export { TEMPLATES, getTemplate, type Template } from './core/render/templates';
+
+/**
+ * The gap interview: what to ask, how to ask it, and how to read the answer.
+ *
+ * `findGaps` is deterministic and needs no model — question *selection* is
+ * measured, not improvised. The prompts are the only part a provider sees.
+ */
+export {
+  findGaps,
+  remainingGaps,
+  type Gap,
+  type GapKind,
+  type FindGapsOptions,
+} from './core/interview/gaps';
+
+export {
+  INTERVIEW_SYSTEM_PROMPT,
+  buildQuestionsPrompt,
+  buildAnswerPrompt,
+  questionsSchema,
+  draftedBulletsSchema,
+  QUESTIONS_JSON_SCHEMA,
+  DRAFTED_BULLETS_JSON_SCHEMA,
+  type InterviewQuestion,
+  type DraftedBullet,
+} from './core/interview/ask';
