@@ -449,15 +449,22 @@ if (doc) {
   // Everything that went in has to come back out, or the document is
   // unreadable to whatever parses it next.
   const flat = back.text.replace(/\s+/g, ' ');
-  const missing = doc.sections
-    .flatMap((s) => s.entries ?? [])
-    .flatMap((e) => e.bullets)
-    .filter((b) => !flat.includes(b.text.replace(/\s+/g, ' ')));
+  // Every piece of generated prose, not just the bullets. A hyphen inserted
+  // at a line break mangled a summary for three runs while this reported zero
+  // losses, because summaries were never in the set being checked.
+  const passages = [
+    ...doc.sections.filter((s) => s.summary).map((s) => ({ where: 'summary', text: s.summary })),
+    ...doc.sections
+      .flatMap((s) => s.entries ?? [])
+      .flatMap((e) => e.bullets.map((b) => ({ where: 'bullet', text: b.text }))),
+  ];
+  const missing = passages.filter((p) => !flat.includes(p.text.replace(/\s+/g, ' ')));
 
   write('09-roundtrip.json', {
-    bulletsChecked: doc.sections.flatMap((s) => s.entries ?? []).flatMap((e) => e.bullets).length,
-    bulletsLost: missing.length,
-    lost: missing.map((b) => b.text),
+    passagesChecked: passages.length,
+    passagesLost: missing.length,
+    lost: missing,
+    hyphenBreaks: (back.text.match(/[A-Za-z]{3,}-\n/g) ?? []).length,
   });
 
   const coverage = jdText ? lib.buildCoverage(jdText, lib.documentToSlices(doc), profile) : null;
@@ -472,7 +479,7 @@ if (doc) {
     name: 'read the PDF back',
     status: missing.length ? 'blocked' : 'ran',
     outputs: ['09-extracted-back.txt', '09-roundtrip.json'],
-    note: missing.length ? `${missing.length} bullets did not survive` : 'every bullet survived',
+    note: missing.length ? `${missing.length} passage(s) did not survive` : `all ${passages.length} passages survived`,
   });
   record({ id: '10', name: 'coverage + parse safety', status: 'ran', outputs: coverage ? ['10-coverage.json', '10-parse-safety.json'] : ['10-parse-safety.json'] });
 } else {

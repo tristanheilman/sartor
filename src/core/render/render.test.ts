@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { renderPdfBlob } from './pdf';
+import { extractResumeText } from '../parse/extract';
 import { profileSchema } from '../schema';
 import { tailorPlanSchema } from '../tailor/plan';
 import { buildChanges, buildDocument } from '../tailor/apply';
@@ -185,4 +189,49 @@ describe('DOCX rendering', () => {
       await expect(Packer.toBuffer(buildDocxDocument(doc, t.id))).resolves.toBeDefined();
     }
   }, 30_000);
+});
+
+/**
+ * A rendered PDF has to say the same thing to a parser as it does to a person.
+ *
+ * @react-pdf hyphenates by default, and the hyphen it inserts at a line break
+ * lands in the text layer: three generated resumes came back out with
+ * "significant-loca- tion-change", "signifi- cantly" and "geolo- cation". A
+ * reader searching for the whole word finds nothing, and the round-trip
+ * guarantee the export path rests on is quietly false.
+ */
+describe('words are never broken across lines', () => {
+  const pdfWorkerSrc = pathToFileURL(
+    createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+  ).href;
+
+  beforeAll(() => {
+    globalThis.DOMMatrix ??= class {} as unknown as typeof DOMMatrix;
+  });
+
+  it('keeps a long identifier whole through render and extraction', async () => {
+    // Long enough to land mid-line at the column width, which is what triggers
+    // hyphenation. Both of these were mangled in real runs.
+    const long =
+      'Wrote the native iOS side of a background location module in Swift, wrapping CLLocationManager with significant-location-change and deferred updates for reliable backgrounded geolocation.';
+
+    const withLongWord = profileSchema.parse({
+      ...profile,
+      work: [{ ...profile.work[0], bullets: [{ id: 'blt_1', text: long }] }],
+    });
+    const longPlan = tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: [{ id: 'wrk_1', include: true, order: 0, bullets: [{ bulletId: 'blt_1', include: true, order: 0 }] }],
+    });
+
+    const doc = buildDocument(withLongWord, longPlan, buildChanges(withLongWord, longPlan));
+    const blob = await renderPdfBlob(doc, 'classic');
+    const back = await extractResumeText(
+      new File([blob], 'r.pdf', { type: 'application/pdf' }),
+      { pdfWorkerSrc },
+    );
+
+    expect(back.text.match(/[A-Za-z]{3,}-\n/g) ?? []).toEqual([]);
+    expect(back.text.replace(/\s+/g, ' ')).toContain(long);
+  });
 });

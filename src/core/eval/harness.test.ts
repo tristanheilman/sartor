@@ -187,15 +187,21 @@ describe('gold-standard cases', () => {
       expect(extracted.kind).toBe('pdf');
       expect(flat).toContain(testCase.profile.basics.name);
 
-      // Every bullet that made the cut has to come back out intact. Rendering
-      // that silently drops or mangles a line is the failure mode here.
+      // Every piece of generated prose has to come back intact — summaries as
+      // well as bullets. Checking only bullets let a hyphenated summary pass
+      // as clean for three runs.
       for (const section of doc.sections) {
+        if (section.summary) expect(flat, 'summary').toContain(section.summary.replace(/\s+/g, ' '));
         for (const entry of section.entries ?? []) {
           for (const bullet of entry.bullets) {
-            expect(flat).toContain(bullet.text.replace(/\s+/g, ' '));
+            expect(flat, `bullet ${bullet.sourceId}`).toContain(bullet.text.replace(/\s+/g, ' '));
           }
         }
       }
+
+      // A word split across lines takes its hyphen into the text layer, so the
+      // reader searching for the whole word never finds it.
+      expect(extracted.text.match(/[A-Za-z]{3,}-\n/g) ?? [], 'words broken across lines').toEqual([]);
     });
 
     it('renders the same facts to text as to PDF', () => {
