@@ -2,8 +2,8 @@
   "marginal-role": {
     "recall": 1,
     "requirementCoverage": 1,
-    "selectionAgreement": 0.85,
-    "entryRetention": 0.4
+    "selectionAgreement": 0.9,
+    "entryRetention": 1
   },
   "platform-stretch": {
     "recall": 1,

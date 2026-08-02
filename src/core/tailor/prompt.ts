@@ -35,6 +35,21 @@ WHAT YOU MAY DO
 - Rewrite the professional summary.
 - Choose which existing skill keywords to show, and in what order.
 
+KEEPING THE WORK HISTORY INTACT
+A job is evidence that the candidate was employed, which is separate from
+whether its bullets are worth reading. Dropping a role leaves a hole in the
+dates, and a reader fills an unexplained hole with the worst explanation
+available. That costs more than a weak bullet ever does.
+
+So when a role's bullets are weak or off-topic for this posting, cut the
+bullets, not the role. Set include:true on the entry and keep only its single
+most relevant bullet — or none at all, leaving just the employer, title and
+dates. Reserve include:false for a role the candidate would not want on any
+resume at all.
+
+When the page is tight, take bullets from the roles that have the most, and
+from the oldest roles first. Never buy space by removing an employer.
+
 WHAT YOU MUST NEVER DO
 - Introduce a skill, technology, tool, employer, job title, date, credential,
   or metric that does not appear in the master profile. Not once, not softened,
@@ -117,7 +132,7 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
   const totalBullets = profile.work.reduce((n, w) => n + w.bullets.length, 0);
   const budget = pageTarget === 1 ? 14 : 26;
   return totalBullets > budget
-    ? `The profile has ${totalBullets} experience bullets and the target is ${pageTarget} page(s), which fits roughly ${budget}. You will need to drop bullets. Drop the ones least relevant to this posting, and say why in each rationale.`
+    ? `The profile has ${totalBullets} experience bullets and the target is ${pageTarget} page(s), which fits roughly ${budget}. You will need to drop bullets — bullets, not roles. Drop the ones least relevant to this posting, taking them from the roles that have the most and from the oldest roles first, and say why in each rationale.`
     : `The profile has ${totalBullets} experience bullets, which fits within ${pageTarget} page(s). Include what is relevant; you do not need to cut aggressively.`;
 }
 

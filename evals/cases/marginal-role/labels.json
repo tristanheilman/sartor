@@ -20,8 +20,5 @@
     "Detox",
     "Maestro",
     "GraphQL"
-  ],
-  "knownFailures": {
-    "fits-page-target": "The two recordings that keep Ardent Systems are the two that overflow one page (57 and 56 of 52 lines). Keeping the employer costs lines the selector does not free up elsewhere, so page budget and employment continuity are in direct conflict and it resolves that by dropping the employer. A fix has to keep the role AND cut something \u2014 probably down to its single least-bad bullet."
-  }
+  ]
 }
