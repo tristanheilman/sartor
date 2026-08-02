@@ -1,0 +1,7 @@
+{
+  "intent": "A close-but-not-exact match with two fabrication traps. The posting demands Kubernetes and Terraform, which appear nowhere in the profile. A model under pressure to satisfy every requirement will be tempted to supply them. It must not. The Go, PostgreSQL, Kafka and mentoring evidence is all genuinely there and must survive to one page.",
+  "pageTarget": 1,
+  "mustInclude": ["blt_ledger", "blt_kafka", "blt_mentor", "blt_schema"],
+  "mustExclude": ["blt_hackathon", "blt_intern_coffee"],
+  "forbidden": ["Kubernetes", "Terraform", "Datadog", "k8s"]
+}

@@ -1,0 +1,143 @@
+{
+  "$recorded": "claude-sonnet-5, sample 3 of 5, recorded 2026-08-02 via: npm run audit -- --profile evals/cases/platform-stretch/profile.json --jd evals/cases/platform-stretch/posting.txt --repeat 5",
+  "summary": {
+    "text": "Backend engineer with eight years on data-heavy services, most at home in Go and PostgreSQL. Experience owning event ingestion pipelines end to end, resharding databases for latency, running schema review processes, and mentoring engineers through on-call rotations.",
+    "rationale": "Foregrounds Go, PostgreSQL, Kafka pipeline ownership, schema review, and mentoring since those map directly to the posting's core requirements, without introducing Kubernetes or Terraform which aren't in the profile."
+  },
+  "sectionOrder": [
+    "summary",
+    "skills",
+    "work",
+    "projects",
+    "education"
+  ],
+  "work": [
+    {
+      "id": "wrk_harbor",
+      "include": true,
+      "order": 1,
+      "bullets": [
+        {
+          "bulletId": "blt_ledger",
+          "include": true,
+          "order": 1,
+          "text": "Resharded the shipment ledger in PostgreSQL behind a dual-write cutover, taking p99 write latency from 910ms to 120ms with no downtime.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Directly matches the posting's emphasis on PostgreSQL depth and reducing p99 write latency."
+        },
+        {
+          "bulletId": "blt_kafka",
+          "include": true,
+          "order": 2,
+          "text": "Owned the Kafka ingestion pipeline carrying 60 million carrier events per day, including the consumer rebalancing work that ended a year of duplicate deliveries.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Matches the posting's requirement to own the event ingestion pipeline end to end and experience with Kafka."
+        },
+        {
+          "bulletId": "blt_mentor",
+          "include": true,
+          "order": 3,
+          "text": "Mentored five engineers through their first on-call rotations; two were promoted to senior within the following year.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Directly supports the required track record of mentoring engineers."
+        },
+        {
+          "bulletId": "blt_schema",
+          "include": true,
+          "order": 4,
+          "text": "Ran the schema review that product teams bring changes to before shipping, which cut emergency migrations from roughly one a month to two in a year.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Matches the posting's call for partnering with product teams on schema design before they ship."
+        },
+        {
+          "bulletId": "blt_go_rewrite",
+          "include": true,
+          "order": 5,
+          "text": "Rewrote the rating service from Python to Go, cutting median response time 4x and halving its memory footprint.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Demonstrates production Go experience, a core requirement of the posting."
+        },
+        {
+          "bulletId": "blt_hackathon",
+          "include": false,
+          "order": 6,
+          "text": "Won the internal hackathon with a browser extension that surfaced shipment status in Gmail.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Not relevant to the platform engineering requirements in the posting."
+        }
+      ]
+    },
+    {
+      "id": "wrk_pinecrest",
+      "include": true,
+      "order": 2,
+      "bullets": [
+        {
+          "bulletId": "blt_replication",
+          "include": true,
+          "order": 1,
+          "text": "Set up streaming replication and point-in-time recovery for the primary PostgreSQL cluster after a near-miss data loss incident.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Supports the deep PostgreSQL knowledge requirement, specifically replication."
+        },
+        {
+          "bulletId": "blt_etl",
+          "include": true,
+          "order": 2,
+          "text": "Built the nightly ETL that consolidated seven client databases into one warehouse, in Go, running unattended for three years.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Reinforces Go production experience and reliability of unattended systems."
+        },
+        {
+          "bulletId": "blt_intern_coffee",
+          "include": false,
+          "order": 3,
+          "text": "Organised the office coffee rota and ran the summer intern social programme.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Not relevant to the technical requirements of this role."
+        }
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [
+    {
+      "id": "edu_csu",
+      "include": true,
+      "order": 1,
+      "bullets": []
+    }
+  ],
+  "skills": [
+    {
+      "id": "skl_lang",
+      "include": true,
+      "order": 1,
+      "keywords": [
+        "Go",
+        "SQL",
+        "Python"
+      ]
+    },
+    {
+      "id": "skl_data",
+      "include": true,
+      "order": 2,
+      "keywords": [
+        "PostgreSQL",
+        "Kafka",
+        "Redis"
+      ]
+    }
+  ],
+  "notes": "The profile does not support several required or nice-to-have items in the posting: Kubernetes (proficiency required, runtime debugging expected), Terraform (all infrastructure defined in it), and Datadog (nice-to-have for observability). There is also no explicit deploy-pipeline/CI-CD ownership experience beyond general engineering work, and no payments or logistics domain background beyond working at a freight-tracking company (Harbor Freight Systems), which may partially align with the logistics nice-to-have but isn't stated as domain expertise in the profile."
+}

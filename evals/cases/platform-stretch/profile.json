@@ -1,0 +1,113 @@
+{
+  "id": "prf_platform_stretch",
+  "label": "Riley Okafor",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "basics": {
+    "name": "Riley Okafor",
+    "label": "Backend Engineer",
+    "email": "riley.okafor@example.com",
+    "phone": "(555) 010-2288",
+    "url": "https://rileyokafor.example.com",
+    "summary": "Backend engineer with eight years on data-heavy services. Most at home in Go and PostgreSQL, and happiest owning a system end to end rather than a slice of one.",
+    "location": { "city": "Denver", "region": "CO" }
+  },
+  "work": [
+    {
+      "id": "wrk_harbor",
+      "name": "Harbor Freight Systems",
+      "position": "Senior Backend Engineer",
+      "location": "Denver, CO",
+      "startDate": "2021-02",
+      "endDate": "",
+      "bullets": [
+        {
+          "id": "blt_ledger",
+          "text": "Resharded the shipment ledger in PostgreSQL behind a dual-write cutover, taking p99 write latency from 910ms to 120ms with no downtime.",
+          "tags": ["postgres", "performance"],
+          "variants": []
+        },
+        {
+          "id": "blt_kafka",
+          "text": "Owned the Kafka ingestion pipeline carrying 60 million carrier events per day, including the consumer rebalancing work that ended a year of duplicate deliveries.",
+          "tags": ["kafka", "reliability"],
+          "variants": []
+        },
+        {
+          "id": "blt_mentor",
+          "text": "Mentored five engineers through their first on-call rotations; two were promoted to senior within the following year.",
+          "tags": ["mentoring"],
+          "variants": []
+        },
+        {
+          "id": "blt_schema",
+          "text": "Ran the schema review that product teams bring changes to before shipping, which cut emergency migrations from roughly one a month to two in a year.",
+          "tags": ["postgres", "process"],
+          "variants": []
+        },
+        {
+          "id": "blt_go_rewrite",
+          "text": "Rewrote the rating service from Python to Go, cutting median response time 4x and halving its memory footprint.",
+          "tags": ["go", "performance"],
+          "variants": []
+        },
+        {
+          "id": "blt_hackathon",
+          "text": "Won the internal hackathon with a browser extension that surfaced shipment status in Gmail.",
+          "tags": ["side"],
+          "variants": []
+        }
+      ],
+      "tags": []
+    },
+    {
+      "id": "wrk_pinecrest",
+      "name": "Pinecrest Analytics",
+      "position": "Backend Engineer",
+      "location": "Remote",
+      "startDate": "2018-05",
+      "endDate": "2021-01",
+      "bullets": [
+        {
+          "id": "blt_etl",
+          "text": "Built the nightly ETL that consolidated seven client databases into one warehouse, in Go, running unattended for three years.",
+          "tags": ["go", "data"],
+          "variants": []
+        },
+        {
+          "id": "blt_replication",
+          "text": "Set up streaming replication and point-in-time recovery for the primary PostgreSQL cluster after a near-miss data loss incident.",
+          "tags": ["postgres", "reliability"],
+          "variants": []
+        },
+        {
+          "id": "blt_intern_coffee",
+          "text": "Organised the office coffee rota and ran the summer intern social programme.",
+          "tags": ["side"],
+          "variants": []
+        }
+      ],
+      "tags": []
+    }
+  ],
+  "education": [
+    {
+      "id": "edu_csu",
+      "institution": "Colorado State University",
+      "area": "Computer Science",
+      "studyType": "BS",
+      "startDate": "2014",
+      "endDate": "2018",
+      "courses": [],
+      "bullets": []
+    }
+  ],
+  "projects": [],
+  "skills": [
+    { "id": "skl_lang", "name": "Languages", "keywords": ["Go", "Python", "SQL"] },
+    { "id": "skl_data", "name": "Data", "keywords": ["PostgreSQL", "Kafka", "Redis"] }
+  ],
+  "certificates": [],
+  "awards": [],
+  "languages": []
+}
