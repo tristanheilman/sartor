@@ -1,6 +1,6 @@
 import { Document, Font, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
 import type { ResumeDocument, DocSection } from './model';
-import { getTemplate, type Template } from './templates';
+import { getTemplate, type Template, type TemplateRef } from './templates';
 
 /**
  * PDF rendering.
@@ -30,6 +30,21 @@ import { getTemplate, type Template } from './templates';
  * no document for which we would want the other behaviour.
  */
 Font.registerHyphenationCallback((word) => [word]);
+
+/**
+ * Separator between contact details.
+ *
+ * One space each side, not two. With two, a line that wraps at the separator
+ * gets a hyphen written into the text layer — the contact line came back out of
+ * a rendered PDF ending "linkedin.com/in/tristanheilman ·-", with the hyphen
+ * both drawn on the page and present in the extracted text. The callback above
+ * stops words being split; it does not stop this, because the thing being
+ * broken is the separator rather than a word.
+ *
+ * The bug only shows once the contact line is long enough to wrap, which is why
+ * it went unnoticed until profile links started being captured.
+ */
+const CONTACT_SEPARATOR = ' · ';
 
 function makeStyles(t: Template) {
   return StyleSheet.create({
@@ -132,7 +147,7 @@ function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
   );
 }
 
-export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId: string }) {
+export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId: TemplateRef }) {
   const t = getTemplate(templateId);
   const s = makeStyles(t);
 
@@ -148,7 +163,7 @@ export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId
           <Text style={s.name}>{doc.contact.name}</Text>
           {doc.contact.label ? <Text style={s.label}>{doc.contact.label}</Text> : null}
           {doc.contact.details.length > 0 ? (
-            <Text style={s.contact}>{doc.contact.details.join('  ·  ')}</Text>
+            <Text style={s.contact}>{doc.contact.details.join(CONTACT_SEPARATOR)}</Text>
           ) : null}
         </View>
 
@@ -165,6 +180,6 @@ export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId
   );
 }
 
-export async function renderPdfBlob(doc: ResumeDocument, templateId: string): Promise<Blob> {
+export async function renderPdfBlob(doc: ResumeDocument, templateId: TemplateRef): Promise<Blob> {
   return pdf(<ResumePdf doc={doc} templateId={templateId} />).toBlob();
 }

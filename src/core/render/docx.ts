@@ -10,7 +10,7 @@ import {
   TextRun,
 } from 'docx';
 import type { ResumeDocument, DocSection } from './model';
-import { getTemplate, type Template } from './templates';
+import { getTemplate, type Template, type TemplateRef } from './templates';
 
 /**
  * DOCX rendering.
@@ -116,7 +116,7 @@ function sectionParagraphs(section: DocSection, t: Template): Paragraph[] {
   return out;
 }
 
-export function buildDocxDocument(doc: ResumeDocument, templateId: string): Document {
+export function buildDocxDocument(doc: ResumeDocument, templateId: TemplateRef): Document {
   const t = getTemplate(templateId);
 
   const children: Paragraph[] = [
@@ -140,7 +140,8 @@ export function buildDocxDocument(doc: ResumeDocument, templateId: string): Docu
     children.push(
       new Paragraph({
         spacing: { after: 120 },
-        children: [run(doc.contact.details.join('  ·  '), t, { color: '333333', size: t.baseSize * 0.95 })],
+        // Matched to the PDF separator so the two formats read identically.
+        children: [run(doc.contact.details.join(' · '), t, { color: '333333', size: t.baseSize * 0.95 })],
       }),
     );
   }
@@ -184,6 +185,6 @@ export function buildDocxDocument(doc: ResumeDocument, templateId: string): Docu
   });
 }
 
-export async function renderDocxBlob(doc: ResumeDocument, templateId: string): Promise<Blob> {
+export async function renderDocxBlob(doc: ResumeDocument, templateId: TemplateRef): Promise<Blob> {
   return Packer.toBlob(buildDocxDocument(doc, templateId));
 }

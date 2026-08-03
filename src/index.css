@@ -23,7 +23,7 @@ body {
 
 /* `@utility` rather than a plain class, so these compose with `@apply` below. */
 @utility field {
-  @apply w-full rounded-md border border-stone-300 bg-white px-2.5 py-1.5 text-sm;
+  @apply w-full rounded-md border border-stone-300/80 bg-white/80 px-2.5 py-1.5 text-sm;
   @apply placeholder:text-stone-400 focus:border-sky-600 focus:outline-none;
 }
 
@@ -37,17 +37,130 @@ body {
 }
 
 @utility btn-secondary {
-  @apply btn border border-stone-300 bg-white text-stone-800 hover:bg-stone-100;
+  @apply btn border border-stone-300/80 bg-white/75 text-stone-800 hover:bg-white;
+  backdrop-filter: blur(8px);
 }
 
 @utility btn-ghost {
   @apply btn text-stone-600 hover:bg-stone-200/70;
 }
 
+/* Panels sit *on* the haze rather than blocking it out. Translucent, with a
+   backdrop blur so the colour behind reads as depth instead of noise. */
 @utility card {
-  @apply rounded-lg border border-stone-200 bg-white;
+  @apply rounded-xl border border-white/70 bg-white/72;
+  @apply shadow-[0_1px_2px_rgba(20,22,26,0.04),0_10px_30px_-14px_rgba(20,22,26,0.14)];
+  backdrop-filter: blur(16px) saturate(1.5);
 }
 
 @utility label {
   @apply mb-1 block text-xs font-medium tracking-wide text-stone-500 uppercase;
 }
+
+/* ------------------------------------------------------------------ *
+ * The haze
+ *
+ * Four washes of desaturated colour under everything. Only `transform` is
+ * animated — the blur is applied once, because recomputing a full-screen blur
+ * every frame is the difference between this being free and being a fan.
+ * ------------------------------------------------------------------ */
+
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  --px: 0.5;
+  --py: 0.4;
+}
+
+.aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.85;
+  will-change: transform;
+}
+
+/* Each wash drifts on its own loop and leans on the pointer by a different
+   amount, which is what reads as depth rather than one sheet sliding about. */
+.aurora-1 {
+  width: 46rem; height: 46rem; top: -12rem; left: -6rem;
+  background: radial-gradient(circle at 50% 50%, #8fa8e6, transparent 66%);
+  animation: drift-a 44s ease-in-out infinite;
+  transform: translate3d(calc((var(--px) - 0.5) * 46px), calc((var(--py) - 0.5) * 34px), 0);
+}
+.aurora-2 {
+  width: 38rem; height: 38rem; top: -8rem; right: -6rem;
+  background: radial-gradient(circle at 50% 50%, #eda9bd, transparent 66%);
+  animation: drift-b 53s ease-in-out infinite;
+  transform: translate3d(calc((var(--px) - 0.5) * -62px), calc((var(--py) - 0.5) * 26px), 0);
+}
+.aurora-3 {
+  width: 42rem; height: 42rem; bottom: -16rem; left: 14%;
+  background: radial-gradient(circle at 50% 50%, #9fd0ae, transparent 68%);
+  animation: drift-c 61s ease-in-out infinite;
+  transform: translate3d(calc((var(--px) - 0.5) * 34px), calc((var(--py) - 0.5) * -44px), 0);
+}
+.aurora-4 {
+  width: 34rem; height: 34rem; bottom: -12rem; right: 2%;
+  background: radial-gradient(circle at 50% 50%, #f0cf9c, transparent 66%);
+  animation: drift-d 49s ease-in-out infinite;
+  transform: translate3d(calc((var(--px) - 0.5) * -28px), calc((var(--py) - 0.5) * -30px), 0);
+}
+
+/* Lifts the paper back up so body text keeps its contrast over the colour. */
+.aurora-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--color-paper) 24%, transparent),
+    color-mix(in srgb, var(--color-paper) 52%, transparent)
+  );
+}
+
+/* The blobs already carry a pointer offset in `transform`, so the drift is
+   expressed as its own translation composed on top by the animation itself. */
+@keyframes drift-a {
+  0%, 100% { margin: 0 0; }
+  50%      { margin: 5rem -3rem; }
+}
+@keyframes drift-b {
+  0%, 100% { margin: 0 0; }
+  50%      { margin: -4rem 4rem; }
+}
+@keyframes drift-c {
+  0%, 100% { margin: 0 0; }
+  50%      { margin: -6rem -4rem; }
+}
+@keyframes drift-d {
+  0%, 100% { margin: 0 0; }
+  50%      { margin: 3rem 5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-blob { animation: none; transform: none; }
+}
+
+/* Cards sit on the haze rather than blocking it out. */
+@utility card-glass {
+  @apply card;
+}
+
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+.spinner {
+  width: 1.35rem; height: 1.35rem; border-radius: 50%;
+  border: 2px solid rgba(20, 22, 26, 0.12);
+  border-top-color: rgba(20, 22, 26, 0.62);
+  animation: spin-slow 700ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.rise { animation: rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .rise { animation: none; } }

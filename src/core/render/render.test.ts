@@ -4,11 +4,13 @@ import { pathToFileURL } from 'node:url';
 import { renderPdfBlob } from './pdf';
 import { extractResumeText } from '../parse/extract';
 import { profileSchema } from '../schema';
-import { tailorPlanSchema } from '../tailor/plan';
+import { identityPlan, tailorPlanSchema } from '../tailor/plan';
 import { buildChanges, buildDocument } from '../tailor/apply';
 import { documentToSlices, documentToText, estimateLines } from './model';
 import { parseSafetyChecks, worstStatus } from './parseSafety';
-import { TEMPLATES, getTemplate } from './templates';
+import { TEMPLATES, getTemplate, isBuiltInTemplate, templateSchema } from './templates';
+import { renderPlainText } from './text';
+import type { DocSection } from './model';
 
 /**
  * Integration tests for the render layer. These actually produce a PDF and a
@@ -66,6 +68,9 @@ const plan = tailorPlanSchema.parse({
 });
 
 const doc = buildDocument(profile, plan, buildChanges(profile, plan));
+
+/** A heading the document builder would never emit with nothing under it. */
+const emptySection: DocSection = { key: 'awards', heading: 'Awards', kind: 'list', items: [] };
 
 describe('render model', () => {
   it('produces the expected sections in order', () => {
@@ -156,6 +161,56 @@ describe('templates', () => {
   it('falls back to the first template for an unknown id', () => {
     expect(getTemplate('nope').id).toBe('classic');
   });
+
+  it('every built-in id is unique', () => {
+    expect(new Set(TEMPLATES.map((t) => t.id)).size).toBe(TEMPLATES.length);
+  });
+
+  it('resolves a user template passed as an object', () => {
+    const mine = templateSchema.parse({ ...TEMPLATES[0]!, id: 'tpl_1', label: 'Mine' });
+    expect(getTemplate(mine).label).toBe('Mine');
+    expect(isBuiltInTemplate('tpl_1')).toBe(false);
+    expect(isBuiltInTemplate('classic')).toBe(true);
+  });
+
+  it('refuses a template whose values would break the document', () => {
+    // The bounds are the whole reason "bring your own template" is safe.
+    expect(templateSchema.safeParse({ ...TEMPLATES[0]!, baseSize: 4 }).success).toBe(false);
+    expect(templateSchema.safeParse({ ...TEMPLATES[0]!, pageMargin: 2 }).success).toBe(false);
+    expect(templateSchema.safeParse({ ...TEMPLATES[0]!, bodyFont: 'Comic Sans' }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('plain text rendering', () => {
+  const text = renderPlainText(doc);
+
+  it('keeps the headings, dates, and bullet markers the guard sweep drops', () => {
+    expect(text).toContain('EXPERIENCE');
+    expect(text).toContain('Senior Engineer — Acme Robotics');
+    expect(text).toContain('- Led the billing migration');
+    // documentToText is for the guard and deliberately has none of that.
+    expect(documentToText(doc)).not.toContain('EXPERIENCE');
+  });
+
+  it('leads with the contact block', () => {
+    expect(text.split('\n')[0]).toBe('Dana Reyes');
+    expect(text).toContain('dana@example.com');
+  });
+
+  it('says the same things as the rendered document', () => {
+    for (const slice of documentToSlices(doc)) {
+      for (const line of slice.text.split('\n').filter(Boolean)) {
+        expect(text).toContain(line);
+      }
+    }
+  });
+
+  it('never emits an empty heading', () => {
+    const lines = renderPlainText({ ...doc, sections: [...doc.sections, emptySection] }).split('\n');
+    expect(lines).not.toContain('AWARDS');
+  });
 });
 
 describe('PDF rendering', () => {
@@ -233,5 +288,35 @@ describe('words are never broken across lines', () => {
 
     expect(back.text.match(/[A-Za-z]{3,}-\n/g) ?? []).toEqual([]);
     expect(back.text.replace(/\s+/g, ' ')).toContain(long);
+  });
+
+  it('does not hyphenate a contact line long enough to wrap', async () => {
+    // The separator, not a word, is what gets broken here, so the hyphenation
+    // callback does not help. Enough links to force a wrap is the whole test.
+    const linked = profileSchema.parse({
+      ...profile,
+      basics: {
+        ...profile.basics,
+        url: 'dana.example.com',
+        profiles: [
+          { network: 'LinkedIn', url: 'linkedin.com/in/danareyes' },
+          { network: 'GitHub', url: 'github.com/danareyes' },
+          { network: 'NPM', url: 'npmjs.com/~danareyes' },
+        ],
+      },
+    });
+
+    const doc = buildDocument(linked, identityPlan(), []);
+    const blob = await renderPdfBlob(doc, 'classic');
+    const back = await extractResumeText(new File([blob], 'r.pdf', { type: 'application/pdf' }), {
+      pdfWorkerSrc,
+    });
+
+    expect(back.text).not.toContain('·-');
+    expect(back.text).not.toMatch(/-\s*\n/);
+    // Every link survives the wrap intact.
+    for (const link of ['linkedin.com/in/danareyes', 'github.com/danareyes', 'npmjs.com/~danareyes']) {
+      expect(back.text.replace(/\s+/g, ' ')).toContain(link);
+    }
   });
 });

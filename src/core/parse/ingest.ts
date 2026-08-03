@@ -27,6 +27,13 @@ You are transcribing, not writing. Rules:
 - Preserve numbers, metrics, and proper nouns exactly as written.
 - Put skills into groups if the resume groups them; otherwise use one group
   named "Skills".
+- Contact links go in \`basics.profiles\`, one entry each: LinkedIn, GitHub,
+  a portfolio, an NPM or Stack Overflow page. Name the network as a person
+  would say it ("LinkedIn", "GitHub"), and copy the address exactly as printed
+  into \`url\`, even when it has no scheme. The one personal site or portfolio
+  belongs in \`basics.url\` instead — do not list it in both places.
+- A single date on an entry is its end date. Write it to \`endDate\` and leave
+  \`startDate\` empty rather than repeating the same value in both.
 - If a section is absent from the resume, return an empty array for it.
 
 Extraction from PDFs is lossy. If a line looks garbled, transcribe your best
@@ -47,6 +54,18 @@ const rawSchema = z.object({
       summary: z.string().default(''),
       city: z.string().default(''),
       region: z.string().default(''),
+      // LinkedIn, GitHub, and the like. A resume that lists them is telling the
+      // reader where to go next, and dropping them silently loses the only part
+      // of the document a human might actually click.
+      profiles: z
+        .array(
+          z.object({
+            network: z.string().default(''),
+            username: z.string().default(''),
+            url: z.string().default(''),
+          }),
+        )
+        .default([]),
     })
     // `prefault` so a model response that omits `basics` still yields fully
     // populated string fields rather than `undefined`s.
@@ -145,6 +164,7 @@ export const INGEST_JSON_SCHEMA = obj({
     summary: S,
     city: S,
     region: S,
+    profiles: { type: 'array', items: obj({ network: S, username: S, url: S }) },
   }),
   work: {
     type: 'array',
@@ -200,7 +220,15 @@ export function rawToProfile(raw: z.infer<typeof rawSchema>, label: string): Pro
       url: raw.basics.url,
       summary: raw.basics.summary,
       location: { city: raw.basics.city, region: raw.basics.region },
-      profiles: [],
+      // A link with neither a username nor a URL names a network the reader
+      // cannot visit, which is worse than omitting it.
+      profiles: raw.basics.profiles
+        .filter((p) => (p.username.trim() || p.url.trim()) && p.network.trim())
+        .map((p) => ({
+          network: p.network.trim(),
+          username: p.username.trim(),
+          url: p.url.trim(),
+        })),
     },
     work: raw.work.map((w) => ({ id: ids.work(), ...w, bullets: withIds(w.bullets) })),
     education: raw.education.map((e) => ({

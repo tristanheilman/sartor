@@ -57,7 +57,13 @@ export function ProfileEditor({ profile, onChange, warnings = [] }: Props) {
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-stone-500">
         <span>{profile.work.length} roles</span>
         <span>{bulletCount} bullets</span>
-        <span>{variantCount} stored phrasings</span>
+        {/* Only once there are some. A count of zero of a thing nobody has
+            heard of explains nothing and takes up the same room. */}
+        {variantCount > 0 && (
+          <span>
+            {variantCount} alternate wording{variantCount === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
 
       <Section title="Basics" defaultOpen>
@@ -380,7 +386,7 @@ function BulletList({
             {b.variants.length > 0 && (
               <details className="mt-1 ml-6 text-xs">
                 <summary className="cursor-pointer text-stone-500">
-                  {b.variants.length} stored phrasing{b.variants.length === 1 ? '' : 's'} of this
+                  {b.variants.length} alternate wording{b.variants.length === 1 ? '' : 's'} of this
                   same fact
                 </summary>
                 <ul className="mt-1 space-y-1">

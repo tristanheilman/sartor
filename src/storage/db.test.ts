@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
-import { profileSchema, type Profile, type TailorRun } from '../index';
+import { TEMPLATES, profileSchema, type Profile, type TailorRun } from '../index';
 import * as db from './db';
 
 /**
@@ -44,6 +44,24 @@ function makeRun(id: string, profileId: string, createdAt: string, title = 'Back
     },
     changes: [],
     notes: '',
+  };
+}
+
+function makeExport(id: string, profileId: string, createdAt: string): db.ExportRecord {
+  return {
+    id,
+    profileId,
+    runId: null,
+    createdAt,
+    label: 'Master profile',
+    fileBase: 'Dana Reyes',
+    formats: ['pdf'],
+    template: TEMPLATES[0]!,
+    pageTarget: 1,
+    doc: {
+      contact: { name: 'Dana Reyes', label: 'Engineer', details: ['dana@example.com'] },
+      sections: [],
+    },
   };
 }
 
@@ -117,6 +135,57 @@ describe('runs', () => {
   });
 });
 
+describe('exports', () => {
+  it('lists exports for a profile, newest first, scoped to that profile', async () => {
+    await db.saveExport(makeExport('exp_old', 'prf_1', '2026-02-01T00:00:00Z'));
+    await db.saveExport(makeExport('exp_new', 'prf_1', '2026-03-01T00:00:00Z'));
+    await db.saveExport(makeExport('exp_other', 'prf_2', '2026-04-01T00:00:00Z'));
+
+    expect((await db.listExports('prf_1')).map((e) => e.id)).toEqual(['exp_new', 'exp_old']);
+    expect(await db.listExports('prf_2')).toHaveLength(1);
+  });
+
+  it('keeps its own copy of the document, so editing the profile cannot rewrite history', async () => {
+    await db.saveProfile(makeProfile('prf_1'));
+    await db.saveExport(makeExport('exp_1', 'prf_1', '2026-02-01T00:00:00Z'));
+
+    const edited = makeProfile('prf_1');
+    edited.basics.name = 'Someone Else';
+    await db.saveProfile(edited);
+
+    const [record] = await db.listExports('prf_1');
+    expect(record?.doc.contact.name).toBe('Dana Reyes');
+  });
+
+  it('survives a template being deleted, because the template is copied in', async () => {
+    await db.saveExport(makeExport('exp_1', 'prf_1', '2026-02-01T00:00:00Z'));
+    await db.saveSettings({ ...db.DEFAULT_SETTINGS, customTemplates: [] });
+
+    const [record] = await db.listExports('prf_1');
+    expect(record?.template.baseSize).toBe(10);
+  });
+
+  it('deletes one export without touching its siblings', async () => {
+    await db.saveExport(makeExport('exp_1', 'prf_1', '2026-02-01T00:00:00Z'));
+    await db.saveExport(makeExport('exp_2', 'prf_1', '2026-02-02T00:00:00Z'));
+
+    await db.deleteExport('exp_1');
+
+    expect((await db.listExports('prf_1')).map((e) => e.id)).toEqual(['exp_2']);
+  });
+
+  it('deleting a profile takes its exports with it', async () => {
+    await db.saveProfile(makeProfile('prf_1'));
+    await db.saveExport(makeExport('exp_1', 'prf_1', '2026-02-01T00:00:00Z'));
+    await db.saveExport(makeExport('exp_2', 'prf_2', '2026-02-01T00:00:00Z'));
+
+    await db.deleteProfile('prf_1');
+
+    expect(await db.listExports('prf_1')).toEqual([]);
+    expect(await db.listExports('prf_2')).toHaveLength(1);
+  });
+});
+
 describe('settings', () => {
   it('returns defaults before anything is saved', async () => {
     const s = await db.loadSettings();
@@ -133,15 +202,17 @@ describe('settings', () => {
 });
 
 describe('eraseEverything', () => {
-  it('clears profiles, runs, and settings together', async () => {
+  it('clears profiles, runs, exports, and settings together', async () => {
     await db.saveProfile(makeProfile('prf_1'));
     await db.saveRun(makeRun('run_a', 'prf_1', '2026-02-01T00:00:00Z'));
     await db.saveSettings({ ...db.DEFAULT_SETTINGS, templateId: 'compact' });
+    await db.saveExport(makeExport('exp_1', 'prf_1', '2026-02-01T00:00:00Z'));
 
     await db.eraseEverything();
 
     expect(await db.listProfiles()).toEqual([]);
     expect(await db.listRuns('prf_1')).toEqual([]);
+    expect(await db.listExports('prf_1')).toEqual([]);
     expect((await db.loadSettings()).templateId).toBe('classic');
   });
 });
