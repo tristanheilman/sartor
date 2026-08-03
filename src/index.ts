@@ -208,3 +208,32 @@ export {
   type InterviewQuestion,
   type DraftedBullet,
 } from './core/interview/ask';
+
+/**
+ * The conversation layer over the interview: what a reply may turn into, and
+ * which taps resolve with no model call at all.
+ */
+export {
+  quickReplies,
+  applyQuickReply,
+  bestOwner,
+  lanesFor,
+  progress,
+  type LaneKind,
+  type QuickReply,
+  type ImmediateResult,
+  type OwnerGuess,
+  type Progress,
+} from './core/interview/conversation';
+
+/**
+ * Checking a drafted bullet against the answer that produced it, which is what
+ * lets the interview rewrite for strength without letting it invent.
+ */
+export {
+  verifyDraft,
+  needsFollowUp,
+  answerLexicon,
+  type VerifiedBullet,
+  type VerifiedDraft,
+} from './core/interview/verify';
