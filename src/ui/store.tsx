@@ -11,9 +11,12 @@ import {
   PROVIDER_LIST,
   getProvider,
   writeBackVariants,
+  newId,
   type Change,
   type Profile,
+  type ResumeDocument,
   type TailorRun,
+  type Template,
 } from '../index';
 import * as db from '../storage/db';
 import { getApiKey, setApiKey as persistKey, clearApiKey } from '../storage/keys';
@@ -26,6 +29,8 @@ interface Store {
   run: TailorRun | null;
   /** Past runs for the active profile, newest first. */
   runs: TailorRun[];
+  /** Documents this browser has produced for the active profile, newest first. */
+  exports: db.ExportRecord[];
   /** Present only for the current tab session. */
   apiKey: string | null;
 
@@ -38,6 +43,15 @@ interface Store {
   removeRun(id: string): Promise<void>;
   updateChange(changeId: string, patch: Partial<Change>): void;
   commitRun(): Promise<void>;
+  recordExport(input: {
+    label: string;
+    fileBase: string;
+    formats: string[];
+    template: Template;
+    pageTarget: 1 | 2;
+    doc: ResumeDocument;
+  }): Promise<void>;
+  removeExport(id: string): Promise<void>;
   saveKey(key: string): void;
   forgetKey(): void;
   eraseEverything(): Promise<void>;
@@ -52,6 +66,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [run, setRun] = useState<TailorRun | null>(null);
   const [runs, setRuns] = useState<TailorRun[]>([]);
+  const [exports, setExports] = useState<db.ExportRecord[]>([]);
   const [apiKey, setKeyState] = useState<string | null>(null);
 
   useEffect(() => {
@@ -76,6 +91,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     void db.listRuns(profile.id).then(setRuns);
   }, [profile?.id, run]);
+
+  useEffect(() => {
+    if (!profile) {
+      setExports([]);
+      return;
+    }
+    void db.listExports(profile.id).then(setExports);
+  }, [profile?.id]);
 
   const updateSettings = useCallback(async (patch: Partial<db.StoredSettings>) => {
     setSettings((prev) => {
@@ -171,6 +194,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [run, profile]);
 
+  /**
+   * Records a document that was actually downloaded.
+   *
+   * Called after the file is saved rather than before, so a render that throws
+   * leaves no record of a document the user never received.
+   */
+  const recordExport = useCallback<Store['recordExport']>(
+    async (input) => {
+      if (!profile) return;
+      const record: db.ExportRecord = {
+        id: newId('exp'),
+        profileId: profile.id,
+        runId: run?.id ?? null,
+        createdAt: new Date().toISOString(),
+        ...input,
+      };
+      await db.saveExport(record);
+      setExports((prev) => [record, ...prev]);
+    },
+    [profile, run],
+  );
+
+  const removeExport = useCallback(async (id: string) => {
+    await db.deleteExport(id);
+    setExports((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
   const saveKey = useCallback(
     (key: string) => {
       persistKey(settings.providerId, key);
@@ -190,6 +240,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setRun(null);
     setRuns([]);
+    setExports([]);
     setSettings(db.DEFAULT_SETTINGS);
   }, []);
 
@@ -201,6 +252,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       profile,
       run,
       runs,
+      exports,
       apiKey,
       updateSettings,
       selectProfile,
@@ -211,6 +263,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeRun,
       updateChange,
       commitRun,
+      recordExport,
+      removeExport,
       saveKey,
       forgetKey,
       eraseEverything,
@@ -222,6 +276,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       profile,
       run,
       runs,
+      exports,
       apiKey,
       updateSettings,
       selectProfile,
@@ -231,6 +286,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removeRun,
       updateChange,
       commitRun,
+      recordExport,
+      removeExport,
       saveKey,
       forgetKey,
       eraseEverything,

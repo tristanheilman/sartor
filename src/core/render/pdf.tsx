@@ -1,6 +1,6 @@
-import { Document, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
+import { Document, Font, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
 import type { ResumeDocument, DocSection } from './model';
-import { getTemplate, type Template } from './templates';
+import { getTemplate, type Template, type TemplateRef } from './templates';
 
 /**
  * PDF rendering.
@@ -9,6 +9,42 @@ import { getTemplate, type Template } from './templates';
  * absolute positioning, no `fixed` header or footer, no images. Text flows in a
  * single column in reading order, which is exactly what a text extractor walks.
  */
+
+/**
+ * Never break a word across lines.
+ *
+ * @react-pdf hyphenates by default, and a hyphen inserted at a line break ends
+ * up in the text layer: "significant-location-change" came back out of a
+ * rendered PDF as "significant-loca- tion-change". That silently breaks the one
+ * property this whole export path exists to guarantee — that the document says
+ * the same thing to a parser as it does to a person — and it breaks keyword
+ * matching for the reader on the other end, who is searching for a whole word.
+ *
+ * Returning the word as a single fragment is how @react-pdf is told not to
+ * split it. The cost is that a word longer than the column can overflow rather
+ * than break; on a resume, the longest tokens are identifiers and URLs, and a
+ * URL that runs to the margin is a smaller problem than one that cannot be
+ * copied.
+ *
+ * Registered at module load, because it is global to the renderer and there is
+ * no document for which we would want the other behaviour.
+ */
+Font.registerHyphenationCallback((word) => [word]);
+
+/**
+ * Separator between contact details.
+ *
+ * One space each side, not two. With two, a line that wraps at the separator
+ * gets a hyphen written into the text layer — the contact line came back out of
+ * a rendered PDF ending "linkedin.com/in/tristanheilman ·-", with the hyphen
+ * both drawn on the page and present in the extracted text. The callback above
+ * stops words being split; it does not stop this, because the thing being
+ * broken is the separator rather than a word.
+ *
+ * The bug only shows once the contact line is long enough to wrap, which is why
+ * it went unnoticed until profile links started being captured.
+ */
+const CONTACT_SEPARATOR = ' · ';
 
 function makeStyles(t: Template) {
   return StyleSheet.create({
@@ -111,7 +147,7 @@ function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
   );
 }
 
-export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId: string }) {
+export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId: TemplateRef }) {
   const t = getTemplate(templateId);
   const s = makeStyles(t);
 
@@ -127,7 +163,7 @@ export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId
           <Text style={s.name}>{doc.contact.name}</Text>
           {doc.contact.label ? <Text style={s.label}>{doc.contact.label}</Text> : null}
           {doc.contact.details.length > 0 ? (
-            <Text style={s.contact}>{doc.contact.details.join('  ·  ')}</Text>
+            <Text style={s.contact}>{doc.contact.details.join(CONTACT_SEPARATOR)}</Text>
           ) : null}
         </View>
 
@@ -144,6 +180,6 @@ export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId
   );
 }
 
-export async function renderPdfBlob(doc: ResumeDocument, templateId: string): Promise<Blob> {
+export async function renderPdfBlob(doc: ResumeDocument, templateId: TemplateRef): Promise<Blob> {
   return pdf(<ResumePdf doc={doc} templateId={templateId} />).toBlob();
 }

@@ -1,18 +1,23 @@
 import { useMemo, useState } from 'react';
 import { StoreProvider, useStore, useActiveProvider } from './store';
-import { KeyPanel } from './components/KeyPanel';
 import { ProfileEditor } from './components/ProfileEditor';
+import { Aurora } from './components/Aurora';
+import { SettingsButton } from './components/SettingsButton';
 import { ImportPanel } from './components/ImportPanel';
+import { InterviewPanel } from './components/InterviewPanel';
 import { JobPanel } from './components/JobPanel';
 import { ReviewPanel } from './components/ReviewPanel';
 import { ExportPanel } from './components/ExportPanel';
+import { ExportHistoryPanel } from './components/ExportHistoryPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import {
   DEFAULT_CONSTRAINTS,
+  TEMPLATES,
   blockingChanges,
   buildCoverage,
   buildDocument,
   documentToSlices,
+  identityPlan,
   runTailor,
   type JobDescription,
   type Profile,
@@ -42,10 +47,12 @@ function Shell() {
   const hasRun = store.run !== null;
 
   const steps: Array<{ id: Step; label: string; enabled: boolean }> = [
-    { id: 'profile', label: '1. Master profile', enabled: true },
-    { id: 'job', label: '2. Job posting', enabled: hasProfile },
-    { id: 'review', label: '3. Review changes', enabled: hasRun },
-    { id: 'export', label: '4. Export', enabled: hasRun },
+    { id: 'profile', label: 'Profile', enabled: true },
+    { id: 'job', label: 'Job posting', enabled: hasProfile },
+    { id: 'review', label: 'Review', enabled: hasRun },
+    // Export needs a profile, not a run. Without a run it prints the master
+    // profile as it stands, which is the whole point of keeping one.
+    { id: 'export', label: 'Export', enabled: hasProfile },
   ];
 
   // Deleting a profile or erasing all data can pull the ground out from under
@@ -55,43 +62,34 @@ function Shell() {
   const activeStep: Step = steps.find((s) => s.id === step)?.enabled ? step : 'profile';
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8">
-      <header className="mb-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-2xl font-bold tracking-tight">Sartor</h1>
-          <p className="text-sm text-stone-500">
-            Your resume and your key stay in this browser. There is no server to send them to.
-          </p>
-        </div>
+    <div className="mx-auto max-w-5xl px-4 py-8">
+      <Aurora />
+      <header className="mb-7 flex items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold tracking-tight">Sartor</h1>
+        <SettingsButton />
       </header>
 
-      <nav className="mb-6 flex flex-wrap gap-1 border-b border-stone-300">
-        {steps.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            disabled={!s.enabled}
-            onClick={() => setStep(s.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:text-stone-300 ${
-              activeStep === s.id
-                ? 'border-ink text-ink'
-                : 'border-transparent text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => setStep('profile')}
-          className="ml-auto px-3 py-2 text-sm text-stone-400"
-          aria-hidden
-          tabIndex={-1}
-        />
-      </nav>
+      {/* Nothing to navigate to until there is a profile, so the row stays out
+          of the way until it means something. */}
+      {hasProfile && (
+        <nav className="mb-7 flex flex-wrap items-center gap-x-5 gap-y-2">
+          {steps.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              disabled={!s.enabled}
+              onClick={() => setStep(s.id)}
+              className={`text-sm transition-colors disabled:cursor-not-allowed disabled:text-stone-300 ${
+                activeStep === s.id ? 'font-medium text-ink' : 'text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="space-y-6">
-        <KeyPanel />
 
         {activeStep === 'profile' && <ProfileStep onDone={() => setStep('job')} />}
         {activeStep === 'job' && (
@@ -116,6 +114,9 @@ function ProfileStep({ onDone }: { onDone(): void }) {
   const [draft, setDraft] = useState<Profile | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  // The interview runs against the draft, before anything is persisted, so a
+  // person can see what their answers did and still walk away from all of it.
+  const [interviewing, setInterviewing] = useState(false);
 
   // A freshly parsed profile lives here, unsaved, until it is confirmed.
   const editing = draft ?? profile;
@@ -126,6 +127,9 @@ function ProfileStep({ onDone }: { onDone(): void }) {
         onParsed={(p, w) => {
           setDraft(p);
           setWarnings(w);
+          // Straight into the questions: the gaps are most obvious, and most
+          // worth filling, the moment a resume has been read.
+          setInterviewing(true);
         }}
         onBlank={(p) => {
           setDraft(p);
@@ -140,6 +144,23 @@ function ProfileStep({ onDone }: { onDone(): void }) {
   // edits. Only the first one warrants "nothing has been saved yet".
   const hasEdits = draft !== null;
   const isNew = hasEdits && !profiles.some((p) => p.id === editing.id);
+
+  if (interviewing) {
+    return (
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+        <InterviewPanel
+          profile={editing}
+          onProfile={(next) => setDraft(next)}
+          onDone={() => setInterviewing(false)}
+        />
+        {/* The profile as it stands, updating as each answer lands. Hidden on
+            narrow screens, where the conversation is the whole screen. */}
+        <aside className="hidden lg:block">
+          <LiveProfile profile={editing} />
+        </aside>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -177,6 +198,15 @@ function ProfileStep({ onDone }: { onDone(): void }) {
           </p>
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="btn-secondary" onClick={() => setInterviewing(true)}>
+          Answer a few questions instead
+        </button>
+        <span className="text-sm text-stone-600">
+          Faster than the form, and it only asks about what is missing.
+        </span>
+      </div>
 
       <ProfileEditor profile={editing} onChange={(p) => setDraft(p)} warnings={warnings} />
 
@@ -318,10 +348,14 @@ function ReviewStep({ onDone }: { onDone(): void }) {
 }
 
 function ExportStep() {
-  const { profile, run, settings, updateSettings } = useStore();
+  const { profile, run, settings, updateSettings, exports, recordExport, removeExport } = useStore();
 
+  // No run means no tailoring: the identity plan renders the master profile
+  // verbatim. Nothing was rewritten, so there is nothing to accept, nothing to
+  // block on, and no posting to measure coverage against.
   const doc = useMemo(
-    () => (profile && run ? buildDocument(profile, run.plan, run.changes) : null),
+    () =>
+      profile ? buildDocument(profile, run ? run.plan : identityPlan(), run?.changes ?? []) : null,
     [profile, run],
   );
 
@@ -330,24 +364,57 @@ function ExportStep() {
     [doc, profile, run],
   );
 
-  if (!profile || !run || !doc || !coverage) return null;
+  if (!profile || !doc) return null;
 
-  const fileBase = [profile.basics.name || 'resume', run.jd.company || run.jd.title]
+  const fileBase = [profile.basics.name || 'resume', run ? run.jd.company || run.jd.title : '']
     .filter(Boolean)
     .join(' — ')
     .replace(/[^\w\s—-]/g, '')
     .trim();
 
+  const templates = [...TEMPLATES, ...settings.customTemplates];
+
+  // What this document was for, in the words the user will recognise later.
+  const label = run
+    ? [run.jd.title, run.jd.company].filter(Boolean).join(' · ') || 'Untitled posting'
+    : 'Master profile';
+
   return (
+    <>
     <ExportPanel
       doc={doc}
       coverage={coverage}
-      blocking={blockingChanges(run.changes)}
+      blocking={run ? blockingChanges(run.changes) : []}
+      templates={templates}
       templateId={settings.templateId}
       onTemplate={(id) => void updateSettings({ templateId: id })}
-      pageTarget={run.constraints.pageTarget}
+      onSaveTemplate={(t) => {
+        const next = settings.customTemplates.filter((c) => c.id !== t.id);
+        void updateSettings({ customTemplates: [...next, t] });
+      }}
+      onDeleteTemplate={(id) => {
+        void updateSettings({
+          customTemplates: settings.customTemplates.filter((c) => c.id !== id),
+          // Deleting the selected template would otherwise leave the picker
+          // pointing at nothing and the export silently falling back.
+          ...(settings.templateId === id ? { templateId: TEMPLATES[0]!.id } : {}),
+        });
+      }}
+      onExported={(formats, template) => {
+        void recordExport({
+          label,
+          fileBase: fileBase || 'resume',
+          formats,
+          template,
+          pageTarget: run ? run.constraints.pageTarget : settings.pageTarget,
+          doc,
+        });
+      }}
+      pageTarget={run ? run.constraints.pageTarget : settings.pageTarget}
       fileBase={fileBase || 'resume'}
     />
+    <ExportHistoryPanel records={exports} onDelete={(id) => void removeExport(id)} />
+    </>
   );
 }
 
@@ -372,5 +439,51 @@ function Footer() {
         Erase all local data
       </button>
     </footer>
+  );
+}
+
+/**
+ * The profile as it stands, beside the conversation.
+ *
+ * Answering a question and seeing nothing change is the fastest way to stop
+ * trusting a tool. This updates as each answer lands, so the effect of a reply
+ * is visible in the same moment it is given.
+ */
+function LiveProfile({ profile }: { profile: Profile }) {
+  const bullets = profile.work.reduce((n, w) => n + w.bullets.length, 0);
+
+  return (
+    <div className="card-glass sticky top-4 p-4">
+      <h3 className="text-sm font-semibold">Your profile, live</h3>
+      <p className="mt-1 font-mono text-xs text-stone-500">
+        {profile.work.length} role{profile.work.length === 1 ? '' : 's'} · {bullets} bullet
+        {bullets === 1 ? '' : 's'} · {profile.skills.reduce((n, s) => n + s.keywords.length, 0)} skills
+      </p>
+
+      {profile.basics.summary && (
+        <p className="mt-3 border-l-2 border-stone-300 pl-2 text-xs text-stone-600">
+          {profile.basics.summary}
+        </p>
+      )}
+
+      <div className="mt-3 flex max-h-[22rem] flex-col gap-3 overflow-y-auto">
+        {profile.work.map((w) => (
+          <div key={w.id}>
+            <p className="text-xs font-semibold">{w.position || 'Untitled role'}</p>
+            <p className="font-mono text-[11px] text-stone-500">
+              {w.name}
+              {w.startDate ? ` · ${w.startDate} — ${w.endDate || 'Present'}` : ''}
+            </p>
+            <ul className="mt-1 flex flex-col gap-1">
+              {w.bullets.map((b) => (
+                <li key={b.id} className="text-[11px] leading-snug text-stone-600">
+                  · {b.text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -19,6 +19,20 @@
  * candidate in the first place (candidates must be capitalised), so listing one
  * of these buys nothing and costs a real detection. The same trap is waiting in
  * `rust`, `swift`, `dart`, `ruby`, `julia`, `crystal`, `elm`, and `nim`.
+ *
+ * The list is in three blocks: function words and past-tense verbs; present and
+ * third-person verb forms, which a summary written in the third person opens
+ * lines with; and adjectives and adverbs.
+ *
+ * That last block was missing entirely until a generated summary opened with
+ * "Additional experience with Firebase" and the guard flagged "Additional" as a
+ * possible fabricated product name — blocking export over an ordinary English
+ * adjective. Sweeping eleven generated documents turned up that one false
+ * positive and no others, so the fix was this narrow.
+ *
+ * Nothing added is a technology name. Note the deliberate absence of `swift`,
+ * which is both an ordinary adjective and a language, and which the warning
+ * above forbids.
  */
 
 const WORDS = `
@@ -55,6 +69,17 @@ applying bringing expecting exploring hiring joining looking making meeting need
 starting taking using wanting
 comes expects gets gives goes handles helps includes keeps knows looks makes means meets needs offers prefers
 requires seeks takes uses wants works
+
+builds delivers designs develops drives ensures enjoys grows guides implements improves integrates leads
+maintains manages mentors operates optimizes owns partners performs plans prepares presents prioritizes provides
+reports researches reviews scales ships solves supports tests understands writes
+
+additional additionally broad closely comfortable complex consistent consistently continuous continuously
+current currently daily deep deeply demonstrated direct directly effective effectively efficient efficiently
+experienced extensive extensively familiar frequent frequently fully heavily highly independently initial
+initially junior multiple numerous ongoing overall previous previously primary primarily proficient proven
+rapidly recent recently regular regularly reliable responsible senior significantly skilled solid strong
+subsequently substantial successful successfully technical ultimately various weekly wide widely
 `
   .trim()
   .split(/\s+/);

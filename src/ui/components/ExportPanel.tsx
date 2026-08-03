@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { saveAs } from 'file-saver';
 import {
-  TEMPLATES,
+  getTemplate,
+  isBuiltInTemplate,
+  newId,
   parseSafetyChecks,
+  renderTextBlob,
+  templateSchema,
   type Change,
   type CoverageReport,
   type ParseCheck,
   type ResumeDocument,
+  type Template,
 } from '../../index';
 
 /**
@@ -16,36 +21,59 @@ import {
  * carries a violation the user has not vouched for, the buttons stay disabled.
  * A warning that can be clicked past is a warning that gets clicked past.
  */
+type Format = 'pdf' | 'docx' | 'txt';
+
 export function ExportPanel({
   doc,
   coverage,
   blocking,
+  templates,
   templateId,
   onTemplate,
+  onSaveTemplate,
+  onDeleteTemplate,
+  onExported,
   pageTarget,
   fileBase,
 }: {
   doc: ResumeDocument;
-  coverage: CoverageReport;
+  /** Null when there is no posting: exporting the master profile as it stands. */
+  coverage: CoverageReport | null;
   blocking: Change[];
+  /** Built-ins followed by the user's own. */
+  templates: Template[];
   templateId: string;
   onTemplate(id: string): void;
+  onSaveTemplate(template: Template): void;
+  onDeleteTemplate(id: string): void;
+  /** Called once per download, with the template actually used. */
+  onExported(formats: string[], template: Template): void;
   pageTarget: 1 | 2;
   fileBase: string;
 }) {
-  const [busy, setBusy] = useState<'pdf' | 'docx' | null>(null);
+  const [busy, setBusy] = useState<Format | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Template | null>(null);
   const checks = parseSafetyChecks(doc, pageTarget);
 
-  async function download(kind: 'pdf' | 'docx') {
+  // Resolved to the object, not left as an id: a user's template is not in the
+  // built-in table, so the renderers could not look it up by name.
+  const template = templates.find((t) => t.id === templateId) ?? getTemplate(templateId);
+
+  async function download(kind: Format) {
     setBusy(kind);
     setError(null);
     try {
       const blob =
         kind === 'pdf'
-          ? await (await import('../../render/pdf')).renderPdfBlob(doc, templateId)
-          : await (await import('../../render/docx')).renderDocxBlob(doc, templateId);
+          ? await (await import('../../render/pdf')).renderPdfBlob(doc, template)
+          : kind === 'docx'
+            ? await (await import('../../render/docx')).renderDocxBlob(doc, template)
+            : renderTextBlob(doc);
       saveAs(blob, `${fileBase}.${kind}`);
+      // Recorded only once the file exists. A render that throws should leave
+      // no trace of a document the user never got.
+      onExported([kind], template);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -55,7 +83,7 @@ export function ExportPanel({
 
   return (
     <div className="space-y-4">
-      <CoverageCard coverage={coverage} />
+      {coverage ? <CoverageCard coverage={coverage} /> : null}
 
       <div className="card p-5">
         <h2 className="text-base font-semibold">Parse safety</h2>
@@ -76,27 +104,79 @@ export function ExportPanel({
         <div className="mt-3">
           <span className="label">Template</span>
           <div className="grid gap-2 sm:grid-cols-3">
-            {TEMPLATES.map((t) => (
-              <button
+            {templates.map((t) => (
+              <div
                 key={t.id}
-                type="button"
-                onClick={() => onTemplate(t.id)}
                 className={`rounded-md border p-3 text-left text-sm transition-colors ${
                   templateId === t.id
                     ? 'border-ink bg-stone-100'
                     : 'border-stone-300 hover:bg-stone-50'
                 }`}
               >
-                <span className="font-medium">{t.label}</span>
-                <span className="mt-0.5 block text-xs text-stone-500">{t.description}</span>
-              </button>
+                <button type="button" onClick={() => onTemplate(t.id)} className="block w-full text-left">
+                  <span className="font-medium">{t.label}</span>
+                  <span className="mt-0.5 block text-xs text-stone-500">{t.description}</span>
+                </button>
+                {!isBuiltInTemplate(t.id) && (
+                  <div className="mt-2 flex gap-3 text-xs">
+                    <button
+                      type="button"
+                      className="text-stone-600 underline"
+                      onClick={() => setEditing(t)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="text-red-700 underline"
+                      onClick={() => onDeleteTemplate(t.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="text-sm underline"
+              // Start from whatever is selected: adjusting a template you can
+              // already see beats filling in eleven numbers from nothing.
+              onClick={() =>
+                setEditing({
+                  ...template,
+                  id: newId('tpl'),
+                  label: `${template.label} copy`,
+                  description: '',
+                })
+              }
+            >
+              New template from “{template.label}”
+            </button>
+          </div>
+
           <p className="mt-2 text-xs text-stone-500">
-            All three are single-column, real text, standard headings, contact details in the body,
-            no tables. Choosing one can change how it looks, never how it parses.
+            Every template here — including your own — is single-column, real text, standard
+            headings, contact details in the body, no tables. A template can change how the document
+            looks, never how it parses.
           </p>
         </div>
+
+        {editing && (
+          <TemplateEditor
+            key={editing.id}
+            draft={editing}
+            onCancel={() => setEditing(null)}
+            onSave={(t) => {
+              onSaveTemplate(t);
+              onTemplate(t.id);
+              setEditing(null);
+            }}
+          />
+        )}
 
         {blocking.length > 0 ? (
           <div className="mt-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900">
@@ -123,8 +203,17 @@ export function ExportPanel({
             >
               {busy === 'docx' ? 'Rendering…' : 'Download DOCX'}
             </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={busy !== null}
+              onClick={() => void download('txt')}
+            >
+              {busy === 'txt' ? 'Rendering…' : 'Download TXT'}
+            </button>
             <span className="self-center text-xs text-stone-500">
-              Both come from the same document model, so they always say the same thing.
+              All three come from the same document model, so they always say the same thing. Text
+              is the one to paste into an application form.
             </span>
           </div>
         )}
@@ -137,6 +226,180 @@ export function ExportPanel({
       </div>
 
       <DocumentPreview doc={doc} />
+    </div>
+  );
+}
+
+/**
+ * The template editor.
+ *
+ * Only typography is adjustable, and every control is bounded by
+ * `templateSchema`. There is deliberately no way to add a column, a table, or a
+ * section of your own invention: those are the things that break extraction,
+ * and a template that can break extraction would make the parse-safety
+ * checklist a lie. Save runs the schema rather than trusting the inputs, so a
+ * value typed past a bound is refused with a reason instead of silently
+ * clamped.
+ */
+const FIELD_LABELS: Record<string, string> = {
+  label: 'Name',
+  description: 'Description',
+  bodyFont: 'Typeface',
+  headingFont: 'Typeface',
+  docxFont: 'Word font',
+  baseSize: 'Body size',
+  lineHeight: 'Line height',
+  pageMargin: 'Page margin',
+  sectionGap: 'Gap between sections',
+  entryGap: 'Gap between entries',
+  bulletGap: 'Gap between bullets',
+};
+
+function TemplateEditor({
+  draft,
+  onSave,
+  onCancel,
+}: {
+  draft: Template;
+  onSave(t: Template): void;
+  onCancel(): void;
+}) {
+  const [t, setT] = useState<Template>(draft);
+  const [problems, setProblems] = useState<string[]>([]);
+
+  const set = <K extends keyof Template>(key: K, value: Template[K]) =>
+    setT((prev) => ({ ...prev, [key]: value }));
+
+  const num = (key: keyof Template, label: string, step: number, hint: string) => (
+    <label className="block">
+      <span className="label">{label}</span>
+      <input
+        type="number"
+        step={step}
+        className="field"
+        value={String(t[key])}
+        onChange={(e) => set(key, Number(e.target.value) as Template[keyof Template])}
+      />
+      <span className="mt-0.5 block text-xs text-stone-500">{hint}</span>
+    </label>
+  );
+
+  function save() {
+    const parsed = templateSchema.safeParse(t);
+    if (!parsed.success) {
+      // Report the problem against the label on screen, not the field name in
+      // the schema. "baseSize" is our word for it, not the reader's.
+      setProblems(
+        parsed.error.issues.map((i) => {
+          const key = String(i.path[0] ?? '');
+          return `${FIELD_LABELS[key] ?? (key || 'Template')}: ${i.message}`;
+        }),
+      );
+      return;
+    }
+    onSave(parsed.data);
+  }
+
+  return (
+    <div className="mt-4 rounded-md border border-stone-300 bg-stone-50 p-4">
+      <h3 className="text-sm font-semibold">Edit template</h3>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="label">Name</span>
+          <input className="field" value={t.label} onChange={(e) => set('label', e.target.value)} />
+        </label>
+        <label className="block">
+          <span className="label">Description</span>
+          <input
+            className="field"
+            value={t.description}
+            onChange={(e) => set('description', e.target.value)}
+          />
+        </label>
+
+        <label className="block">
+          <span className="label">Typeface</span>
+          <select
+            className="field"
+            value={t.bodyFont}
+            // Body and heading fonts move together. A serif body under a sans
+            // heading is a choice; a serif body under a *bold serif* heading is
+            // the only pairing that stays consistent across both renderers.
+            onChange={(e) => {
+              const serif = e.target.value === 'Times-Roman';
+              setT((prev) => ({
+                ...prev,
+                bodyFont: serif ? 'Times-Roman' : 'Helvetica',
+                headingFont: serif ? 'Times-Bold' : 'Helvetica-Bold',
+              }));
+            }}
+          >
+            <option value="Helvetica">Sans (Helvetica)</option>
+            <option value="Times-Roman">Serif (Times)</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="label">Word font</span>
+          <select
+            className="field"
+            value={t.docxFont}
+            onChange={(e) => set('docxFont', e.target.value as Template['docxFont'])}
+          >
+            {['Calibri', 'Cambria', 'Arial', 'Georgia', 'Times New Roman'].map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <span className="mt-0.5 block text-xs text-stone-500">
+            Used for the DOCX only. Limited to fonts that ship with Word everywhere.
+          </span>
+        </label>
+
+        {num('baseSize', 'Body size (pt)', 0.5, '8.5 to 13. Below 9 gets hard to read in print.')}
+        {num('lineHeight', 'Line height', 0.02, '1.05 to 1.8.')}
+        {num('pageMargin', 'Page margin (pt)', 2, '24 to 90. Under 24 risks printer clipping.')}
+        {num('sectionGap', 'Gap between sections (pt)', 1, '0 to 40.')}
+        {num('entryGap', 'Gap between entries (pt)', 1, '0 to 40.')}
+        {num('bulletGap', 'Gap between bullets (pt)', 1, '0 to 20.')}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-4 text-sm">
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={t.uppercaseHeadings}
+            onChange={(e) => set('uppercaseHeadings', e.target.checked)}
+          />
+          Uppercase headings
+        </label>
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={t.headingRule}
+            onChange={(e) => set('headingRule', e.target.checked)}
+          />
+          Rule under headings
+        </label>
+      </div>
+
+      {problems.length > 0 && (
+        <ul className="mt-3 list-disc rounded-md border border-red-300 bg-red-50 p-3 pl-8 text-sm text-red-900">
+          {problems.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-4 flex gap-2">
+        <button type="button" className="btn-primary" onClick={save}>
+          Save template
+        </button>
+        <button type="button" className="btn-secondary" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,9 @@
  * is read from a local `File` handle and never leaves the machine.
  */
 
+import type { PDFPageProxy } from 'pdfjs-dist';
+import { assembleLines, type PositionedText } from './layout';
+
 export interface ExtractedText {
   text: string;
   /** Pages, for PDFs. Used only to warn about likely scanned documents. */
@@ -30,6 +33,46 @@ export interface ExtractOptions {
 }
 
 export class ExtractionError extends Error {}
+
+type TextContent = Awaited<ReturnType<PDFPageProxy['getTextContent']>>;
+
+/**
+ * `page.getTextContent()`, with the Safari trap routed around.
+ *
+ * pdf.js implements `getTextContent` as `for await (const chunk of
+ * page.streamTextContent())`, and `streamTextContent()` hands back a plain
+ * `ReadableStream`. Chrome and Firefox make those async-iterable; Safari does
+ * not — desktop or iOS, current versions included. So the loop looks for a
+ * `Symbol.asyncIterator` that is not there and JavaScriptCore throws
+ * `undefined is not a function (near '...e of t...')` before a single character
+ * of the resume comes out.
+ *
+ * Draining the stream through a reader is what `for await` desugars to anyway,
+ * minus the assumption. We take this path on every browser rather than
+ * feature-detecting, so the code that runs in Safari is the code the tests run.
+ *
+ * See the pinning test in `extract.test.ts`: if pdf.js ever fixes this
+ * upstream, that test fails and this function can go.
+ */
+async function readTextContent(page: PDFPageProxy): Promise<TextContent> {
+  const reader = page.streamTextContent().getReader();
+  const content: TextContent = { items: [], styles: Object.create(null), lang: null };
+
+  try {
+    for (;;) {
+      const { done, value } = (await reader.read()) as { done: boolean; value?: TextContent };
+      if (done) break;
+      if (!value) continue;
+      content.lang ??= value.lang;
+      Object.assign(content.styles, value.styles);
+      content.items.push(...value.items);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return content;
+}
 
 async function extractPdf(file: File, opts: ExtractOptions): Promise<ExtractedText> {
   // pdf.js needs browser graphics primitives. Without this check a Node caller
@@ -61,34 +104,23 @@ async function extractPdf(file: File, opts: ExtractOptions): Promise<ExtractedTe
   const pageTexts: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
-    const content = await page.getTextContent();
+    const content = await readTextContent(page);
 
-    // Reassemble lines by vertical position. Naive concatenation of text items
-    // runs headings into body text and destroys bullet boundaries.
-    const rows = new Map<number, Array<{ x: number; s: string }>>();
+    // Reassembly is its own problem — columns, ligatures, reading order — and
+    // lives in `layout.ts` where it can be tested without a PDF.
+    const positioned: PositionedText[] = [];
     for (const item of content.items) {
       if (!('str' in item) || !item.str.trim()) continue;
-      const y = Math.round(item.transform[5] as number);
-      const x = item.transform[4] as number;
-      const bucket = [...rows.keys()].find((k) => Math.abs(k - y) <= 2) ?? y;
-      const row = rows.get(bucket) ?? [];
-      row.push({ x, s: item.str });
-      rows.set(bucket, row);
+      positioned.push({
+        text: item.str,
+        x: item.transform[4] as number,
+        y: item.transform[5] as number,
+        width: item.width,
+        height: item.height,
+      });
     }
 
-    const lines = [...rows.entries()]
-      .sort((a, b) => b[0] - a[0]) // PDF origin is bottom-left.
-      .map(([, items]) =>
-        items
-          .sort((a, b) => a.x - b.x)
-          .map((i) => i.s)
-          .join(' ')
-          .replace(/\s+/g, ' ')
-          .trim(),
-      )
-      .filter(Boolean);
-
-    pageTexts.push(lines.join('\n'));
+    pageTexts.push(assembleLines(positioned).join('\n'));
   }
 
   return { text: pageTexts.join('\n\n'), pages: doc.numPages, kind: 'pdf' };

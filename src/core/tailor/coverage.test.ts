@@ -139,3 +139,100 @@ describe('buildCoverage', () => {
     expect(report).not.toHaveProperty('score');
   });
 });
+
+/**
+ * Four defects found by running real postings through this module, each of
+ * which had shipped and none of which the unit tests above caught. They are
+ * grouped because they share a cause: the requirement extractor was reading a
+ * posting as a bag of words near cue phrases, rather than as a document with a
+ * title, requirement lines, and a wish list.
+ */
+describe('reading a posting as a document', () => {
+  const POSTING = `Senior Platform Engineer — Meridian Logistics
+
+What we need
+- Strong experience with Go in production. This is most of what we write.
+- Deep PostgreSQL knowledge — required. Sharding, replication, query planning.
+- Experience with Kafka or a comparable event streaming system.
+
+Nice to have
+- Payments or logistics domain background.
+- Experience with Datadog for observability.
+`;
+
+  const emphasised = () =>
+    extractRequirements(POSTING)
+      .filter((t) => t.emphasised)
+      .map((t) => t.norm);
+
+  it('does not treat the hiring company as a skill the candidate lacks', () => {
+    // "Senior Platform Engineer — Meridian Logistics" reported Meridian as an
+    // unmet requirement.
+    expect(extractRequirements(POSTING).map((t) => t.norm)).not.toContain('meridian');
+  });
+
+  it('reads a requirement whose cue comes after it', () => {
+    // "Deep PostgreSQL knowledge — required" states a hard requirement with the
+    // cue trailing. A window running forward from each cue could never see it.
+    expect(emphasised()).toContain('postgresql');
+  });
+
+  it('does not promote the degree word to the requirement', () => {
+    // The requirement is PostgreSQL. "Deep" qualifies it.
+    expect(emphasised()).not.toContain('deep');
+  });
+
+  it('does not let a requirement line bleed into the next one', () => {
+    expect(emphasised()).toEqual(expect.arrayContaining(['go', 'postgresql', 'kafka']));
+  });
+
+  it('keeps a wish list out of the hard requirements', () => {
+    // Both sit under "Nice to have" and both are introduced by cue phrases
+    // identical to the ones above it.
+    expect(emphasised()).not.toContain('datadog');
+    expect(emphasised()).not.toContain('payments');
+  });
+});
+
+describe('matching a requirement to evidence', () => {
+  const profile = profileSchema.parse({
+    id: 'prf_1',
+    createdAt: 'now',
+    updatedAt: 'now',
+    work: [
+      {
+        id: 'wrk_1',
+        name: 'Harbor Freight',
+        position: 'Engineer',
+        bullets: [
+          { id: 'blt_1', text: 'Resharded the shipment ledger in PostgreSQL behind a dual-write cutover.' },
+          { id: 'blt_2', text: 'Owned the Kafka ingestion pipeline for carrier events.' },
+        ],
+      },
+    ],
+  });
+
+  it('credits work described in a different grammatical form', () => {
+    // The posting says "Sharding"; the profile says "Resharded". Reporting that
+    // as a gap tells someone to go learn a thing they have already done — and
+    // `missing` is documented to mean they genuinely have not.
+    const report = buildCoverage('Sharding is required. Experience with sharding at scale.', [], profile);
+    expect(report.missing.map((t) => t.norm)).not.toContain('sharding');
+  });
+
+  it('still reports something the profile genuinely lacks', () => {
+    // The looser match must not turn into "everything counts".
+    const report = buildCoverage('Experience with Kubernetes is required.', [], profile);
+    expect(report.missing.map((t) => t.norm)).toContain('kubernetes');
+  });
+
+  it('does not collapse a technology into an unrelated shorter word', () => {
+    // Stripping "-er" would make "Docker" match a profile that only says "dock".
+    const docks = profileSchema.parse({
+      ...profile,
+      work: [{ ...profile.work[0], bullets: [{ id: 'blt_1', text: 'Managed the loading dock schedule.' }] }],
+    });
+    const report = buildCoverage('Experience with Docker is required.', [], docks);
+    expect(report.missing.map((t) => t.norm)).toContain('docker');
+  });
+});

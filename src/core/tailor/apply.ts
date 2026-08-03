@@ -253,6 +253,9 @@ function formatDateRange(start: string, end: string): string {
   const s = start.trim();
   const e = end.trim();
   if (!s && !e) return '';
+  // A range needs two ends. Education is routinely recorded as a graduation
+  // date alone, and "— 05/2021" reads as a typo rather than a date.
+  if (!s) return e;
   return e ? `${s} — ${e}` : `${s} — Present`;
 }
 

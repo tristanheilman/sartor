@@ -1,0 +1,142 @@
+{
+  "$recorded": "claude-sonnet-5, sample 4 of 5, recorded 2026-08-02 via: npm run audit -- --profile evals/cases/platform-stretch/profile.json --jd evals/cases/platform-stretch/posting.txt --repeat 5",
+  "summary": {
+    "text": "Backend engineer with eight years on data-heavy services, most at home in Go and PostgreSQL. Experience owning event ingestion pipelines end to end, cutting write latency through PostgreSQL resharding, and mentoring engineers through on-call rotations.",
+    "rationale": "Foregrounds Go, PostgreSQL, Kafka pipeline ownership, latency work, and mentoring since those map directly to the posting's core requirements, without introducing any unsupported terms."
+  },
+  "sectionOrder": [
+    "summary",
+    "skills",
+    "work",
+    "projects",
+    "education"
+  ],
+  "work": [
+    {
+      "id": "wrk_harbor",
+      "include": true,
+      "order": 1,
+      "bullets": [
+        {
+          "bulletId": "blt_ledger",
+          "include": true,
+          "order": 1,
+          "text": "Resharded the shipment ledger in PostgreSQL behind a dual-write cutover, taking p99 write latency from 910ms to 120ms with no downtime.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Directly matches the posting's focus on reducing p99 write latency and deep PostgreSQL work."
+        },
+        {
+          "bulletId": "blt_kafka",
+          "include": true,
+          "order": 2,
+          "text": "Owned the Kafka ingestion pipeline carrying 60 million carrier events per day, including the consumer rebalancing work that ended a year of duplicate deliveries.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Matches the posting's requirement to own event ingestion pipeline reliability and Kafka experience."
+        },
+        {
+          "bulletId": "blt_mentor",
+          "include": true,
+          "order": 3,
+          "text": "Mentored five engineers through their first on-call rotations; two were promoted to senior within the following year.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Matches the required track record of mentoring engineers."
+        },
+        {
+          "bulletId": "blt_schema",
+          "include": true,
+          "order": 4,
+          "text": "Ran the schema review that product teams bring changes to before shipping, which cut emergency migrations from roughly one a month to two in a year.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Matches the posting's requirement to partner with product teams on schema design before they ship."
+        },
+        {
+          "bulletId": "blt_go_rewrite",
+          "include": true,
+          "order": 5,
+          "text": "Rewrote the rating service from Python to Go, cutting median response time 4x and halving its memory footprint.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Demonstrates strong production Go experience, a core requirement."
+        },
+        {
+          "bulletId": "blt_hackathon",
+          "include": false,
+          "order": 6,
+          "text": "Won the internal hackathon with a browser extension that surfaced shipment status in Gmail.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Not relevant to platform engineering requirements; drop to keep focus tight."
+        }
+      ]
+    },
+    {
+      "id": "wrk_pinecrest",
+      "include": true,
+      "order": 2,
+      "bullets": [
+        {
+          "bulletId": "blt_replication",
+          "include": true,
+          "order": 1,
+          "text": "Set up streaming replication and point-in-time recovery for the primary PostgreSQL cluster after a near-miss data loss incident.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Supports the posting's requirement for deep PostgreSQL knowledge, specifically replication."
+        },
+        {
+          "bulletId": "blt_etl",
+          "include": true,
+          "order": 2,
+          "text": "Built the nightly ETL that consolidated seven client databases into one warehouse, in Go, running unattended for three years.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Reinforces Go in production experience and long-running system ownership."
+        },
+        {
+          "bulletId": "blt_intern_coffee",
+          "include": false,
+          "order": 3,
+          "text": "Organised the office coffee rota and ran the summer intern social programme.",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Not relevant to the role's technical requirements."
+        }
+      ]
+    }
+  ],
+  "projects": [],
+  "education": [
+    {
+      "id": "edu_csu",
+      "include": true,
+      "order": 1,
+      "bullets": []
+    }
+  ],
+  "skills": [
+    {
+      "id": "skl_lang",
+      "include": true,
+      "order": 1,
+      "keywords": [
+        "Go",
+        "SQL"
+      ]
+    },
+    {
+      "id": "skl_data",
+      "include": true,
+      "order": 2,
+      "keywords": [
+        "PostgreSQL",
+        "Kafka",
+        "Redis"
+      ]
+    }
+  ],
+  "notes": "The profile does not support several required/nice-to-have items from the posting: Kubernetes (no evidence of container orchestration experience), Terraform (no infrastructure-as-code experience listed), Datadog (no observability tooling mentioned), and a formalized 'deploy pipeline for the whole org' story (deploy tooling/CI-CD ownership is not documented). Payments or logistics domain background is only loosely inferable from 'shipment ledger' and 'carrier events' work at Harbor Freight Systems, which may partially align with logistics but isn't stated explicitly as domain expertise. Python was removed from the Languages list since the posting emphasizes Go as the primary language and Python appears mainly as a legacy system being replaced."
+}

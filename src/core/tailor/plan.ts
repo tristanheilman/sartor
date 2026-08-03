@@ -64,6 +64,18 @@ export const tailorPlanSchema = z.object({
 export type TailorPlan = z.infer<typeof tailorPlanSchema>;
 
 /**
+ * The plan that changes nothing.
+ *
+ * `buildDocument` treats an entry the plan does not mention as an entry to keep
+ * verbatim, so a plan that mentions nothing renders the master profile exactly
+ * as it stands. That is what you want when there is no posting to tailor
+ * against — printing the profile you maintain, with no model call in the way.
+ */
+export function identityPlan(): TailorPlan {
+  return tailorPlanSchema.parse({ summary: { text: '', rationale: '' } });
+}
+
+/**
  * JSON Schema handed to the provider for constrained decoding. Kept hand-written
  * rather than generated so the provider-facing contract stays stable and
  * readable, and so it satisfies the strict-mode rules every provider imposes

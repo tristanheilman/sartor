@@ -69,6 +69,32 @@ const NOISE = new Set([
   'abilities',
   'excellent',
   'strong',
+  // Degree words. "Deep PostgreSQL knowledge" requires PostgreSQL, not Deep —
+  // and with whole-line cue windows these sit inside a requirement clause and
+  // are capitalised at the start of a bullet, so nothing else filters them.
+  'deep',
+  'solid',
+  'advanced',
+  'expert',
+  'extensive',
+  'proven',
+  'demonstrated',
+  'significant',
+  'substantial',
+  'hands',
+  'broad',
+  'proficient',
+  'proficiency',
+  'familiar',
+  'familiarity',
+  'comfortable',
+  'senior',
+  'junior',
+  'track',
+  'record',
+  'knowledge',
+  'background',
+  'exposure',
   'great',
   'good',
   'plus',
@@ -214,6 +240,40 @@ function looksLikeSkill(raw: string, norm: string): boolean {
  * over recall: a term we surface should be one a human would agree the posting
  * asked for.
  */
+/**
+ * Headings under which a posting lists what it would *like*, not what it needs.
+ *
+ * Everything after one of these stops counting as a hard requirement. Without
+ * it a "Nice to have" section promotes its contents to required, because the
+ * cue phrases inside it ("Experience with Datadog…") look identical to the ones
+ * above it.
+ */
+const OPTIONAL_HEADING =
+  /^\s*(?:[-•*]\s*)?(?:nice[\s-]to[\s-]haves?|bonus(?:\s+points)?|preferred|desirable|pluses?|a\s+plus|optional|not\s+required)\b.*$/im;
+
+/** Where the posting stops stating requirements and starts stating wishes. */
+function optionalFrom(jdText: string): number {
+  const m = OPTIONAL_HEADING.exec(jdText);
+  return m ? m.index : Infinity;
+}
+
+/**
+ * The title line, which names the employer rather than a skill.
+ *
+ * "Senior Platform Engineer — Meridian Logistics" yielded `Meridian` and
+ * `Logistics` as things the candidate was missing. A token is only discarded
+ * when *every* occurrence is up here: a title like "Senior Go Engineer" names a
+ * real requirement, and the body will mention it again.
+ */
+function headerEnd(jdText: string): number {
+  const firstBreak = jdText.indexOf('\n');
+  // No title line without a body under it. A single-line posting — or a pasted
+  // fragment — is all content, and treating it as a header would discard every
+  // requirement in it.
+  if (firstBreak === -1 || jdText.slice(firstBreak).trim().length < 40) return -1;
+  return firstBreak;
+}
+
 export function extractRequirements(jdText: string, limit = 40): Array<{
   term: string;
   norm: string;
@@ -223,16 +283,33 @@ export function extractRequirements(jdText: string, limit = 40): Array<{
   const tokens = tokenize(jdText);
   const counts = new Map<string, { term: string; mentions: number; emphasised: boolean }>();
 
-  // Character ranges that sit shortly after a requirement cue.
+  const optionalAt = optionalFrom(jdText);
+  const headerAt = headerEnd(jdText);
+
+  // A line containing a requirement cue is a requirement line, end to end.
+  //
+  // This replaced a fixed 90-character window that ran forward from each cue.
+  // That window did both things wrong at once: it overran the end of one bullet
+  // into the next, so "Deep PostgreSQL knowledge" inherited emphasis from the
+  // line above it — and it could not see a cue that *follows* its term, which
+  // is how postings write half of their hard requirements ("Deep PostgreSQL
+  // knowledge — required"). Whole lines handle both, and postings state
+  // requirements one per line.
   const cueWindows: Array<[number, number]> = [];
-  for (const m of jdText.matchAll(CUE_RE)) {
-    const start = m.index + m[0].length;
-    cueWindows.push([start, start + 90]);
+  let lineStart = 0;
+  for (const line of jdText.split('\n')) {
+    CUE_RE.lastIndex = 0;
+    if (CUE_RE.test(line)) cueWindows.push([lineStart, lineStart + line.length]);
+    lineStart += line.length + 1;
   }
   const inCueWindow = (i: number) => cueWindows.some(([a, b]) => i >= a && i <= b);
 
+  const outsideHeader = new Set<string>();
+  for (const t of tokens) if (t.index > headerAt) outsideHeader.add(t.norm);
+
   for (const t of tokens) {
-    const emphasised = inCueWindow(t.index);
+    // A wish is not a requirement.
+    const emphasised = inCueWindow(t.index) && t.index < optionalAt;
     // A term qualifies either by shape, or by being a capitalised word sitting
     // inside a requirement clause. The capitalisation test is what keeps the
     // cue-window path precise: it admits short tech names that have no
@@ -241,6 +318,8 @@ export function extractRequirements(jdText: string, limit = 40): Array<{
     const inRequirementClause =
       emphasised && !NOISE.has(t.norm) && t.norm.length >= 2 && /^[A-Z]/.test(t.raw);
     if (!looksLikeSkill(t.raw, t.norm) && !inRequirementClause) continue;
+    // Named only in the title: the employer, not a skill.
+    if (!outsideHeader.has(t.norm)) continue;
     const existing = counts.get(t.norm);
     if (existing) {
       existing.mentions += 1;
@@ -272,6 +351,42 @@ export interface ResumeSlice {
  * profile. `missing` means the user genuinely does not have it — the tool will
  * not manufacture it, and says so plainly.
  */
+/**
+ * A crude stem, for coverage only.
+ *
+ * The guard and this module want opposite mistakes. A guard that matches too
+ * loosely lets a fabrication through, so `equivalentForms` is deliberately
+ * conservative. Coverage that matches too *strictly* tells someone they lack a
+ * skill they have, which is the worse failure here — the posting asked for
+ * "Sharding" and the profile said "Resharded the shipment ledger", and the
+ * report called it a genuine gap.
+ *
+ * So this stays local. Widening `equivalentForms` to fix coverage would have
+ * quietly weakened the fabrication guard, which is the one thing in this
+ * codebase that must not get looser.
+ *
+ * Suffix stripping only, and no `-er`: "docker" must not collapse to "dock".
+ */
+function stem(word: string): string {
+  if (word.length < 5) return word;
+  let w = word;
+  for (const suffix of ['ings', 'ing', 'ions', 'ion', 'ments', 'ment', 'ed', 'es', 's']) {
+    if (w.length - suffix.length >= 4 && w.endsWith(suffix)) {
+      w = w.slice(0, -suffix.length);
+      break;
+    }
+  }
+  // "resharded" -> "reshard" -> "shard", so a re-done thing matches the thing.
+  if (w.length >= 6 && w.startsWith('re')) w = w.slice(2);
+  return w;
+}
+
+function stemSet(source: unknown): Set<string> {
+  const out = new Set<string>();
+  for (const form of buildLexicon(source)) out.add(stem(form));
+  return out;
+}
+
 export function buildCoverage(
   jdText: string,
   resumeSlices: ResumeSlice[],
@@ -279,15 +394,20 @@ export function buildCoverage(
 ): CoverageReport {
   const requirements = extractRequirements(jdText);
   const profileLex = buildLexicon(profile);
+  const profileStems = stemSet(profile);
 
   const sliceLexicons = resumeSlices.map((s) => ({
     label: s.label,
     lex: buildLexicon(s.text),
+    stems: stemSet(s.text),
   }));
 
   const terms: CoverageTerm[] = requirements.map((r) => {
-    const locations = sliceLexicons.filter((s) => isGrounded(r.norm, s.lex)).map((s) => s.label);
-    const inProfile = isGrounded(r.norm, profileLex);
+    const rootedIn = (lex: Set<string>, stems: Set<string>) =>
+      isGrounded(r.norm, lex) || stems.has(stem(r.norm));
+
+    const locations = sliceLexicons.filter((s) => rootedIn(s.lex, s.stems)).map((s) => s.label);
+    const inProfile = rootedIn(profileLex, profileStems);
     const status: TermStatus =
       locations.length > 0 ? 'present' : inProfile ? 'in-profile' : 'missing';
     return { term: r.term, norm: r.norm, mentions: r.mentions, emphasised: r.emphasised, status, locations };

@@ -15,6 +15,12 @@ dist-ssr/
 *.log
 npm-debug.log*
 
+# Audit runs and local cases hold real resumes — names, phone numbers, email
+# addresses, employers. `evals/cases/` is committed and this repository is
+# public; these two are where anything real goes.
+evals/runs/
+evals/local/
+
 # Never commit a key. There is no .env in this project by design — the key is
 # entered in the app and held in sessionStorage — but this guards against
 # someone adding one out of habit.

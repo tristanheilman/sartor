@@ -93,6 +93,7 @@ export {
 export {
   tailorPlanSchema,
   TAILOR_PLAN_JSON_SCHEMA,
+  identityPlan,
   plannedBulletSchema,
   plannedEntrySchema,
   type TailorPlan,
@@ -181,4 +182,74 @@ export {
   type CheckStatus,
 } from './core/render/parseSafety';
 
-export { TEMPLATES, getTemplate, type Template } from './core/render/templates';
+export {
+  TEMPLATES,
+  getTemplate,
+  isBuiltInTemplate,
+  templateSchema,
+  type Template,
+  type TemplateRef,
+} from './core/render/templates';
+
+/**
+ * Plain text is rendered from the main entry, not from `sartor/render/*`.
+ * The PDF and DOCX renderers live behind their own subpaths because each pulls
+ * in a heavy engine; this one is a string builder with no dependencies, so
+ * making it a separate import would cost more than it saves.
+ */
+export { renderPlainText, renderTextBlob } from './core/render/text';
+
+/**
+ * The gap interview: what to ask, how to ask it, and how to read the answer.
+ *
+ * `findGaps` is deterministic and needs no model — question *selection* is
+ * measured, not improvised. The prompts are the only part a provider sees.
+ */
+export {
+  findGaps,
+  remainingGaps,
+  type Gap,
+  type GapKind,
+  type FindGapsOptions,
+} from './core/interview/gaps';
+
+export {
+  INTERVIEW_SYSTEM_PROMPT,
+  buildQuestionsPrompt,
+  buildAnswerPrompt,
+  questionsSchema,
+  draftedBulletsSchema,
+  QUESTIONS_JSON_SCHEMA,
+  DRAFTED_BULLETS_JSON_SCHEMA,
+  type InterviewQuestion,
+  type DraftedBullet,
+} from './core/interview/ask';
+
+/**
+ * The conversation layer over the interview: what a reply may turn into, and
+ * which taps resolve with no model call at all.
+ */
+export {
+  quickReplies,
+  applyQuickReply,
+  bestOwner,
+  lanesFor,
+  progress,
+  type LaneKind,
+  type QuickReply,
+  type ImmediateResult,
+  type OwnerGuess,
+  type Progress,
+} from './core/interview/conversation';
+
+/**
+ * Checking a drafted bullet against the answer that produced it, which is what
+ * lets the interview rewrite for strength without letting it invent.
+ */
+export {
+  verifyDraft,
+  needsFollowUp,
+  answerLexicon,
+  type VerifiedBullet,
+  type VerifiedDraft,
+} from './core/interview/verify';

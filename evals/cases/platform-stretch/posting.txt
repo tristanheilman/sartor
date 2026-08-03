@@ -1,0 +1,29 @@
+Senior Platform Engineer — Meridian Logistics
+
+We run the freight-tracking backbone for a few thousand carriers. The platform
+team owns the services underneath: the event pipeline, the deploy story, and
+the database layer everything else sits on.
+
+What you will do
+- Own the reliability of our event ingestion pipeline end to end, from producer
+  to warehouse.
+- Drive down p99 latency on the core write path. We have a number we care about
+  and we are not hitting it.
+- Take our deploys from "someone runs a script" to something the whole
+  engineering org can use safely.
+- Partner with product teams on schema design before they ship, not after.
+
+What we need
+- Strong experience with Go in production. This is most of what we write.
+- Deep PostgreSQL knowledge — required. Sharding, replication, query planning,
+  the parts that hurt at scale.
+- Experience with Kafka or a comparable event streaming system.
+- Proficiency with Kubernetes. Our whole runtime is on it and you will be
+  expected to debug it under pressure.
+- Experience with Terraform. All of our infrastructure is defined in it.
+- Track record of mentoring engineers. Required — this is a senior role and the
+  team is growing.
+
+Nice to have
+- Payments or logistics domain background.
+- Experience with Datadog for observability.

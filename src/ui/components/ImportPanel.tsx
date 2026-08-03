@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { ExtractionError, extractResumeText, ingestResume } from '../../parse';
 import { emptyProfile, ids, type Profile } from '../../index';
 import { useActiveProvider } from '../store';
+import { LoadingScreen, type LoadingStep } from './LoadingScreen';
 
 type Phase = 'idle' | 'extracting' | 'structuring' | 'error';
 
@@ -22,6 +23,9 @@ export function ImportPanel({
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [pasted, setPasted] = useState('');
+  // What has actually happened, for the loading screen. Each line is a real
+  // stage rather than a slice of an invented percentage.
+  const [steps, setSteps] = useState<LoadingStep[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const busy = phase === 'extracting' || phase === 'structuring';
@@ -29,6 +33,7 @@ export function ImportPanel({
   async function structure(text: string, label: string) {
     setPhase('structuring');
     setError(null);
+    setSteps((s) => [...s, { label: 'Turning it into fields', done: false }]);
     try {
       const { profile, warnings } = await ingestResume(text, provider, config, { label });
       setPhase('idle');
@@ -42,6 +47,7 @@ export function ImportPanel({
   async function handleFile(file: File) {
     setPhase('extracting');
     setError(null);
+    setSteps([{ label: `Reading ${file.name}`, done: false }]);
     try {
       // Vite-specific: `?url` makes the worker a first-party asset in our own
       // bundle. The library takes this as a parameter precisely so that this
@@ -51,9 +57,21 @@ export function ImportPanel({
         'pdfjs-dist/build/pdf.worker.min.mjs?url'
       );
       const extracted = await extractResumeText(file, { pdfWorkerSrc });
+
+      // Real numbers, not a guess. This is also where a two-column layout or a
+      // scan would have shown itself, so it is worth saying out loud.
+      const words = extracted.text.trim().split(/\s+/).length;
+      setSteps([
+        {
+          label: `Read ${words} words from ${extracted.pages || 1} page${extracted.pages === 1 ? '' : 's'}`,
+          done: true,
+        },
+      ]);
+
       await structure(extracted.text, file.name.replace(/\.[^.]+$/, ''));
     } catch (err) {
       setPhase('error');
+      setSteps([]);
       setError(
         err instanceof ExtractionError
           ? err.message
@@ -64,17 +82,21 @@ export function ImportPanel({
     }
   }
 
+  if (busy && steps.length > 0) {
+    return <LoadingScreen steps={steps} title="Reading your resume" />;
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="card p-5">
-        <h2 className="text-base font-semibold">Start from an existing resume</h2>
-        <p className="mt-1 text-sm text-stone-600">
-          The file is read in this browser tab. Only the extracted text is sent to{' '}
-          {provider.info.label}, and only so it can be turned into structured fields you then review.
+    <div className="mx-auto w-full max-w-2xl">
+      <div className="card p-7">
+        <h2 className="text-center text-xl font-semibold tracking-tight">Start with your resume</h2>
+        <p className="mx-auto mt-1.5 max-w-md text-center text-sm text-stone-600">
+          It is read here in this tab. Only the text goes to {provider.info.label}, and only to turn
+          it into fields you review.
         </p>
 
         <div
-          className="mt-4 rounded-lg border-2 border-dashed border-stone-300 p-6 text-center"
+          className="mt-6 rounded-xl border-2 border-dashed border-stone-300/80 px-6 py-12 text-center transition-colors hover:border-stone-400"
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
@@ -92,10 +114,10 @@ export function ImportPanel({
               if (file) void handleFile(file);
             }}
           />
-          <p className="text-sm text-stone-600">Drop a PDF, DOCX, or text file here</p>
+          <p className="text-sm text-stone-600">Drop a PDF, DOCX or text file</p>
           <button
             type="button"
-            className="btn-secondary mt-3"
+            className="btn-primary mt-4"
             disabled={!ready || busy}
             onClick={() => fileInput.current?.click()}
           >
@@ -125,9 +147,8 @@ export function ImportPanel({
         </details>
 
         {!ready && (
-          <p className="mt-3 rounded-md bg-amber-50 p-2.5 text-sm text-amber-900">
-            Add an API key above first — parsing a resume into structured fields takes one model
-            call.
+          <p className="mt-4 text-center text-sm text-stone-500">
+            Reading a resume takes one model call — add a key in settings, top right.
           </p>
         )}
 
@@ -144,19 +165,17 @@ export function ImportPanel({
         )}
       </div>
 
-      <div className="card p-5">
-        <h2 className="text-base font-semibold">Or start from nothing</h2>
-        <p className="mt-1 text-sm text-stone-600">
-          Build the profile by hand. Slower, but nothing is guessed.
-        </p>
+      <p className="mt-4 text-center text-sm text-stone-500">
+        No resume to hand?{' '}
         <button
           type="button"
-          className="btn-secondary mt-3"
+          className="underline underline-offset-2 hover:text-stone-800"
           onClick={() => onBlank({ ...emptyProfile(ids.profile()), label: 'My profile' })}
         >
-          Create an empty profile
+          Build one from scratch
         </button>
-      </div>
+        .
+      </p>
     </div>
   );
 }

@@ -1,0 +1,19 @@
+Jordan Avery
+Senior Software Engineer
+jordan.avery@example.com | (555) 010-4477 | Austin, TX
+SUMMARY
+Backend engineer with nine years building payment and identity systems at scale. Comfortable owning a service end to end, from schema design through on-call.
+EXPERIENCE
+Staff Software Engineer, Northwind Payments
+March 2021 - Present
+Led the migration of the settlement ledger to a sharded design, cutting p99 write latency from 840ms to 95ms.
+Designed an idempotency layer that eliminated duplicate captures.
+Mentored four engineers, two of whom were promoted to senior.
+Senior Software Engineer, Cobalt Health
+June 2018 - February 2021
+Built a FHIR ingestion pipeline handling 40 million records per day.
+Reduced infrastructure spend 31 percent by rightsizing Kubernetes workloads.
+EDUCATION
+University of Illinois at Urbana-Champaign, BS Computer Science, 2016
+SKILLS
+Go, TypeScript, Python, SQL, Kubernetes, Terraform, AWS, Postgres, Kafka

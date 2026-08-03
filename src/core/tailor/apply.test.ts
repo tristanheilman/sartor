@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { profileSchema, type Profile } from '../schema';
-import { tailorPlanSchema, type TailorPlan } from './plan';
+import { identityPlan, tailorPlanSchema, type TailorPlan } from './plan';
 import { buildChanges, buildDocument, writeBackVariants, blockingChanges, type TailorRun } from './apply';
 import { documentToText } from '../render/model';
 
@@ -136,6 +136,42 @@ describe('buildDocument', () => {
     // Everything else is untouched.
     expect(text).not.toContain('Mentored three engineers.');
     expect(text).toContain('Backend engineer focused on billing systems.');
+  });
+
+  it('shows a lone end date on its own, not as a half-open range', () => {
+    // Graduation dates arrive with no start. "— 05/2021" reads as a typo.
+    const grad = profileSchema.parse({
+      ...profile,
+      education: [{ id: 'edu_1', institution: 'TU Berlin', endDate: '05/2021' }],
+    });
+    const doc = buildDocument(grad, identityPlan(), []);
+    const entry = doc.sections.find((s) => s.key === 'education')?.entries?.[0];
+    expect(entry?.meta).toBe('05/2021');
+  });
+
+  it('still marks an open-ended role as Present', () => {
+    const current = profileSchema.parse({
+      ...profile,
+      work: [{ id: 'wrk_9', name: 'Acme', position: 'Engineer', startDate: '10/2025', endDate: '' }],
+    });
+    const doc = buildDocument(current, identityPlan(), []);
+    expect(doc.sections.find((s) => s.key === 'work')?.entries?.[0]?.meta).toBe('10/2025 — Present');
+  });
+
+  it('renders the master profile verbatim under the identity plan', () => {
+    // Exporting with no posting: nothing planned, nothing changed, nothing lost.
+    const text = documentToText(buildDocument(profile, identityPlan(), []));
+    expect(text).toContain('Backend engineer.'); // The profile's own summary, not a rewrite.
+    expect(text).toContain('Led the billing migration to PostgreSQL.');
+    expect(text).toContain('Mentored three engineers.');
+    expect(text).toContain('初 Labs');
+    expect(text).toContain('Ruby');
+  });
+
+  it('keeps role order under the identity plan', () => {
+    const doc = buildDocument(profile, identityPlan(), []);
+    const text = documentToText(doc);
+    expect(text.indexOf('Acme Robotics')).toBeLessThan(text.indexOf('初 Labs'));
   });
 
   it('restores a dropped bullet when the drop is rejected', () => {

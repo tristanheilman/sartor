@@ -1,0 +1,96 @@
+{
+  "id": "prf_marginal_role",
+  "label": "Priya Raman",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "basics": {
+    "name": "Priya Raman",
+    "label": "Full Stack / Mobile App Developer",
+    "email": "priya.raman@example.com",
+    "phone": "(555) 010-7741",
+    "url": "https://priyaraman.example.com",
+    "summary": "",
+    "location": { "city": "Columbus", "region": "OH" }
+  },
+  "work": [
+    {
+      "id": "wrk_32d7ae9a97ce54c4",
+      "name": "Halcyon Fleet",
+      "position": "Lead Mobile App Developer",
+      "location": "Columbus, OH",
+      "startDate": "05/2022",
+      "endDate": "Present",
+      "bullets": [
+        { "id": "blt_90233d035d12793e", "text": "Supported a user base of 20k+ iOS and Android users", "tags": [], "variants": [] },
+        { "id": "blt_fab954c9b7163fa6", "text": "Refactored driver tracking geolocation logic by optimizing GPS polling and background task handling, significantly reducing battery drain and improving real-time accuracy under variable network conditions", "tags": [], "variants": [] },
+        { "id": "blt_ccacc95d8c92487f", "text": "Co-led the integration of Stripe as a new payment processor with a strict 40-day timeline, ensuring seamless transition and business continuity", "tags": [], "variants": [] },
+        { "id": "blt_3b32a911c8aab11a", "text": "Developed CI/CD pipelines using Fastlane and GitHub Actions, improving testing and deployment efficiency by reducing deployment times by over 15 minutes per deployment", "tags": [], "variants": [] },
+        { "id": "blt_e3298d71e0195516", "text": "Served as the main technical point of contact between two development teams during a parallel backend system transition; delivered technical guidance that resolved 90% of integration roadblocks", "tags": [], "variants": [] },
+        { "id": "blt_cb8e9864be839834", "text": "Collaborated directly with business to prioritize roadmap features, design intuitive UI flows, resolve issues, and implement custom mobile solutions that addressed real user needs", "tags": [], "variants": [] }
+      ],
+      "tags": []
+    },
+    {
+      "id": "wrk_faeef87d78866064",
+      "name": "Ardent Systems",
+      "position": "Junior Software Developer (Co-op)",
+      "location": "Columbus, OH",
+      "startDate": "01/2019",
+      "endDate": "06/2020",
+      "bullets": [
+        { "id": "blt_f58d6f8c9685fed8", "text": "Improved application reliability by implementing Selenium and improving test coverage of UI/UX features by 30%", "tags": [], "variants": [] },
+        { "id": "blt_4160e06c5c18d1c4", "text": "Reduced manual testing time by roughly 20% through automation of a regression testing suite using Jenkins", "tags": [], "variants": [] },
+        { "id": "blt_89aac8cc0e96af52", "text": "Restructured multiple pages on the front-end Lattice application using YUI (Yahoo's UI library) and Tabulator to improve datatable features", "tags": [], "variants": [] }
+      ],
+      "tags": []
+    }
+  ],
+  "education": [
+    {
+      "id": "edu_marginal_1",
+      "institution": "Ohio State University",
+      "area": "Computer Science",
+      "studyType": "Bachelor of Science",
+      "startDate": "10/2019",
+      "endDate": "05/2021",
+      "courses": [],
+      "bullets": []
+    }
+  ],
+  "projects": [
+    {
+      "id": "prj_19ab89e80d17c2e7",
+      "name": "Threadline (Full Stack Application)",
+      "description": "",
+      "startDate": "10/2019",
+      "endDate": "",
+      "bullets": [
+        { "id": "blt_7a6d0f4e856a72e2", "text": "Developed a full stack mobile application originally using Firebase and React Native (2020)", "tags": [], "variants": [] },
+        { "id": "blt_18aae2e3e4b28ca1", "text": "Reengineered the backend system to utilize AWS services: EC2, RDS, S3 and Cognito", "tags": [], "variants": [] },
+        { "id": "blt_87e32920ba749e13", "text": "Built website using Vue.js and implemented SSR pages to allow for better search indexing", "tags": [], "variants": [] }
+      ],
+      "tags": []
+    },
+    {
+      "id": "prj_744403bdbb1b0f1a",
+      "name": "react-native-object-capture",
+      "description": "",
+      "startDate": "04/2025",
+      "endDate": "",
+      "bullets": [
+        { "id": "blt_180af7d839485368", "text": "Built a public React Native library to bridge iOS ObjectCapture and PhotogrammatrySession views and classes to the javascript scope", "tags": [], "variants": [] },
+        { "id": "blt_27989065f4c4bdef", "text": "Published and maintaining a public NPM package", "tags": [], "variants": [] }
+      ],
+      "tags": []
+    }
+  ],
+  "skills": [
+    { "id": "skl_lang", "name": "Languages & Frameworks", "keywords": ["Javascript / Typescript", "React / React Native", "HTML / CSS", "Swift / Objective-C", "Java / Kotlin", "SQL / PostgreSQL", "NodeJS", "TailwindCSS"] },
+    { "id": "skl_cloud", "name": "Cloud Services", "keywords": ["Firebase (Authentication, Cloud Messaging, Hosting, Firestore)", "AWS (Lambda, Cognito, S3, RDS, EC2)"] },
+    { "id": "skl_tools", "name": "Tools & DevOps", "keywords": ["Fastlane", "Github / Git", "Jenkins", "Figma", "Azure DevOps", "NPM / Yarn", "Docker", "JIRA"] },
+    { "id": "skl_mobile", "name": "Mobile & Web Development", "keywords": ["iOS / Android Development", "App / Play Store Deployment", "Google / Mapbox Integration", "Push Notification Support", "State Management (Redux / Context API)"] }
+  ],
+  "certificates": [],
+  "awards": [],
+  "languages": []
+}
