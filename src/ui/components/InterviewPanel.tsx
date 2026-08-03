@@ -5,6 +5,8 @@ import {
   buildAnswerPrompt,
   draftedBulletsSchema,
   findGaps,
+  needsFollowUp,
+  verifyDraft,
   ids,
   profileSchema,
   progress,
@@ -56,6 +58,7 @@ export function InterviewPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
+  const [followedUp, setFollowedUp] = useState<string[]>([]);
   const bottom = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
@@ -130,9 +133,14 @@ export function InterviewPanel({
       );
       const drafted = draftedBulletsSchema.parse(reply.json);
 
+      // The bullets are checked against what was actually said before any of
+      // them reach the profile. Rewriting for strength is allowed; inventing a
+      // number is caught here rather than trusted not to happen.
+      const checked = verifyDraft(drafted.bullets, text, profile);
+
       // Everything lands through the ordinary merge, so duplicate detection,
       // fresh IDs and date corrections all come along unchanged.
-      const bullets = current.kind === 'no-summary' ? [] : drafted.bullets;
+      const bullets = current.kind === 'no-summary' ? [] : checked.kept.map((k) => k.bullet);
       // An answer that named no role is placed by what the profile already
       // says, not by which job is newest.
       const guessed = bestOwner(profile, text);
@@ -184,11 +192,38 @@ export function InterviewPanel({
         drafted.summary.trim() && 'summary written',
       ].filter(Boolean) as string[];
 
+      // One follow-up per question, never two: being asked twice about the
+      // same thing is irritating in a way being asked once is not.
+      const again = needsFollowUp(checked, text);
+      const canAskAgain = !followedUp.includes(current.id);
+
+      if (again.follow && canAskAgain && (drafted.followUp.trim() || checked.rejected.length)) {
+        setFollowedUp((ids) => [...ids, current.id]);
+        if (next !== profile) onProfile(next, 'partial');
+
+        const question =
+          drafted.followUp.trim() ||
+          `Some of that could not be backed up by what you said. Can you give me the specifics?`;
+
+        say({
+          kind: 'result',
+          id: `f-${current.id}`,
+          text: `One more — ${again.because}.`,
+          detail: checked.rejected.map((r) => `dropped: ${r.bullet.text}`),
+        });
+        say({ kind: 'question', id: `q2-${current.id}`, gap: current, text: again.because });
+        setPrompt(question);
+        return;
+      }
+
       settle(
         current,
         next,
         parts.length ? `Added: ${parts.join(', ')}.` : 'Nothing to add from that — no bullet earned.',
-        bullets.map((b) => b.text),
+        [
+          ...bullets.map((b) => b.text),
+          ...checked.rejected.map((r) => `not used — ${r.bullet.text}`),
+        ],
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

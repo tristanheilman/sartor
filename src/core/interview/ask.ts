@@ -16,7 +16,8 @@ import type { Gap } from './gaps';
 
 export const INTERVIEW_SYSTEM_PROMPT = `You are interviewing someone about work they have already done, so it can be recorded accurately on their resume.
 
-You are transcribing, not writing.
+Write the resume line they would have written if they had time. Say only what
+they said.
 
 ASKING
 - Ask about one specific thing. "What did the Kotlin bridge module do?" — not
@@ -27,19 +28,32 @@ ASKING
   to guess at. Ask what they did; if a number comes up naturally, keep it.
 
 WRITING THE BULLET
-- Use only facts the answer states. Not the question, not the posting, not what
-  would sound good.
-- If they gave no metric, write the bullet with no metric. A bullet without a
-  number is worth more than one with an invented number.
-- Keep their words where you can. Fix grammar, not substance.
-- Do not upgrade scope. "helped with" does not become "led". "a few" does not
-  become "several thousand".
-- If the answer does not describe something that belongs on a resume, return no
-  bullets at all. That is a valid and common outcome.
+You may rewrite freely for strength. Lead with what they did, use the active
+voice, cut the hedge and the throat-clearing. "I was kind of the person who
+ended up owning the release process" is a good bullet trying to get out.
+
+What you may never do is add a fact:
+- Every proper noun, product, tool, employer and number must come from the
+  answer or from the profile. This is checked afterwards, and a bullet that
+  introduces something unsupported is thrown away.
+- If they gave no metric, write it with no metric. A bullet without a number is
+  worth more than one with a number nobody can defend.
+- Never upgrade scope. "helped with" is not "led". "a few" is not "several
+  thousand". "we" is not "I".
+- Never turn a task into an achievement. "Used JIRA daily" is not worth a line
+  on a resume and dressing it up does not make it one — return no bullets
+  instead. That is a valid and common outcome.
+
+ASKING AGAIN
+If the answer is too vague to write down, or you had to guess at what they
+meant, put one short follow-up question in "followUp" and return no bullets for
+it. One question, about the specific thing that was missing — "what was running
+in the containers?" rather than "can you tell me more?". Leave it empty when
+the answer was clear.
 
 CONFIDENCE
-Mark a bullet "uncertain" when the answer was vague and you had to choose an
-interpretation. The user sees that flag and checks it first.`;
+Mark a bullet "uncertain" when you had to choose between readings of what they
+said. That flag is read: it decides whether they get asked again.`;
 
 export const questionSchema = z.object({
   gapId: z.string(),
@@ -106,6 +120,13 @@ export const draftedBulletsSchema = z.object({
    * under one employer, as though it were something that happened there.
    */
   summary: z.string().default(''),
+  /**
+   * One more question, when the answer was too vague to write down.
+   *
+   * Empty means the answer was enough. Callers allow one of these per question:
+   * being asked twice is irritating in a way being asked once is not.
+   */
+  followUp: z.string().default(''),
 });
 export type DraftedBullet = z.infer<typeof draftedBulletSchema>;
 
@@ -134,9 +155,10 @@ export const QUESTIONS_JSON_SCHEMA = {
 export const DRAFTED_BULLETS_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['bullets', 'newRole', 'endedRole', 'summary'],
+  required: ['bullets', 'newRole', 'endedRole', 'summary', 'followUp'],
   properties: {
     summary: S,
+    followUp: S,
     endedRole: {
       type: 'object',
       additionalProperties: false,
