@@ -18,6 +18,8 @@ import { isOngoing, toMonths } from '../dates';
 
 export type GapKind =
   | 'recent-work'
+  | 'more-projects'
+  | 'thin-project'
   | 'missing-requirement'
   | 'unbacked-skill'
   | 'thin-role'
@@ -152,6 +154,52 @@ function recentWork(profile: Profile, now: Date): Gap[] {
   ];
 }
 
+/**
+ * Projects, which until now could never come up at all.
+ *
+ * Nothing here read `profile.projects`, so a published package or a side
+ * project was invisible to the interview no matter how much of the work it
+ * represented. For anyone whose public evidence is code rather than employment
+ * — which is most developers — that is the largest omission in the whole set.
+ *
+ * Two shapes. A project already listed but barely described, and the one that
+ * cannot be derived at all: whether there are others we have never been told
+ * about. The second is asked once and is cheap to wave away.
+ */
+function projectGaps(profile: Profile): Gap[] {
+  const gaps: Gap[] = profile.projects
+    .filter((p) => p.bullets.length < 3)
+    .map((p) => ({
+      id: `thin-project:${p.id}`,
+      kind: 'thin-project' as const,
+      subject: p.name || 'Untitled project',
+      ownerId: p.id,
+      ownerLabel: p.name,
+      why:
+        p.bullets.length === 0
+          ? `${p.name} is listed with nothing under it.`
+          : `${p.name} has only ${p.bullets.length} line${p.bullets.length === 1 ? '' : 's'} describing it.`,
+      // Published work is evidence a reader can go and check, which puts it
+      // above an unevidenced skill and below a thin job.
+      weight: p.bullets.length === 0 ? 75 : 58,
+    }));
+
+  gaps.push({
+    id: 'more-projects',
+    kind: 'more-projects',
+    subject: 'Other projects',
+    ownerId: null,
+    ownerLabel: 'Projects',
+    why:
+      profile.projects.length === 0
+        ? 'Nothing is listed under projects.'
+        : `Only ${profile.projects.length} project${profile.projects.length === 1 ? ' is' : 's are'} listed. Packages you publish or repositories you maintain are evidence someone can go and read.`,
+    weight: 62,
+  });
+
+  return gaps;
+}
+
 /** Roles with too little on them to be worth reading. */
 function thinRoles(profile: Profile): Gap[] {
   return profile.work
@@ -233,6 +281,7 @@ export function findGaps(profile: Profile, opts: FindGapsOptions = {}): Gap[] {
   const gaps = [
     ...recentWork(profile, now),
     ...thinRoles(profile),
+    ...projectGaps(profile),
     ...undatedRoles(profile),
     ...unbackedSkills(profile, emphasised),
     ...missingRequirements(profile, jdText),

@@ -327,15 +327,55 @@ function planBullets(
   sectionKey: string,
   incoming: Bullet[],
   target: { bullets: Bullet[] } | null,
+  /**
+   * Every bullet already anywhere in the profile, plus the ones this merge has
+   * already placed.
+   *
+   * Duplicate detection used to look only at the entry a bullet matched, so two
+   * entries could never see each other. A single interview answer produced
+   * "Managed state in React Native mobile and React web applications using
+   * Redux." under two different employers, word for word, and both were added.
+   *
+   * Only an exact repeat is dropped this way. The same kind of work genuinely
+   * does happen at two jobs, and saying so twice in different words is fine —
+   * it is the identical sentence that is always a mistake.
+   *
+   * Mutable on purpose: a bullet claims its sentence as it is placed, so the
+   * second copy in the same merge sees the first.
+   */
+  elsewhere?: Set<string>,
 ): BulletCandidate[] {
   return incoming
     .filter((b) => b.text.trim())
     .map((b) => {
       const key = `${sectionKey}/${b.id}`;
 
+      const sentence = normalizeText(b.text);
+
+      // Checked after the target entry has had its say, further down: a repeat
+      // of something on *this* entry is a different finding, and one that
+      // carries a link to the bullet it repeats.
+      const duplicatedElsewhere = () => {
+        if (!elsewhere?.has(sentence)) {
+          elsewhere?.add(sentence);
+          return null;
+        }
+        return {
+          key,
+          incoming: b,
+          duplicateOf: null,
+          similarity: 1,
+          suggested: 'skip' as const,
+          reason: 'This exact sentence is already elsewhere in the profile',
+        } satisfies BulletCandidate;
+      };
+
       if (!target) {
         // No existing entry to compare against — every bullet is new.
-        return { key, incoming: b, duplicateOf: null, similarity: 0, suggested: 'add' as const, reason: 'New' };
+        return (
+          duplicatedElsewhere() ??
+          ({ key, incoming: b, duplicateOf: null, similarity: 0, suggested: 'add' as const, reason: 'New' } satisfies BulletCandidate)
+        );
       }
 
       let bestBullet: Bullet | null = null;
@@ -349,7 +389,10 @@ function planBullets(
       }
 
       if (!bestBullet || bestScore < DUPLICATE_THRESHOLD) {
-        return { key, incoming: b, duplicateOf: null, similarity: bestScore, suggested: 'add' as const, reason: 'New' };
+        return (
+          duplicatedElsewhere() ??
+          ({ key, incoming: b, duplicateOf: null, similarity: bestScore, suggested: 'add' as const, reason: 'New' } satisfies BulletCandidate)
+        );
       }
 
       // Word-for-word repeat, of the canonical text or of a phrasing already
@@ -370,7 +413,7 @@ function planBullets(
         };
       }
 
-      return {
+      return duplicatedElsewhere() ?? {
         key,
         incoming: b,
         duplicateOf: bestBullet.id,
@@ -427,6 +470,7 @@ function planEntries<T extends { id: string; bullets?: Bullet[] }>(
   incoming: T[],
   existing: T[],
   match: (x: T, pool: T[]) => EntryMatch | null,
+  elsewhere?: Set<string>,
 ): Array<EntryCandidate<T>> {
   return incoming.map((entry) => {
     const key = `${section}:${entry.id}`;
@@ -440,7 +484,9 @@ function planEntries<T extends { id: string; bullets?: Bullet[] }>(
       incoming: entry,
       match: found,
       suggested: merging ? ('merge' as const) : ('add' as const),
-      bullets: entry.bullets ? planBullets(key, entry.bullets, target as { bullets: Bullet[] } | null) : [],
+      bullets: entry.bullets
+        ? planBullets(key, entry.bullets, target as { bullets: Bullet[] } | null, elsewhere)
+        : [],
       fields:
         section === 'work' && target
           ? planDateFields(key, entry as unknown as Work, target as unknown as Work)
@@ -491,11 +537,19 @@ function planBasics(existing: Profile, incoming: Profile): BasicsChange[] {
  * hands the result to `applyMerge`.
  */
 export function planMerge(existing: Profile, incoming: Profile): ProfileMerge {
+  // Every sentence already spoken for: seeded with what is on file, and grown
+  // as each incoming bullet is placed. One set covers both ways a duplicate
+  // arrives — already in the profile, and twice within this same merge.
+  const spokenFor = new Set<string>();
+  for (const group of [existing.work, existing.projects, existing.education]) {
+    for (const entry of group) for (const b of entry.bullets) spokenFor.add(normalizeText(b.text));
+  }
+
   return {
     basics: planBasics(existing, incoming),
-    work: planEntries('work', incoming.work, existing.work, matchWork),
-    projects: planEntries('projects', incoming.projects, existing.projects, matchProject),
-    education: planEntries('education', incoming.education, existing.education, matchEducation),
+    work: planEntries('work', incoming.work, existing.work, matchWork, spokenFor),
+    projects: planEntries('projects', incoming.projects, existing.projects, matchProject, spokenFor),
+    education: planEntries('education', incoming.education, existing.education, matchEducation, spokenFor),
     skills: planEntries('skills', incoming.skills, existing.skills, (x, pool) =>
       matchByFields(x, pool, [(s) => s.name], 'Same skill group'),
     ),

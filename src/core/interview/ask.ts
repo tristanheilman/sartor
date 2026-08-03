@@ -243,7 +243,7 @@ ${JSON.stringify(roles, null, 2)}
 ${
   gap.ownerId
     ? `This question was asked about ownerId "${gap.ownerId}"; use that unless the answer clearly names a different role.`
-    : 'Pick the role the answer names. If the answer names no role and you cannot tell, use the most recent one.'
+    : 'Use the role the answer names. If it names none, leave ownerId empty — do not guess from recency. Something that spans several jobs belongs to whichever one the answer is actually about, and an empty ownerId is resolved from what the profile already says.'
 }
 
 IF THE ANSWER DESCRIBES A JOB THAT IS NOT IN THAT LIST

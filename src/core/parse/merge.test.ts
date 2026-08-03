@@ -452,3 +452,58 @@ describe('summarizeMerge', () => {
     });
   });
 });
+
+describe('the same sentence twice', () => {
+  // From a real run: one interview answer produced "Managed state in React
+  // Native mobile and React web applications using Redux." under two different
+  // employers, word for word, and both were added. Duplicate detection only
+  // ever looked at the entry a bullet matched, so two entries never saw each
+  // other.
+  const REDUX = 'Managed state in React Native mobile and React web applications using Redux.';
+
+  it('drops the copy when one answer lands the same sentence on two employers', () => {
+    const base = baseProfile();
+    const result = merged(
+      base,
+      incoming({
+        work: [
+          work({ bullets: [{ id: 'b1', text: REDUX }] }),
+          work({ id: 'wrk_other', name: 'Cobalt Health', startDate: '2018-06', endDate: '2021-02', bullets: [{ id: 'b2', text: REDUX }] }),
+        ],
+      }),
+    );
+
+    const everywhere = result.work.flatMap((w) => w.bullets.map((b) => b.text));
+    expect(everywhere.filter((t) => t === REDUX)).toHaveLength(1);
+  });
+
+  it('drops a sentence already sitting under a different entry', () => {
+    const base = profileSchema.parse({
+      ...baseProfile(),
+      work: [
+        { ...baseProfile().work[0] },
+        { id: 'wrk_old', name: 'Cobalt Health', position: 'Engineer', startDate: '2018-06', endDate: '2021-02', bullets: [{ id: 'blt_redux', text: REDUX }] },
+      ],
+    });
+    const result = merged(base, incoming({ work: [work({ bullets: [{ id: 'b1', text: REDUX }] })] }));
+
+    expect(result.work.flatMap((w) => w.bullets).filter((b) => b.text === REDUX)).toHaveLength(1);
+  });
+
+  it('still allows the same work described differently at two jobs', () => {
+    // Genuinely doing the same thing twice is normal. It is the identical
+    // sentence that is always a mistake.
+    const base = baseProfile();
+    const result = merged(
+      base,
+      incoming({
+        work: [
+          work({ bullets: [{ id: 'b1', text: 'Managed Redux state across the driver app.' }] }),
+          work({ id: 'wrk_other', name: 'Cobalt Health', startDate: '2018-06', endDate: '2021-02', bullets: [{ id: 'b2', text: 'Owned the Redux store for the clinician web client.' }] }),
+        ],
+      }),
+    );
+
+    expect(result.work.flatMap((w) => w.bullets).filter((b) => /Redux/.test(b.text))).toHaveLength(2);
+  });
+});

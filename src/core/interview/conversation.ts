@@ -1,4 +1,6 @@
 import type { Profile } from '../schema';
+import { tokenize } from '../tailor/lexicon';
+import { isCommonSentenceOpener } from '../tailor/stopwords';
 import type { Gap, GapKind } from './gaps';
 
 /**
@@ -66,6 +68,9 @@ const reply = (
 export function quickReplies(gap: Gap): QuickReply[] {
   switch (gap.kind) {
     case 'recent-work':
+      // An empty history has nothing to still be at. The only useful reply is
+      // theirs, so offer nothing and let the box do the work.
+      if (gap.id === 'recent:none') return [];
       return [
         reply('same', 'Still there', 'none', { immediate: true }),
         reply('left', "I've left", 'end-role', { followUp: 'When did you leave?' }),
@@ -84,6 +89,22 @@ export function quickReplies(gap: Gap): QuickReply[] {
         // the claim simply stayed. Taking it off is a real, honest outcome.
         reply('learning', 'Only learning it', 'drop-skill', { immediate: true }),
         reply('keep', 'Leave it, no story to tell', 'none', { immediate: true }),
+      ];
+
+    case 'more-projects':
+      return [
+        reply('add', 'I have some to add', 'bullet', {
+          followUp: 'Which projects or packages, and what does each one do?',
+        }),
+        reply('none', "That's all of them", 'none', { immediate: true }),
+      ];
+
+    case 'thin-project':
+      return [
+        reply('describe', 'Let me describe it', 'bullet', {
+          followUp: `What does ${gap.subject} do, and what did you build in it?`,
+        }),
+        reply('enough', "That's enough about it", 'none', { immediate: true }),
       ];
 
     case 'thin-role':
@@ -122,6 +143,9 @@ export function lanesFor(kind: GapKind): LaneKind[] {
       return ['bullet', 'drop-skill', 'none'];
     case 'no-summary':
       return ['summary'];
+    case 'more-projects':
+    case 'thin-project':
+      return ['bullet', 'none'];
     case 'undated-role':
       return ['end-role', 'none'];
     default:
@@ -215,4 +239,70 @@ export function progress(openGaps: number, answered: number, previousRemaining?:
   const remaining = previousRemaining === undefined ? openGaps : Math.min(openGaps, previousRemaining);
   const total = answered + remaining;
   return { answered, remaining, fraction: total === 0 ? 1 : answered / total };
+}
+
+/* ------------------------------------------------------------------ *
+ * Where an answer belongs
+ * ------------------------------------------------------------------ */
+
+function contentTokens(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const t of tokenize(text)) if (!isCommonSentenceOpener(t.norm)) out.add(t.norm);
+  return out;
+}
+
+export interface OwnerGuess {
+  ownerId: string;
+  /** 0–1. Zero means nothing in the answer pointed anywhere. */
+  confidence: number;
+  /** Why, in a sentence, for the confirmation step. */
+  reason: string;
+}
+
+/**
+ * Which role an answer is about, when the answer does not say.
+ *
+ * The rule used to be "use the most recent one", and it was wrong in the way
+ * that matters: skills like Redux, Jest and JIRA span several jobs, so *every*
+ * unattributed answer piled onto the current employer. Seven of eight bullets
+ * from one real interview landed on a job the person had held for two months.
+ *
+ * Recency is the worst available tie-break. What the profile already says is a
+ * far better one: if a role's existing bullets talk about React Native and the
+ * answer talks about React Native, that is evidence, and it is evidence the
+ * user can check when they confirm.
+ *
+ * Returns nothing when nothing points anywhere. A caller that cannot tell
+ * should ask rather than guess — silently filing work under the wrong employer
+ * is worse than one more question.
+ */
+export function bestOwner(profile: Profile, answer: string): OwnerGuess | null {
+  const words = contentTokens(answer);
+  if (words.size === 0 || profile.work.length === 0) return null;
+
+  let best: OwnerGuess | null = null;
+
+  for (const role of profile.work) {
+    // The employer and title count as evidence too: naming the company in an
+    // answer is the clearest signal there is.
+    const haystack = contentTokens(
+      [role.name, role.position, ...role.bullets.map((b) => b.text)].join(' '),
+    );
+    if (haystack.size === 0) continue;
+
+    let shared = 0;
+    for (const w of words) if (haystack.has(w)) shared++;
+    const confidence = shared / words.size;
+
+    if (!best || confidence > best.confidence) {
+      best = {
+        ownerId: role.id,
+        confidence,
+        reason: `${shared} of the things you mentioned already appear under ${role.position} at ${role.name}`,
+      };
+    }
+  }
+
+  // One or two incidental words in common is noise, not a signal.
+  return best && best.confidence >= 0.2 ? best : null;
 }

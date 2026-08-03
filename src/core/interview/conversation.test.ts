@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { profileSchema, type Profile } from '../schema';
-import { applyQuickReply, lanesFor, progress, quickReplies } from './conversation';
+import { applyQuickReply, bestOwner, lanesFor, progress, quickReplies } from './conversation';
 import { findGaps } from './gaps';
 import type { Gap } from './gaps';
 
@@ -58,6 +58,12 @@ describe('what a person is offered', () => {
 
   it('offers nothing to tap for a summary, because that answer has to be theirs', () => {
     expect(quickReplies(gap({ kind: 'no-summary' }))).toEqual([]);
+  });
+
+  it('offers nothing to tap when there is no work history at all', () => {
+    // "Where have you worked?" was being offered "Still there", which is not
+    // an answer to it. Same kind, different question.
+    expect(quickReplies(gap({ kind: 'recent-work', id: 'recent:none' }))).toEqual([]);
   });
 
   it('keeps the list short enough not to be a form again', () => {
@@ -205,8 +211,9 @@ describe('against the real gap finder', () => {
 
     for (const g of gaps) {
       const replies = quickReplies(g);
-      // A summary is the one question with nothing to tap.
-      if (g.kind === 'no-summary') continue;
+      // Two questions have nothing sensible to tap: a summary, and "where have
+      // you worked" on a profile with no history.
+      if (g.kind === 'no-summary' || g.id === 'recent:none') continue;
       expect(replies.length, `${g.kind} · ${g.subject}`).toBeGreaterThan(0);
     }
   });
@@ -222,5 +229,88 @@ describe('against the real gap finder', () => {
     // And the question does not come back.
     const remaining = findGaps(after, { now: new Date(NOW), limit: 8 });
     expect(remaining.map((g) => g.subject)).not.toContain('C#');
+  });
+});
+
+describe('where an answer belongs', () => {
+  // From a real interview: seven of eight bullets landed on a job the person
+  // had held for two months, because the rule was "use the most recent one"
+  // and skills like Redux and Jest span several jobs.
+  const twoJobs = profileSchema.parse({
+    id: 'prf_1',
+    createdAt: NOW,
+    updatedAt: NOW,
+    basics: { name: 'Priya Raman' },
+    work: [
+      {
+        id: 'wrk_new',
+        name: 'Foundry Health',
+        position: 'Senior Engineer',
+        startDate: '11/2025',
+        endDate: '',
+        bullets: [{ id: 'b1', text: 'Built the Auth0 integration and the anonymization scripts.' }],
+      },
+      {
+        id: 'wrk_old',
+        name: 'Halcyon Fleet',
+        position: 'Lead Mobile Developer',
+        startDate: '05/2022',
+        endDate: '09/2025',
+        bullets: [
+          { id: 'b2', text: 'Refactored driver tracking geolocation with GPS polling.' },
+          { id: 'b3', text: 'Developed CI/CD pipelines using Fastlane.' },
+        ],
+      },
+    ],
+  });
+
+  it('sends an answer to the job whose work it actually resembles', () => {
+    const guess = bestOwner(twoJobs, 'I set up the Fastlane pipelines and did the geolocation work there.');
+    expect(guess?.ownerId).toBe('wrk_old');
+  });
+
+  it('does not default to the newest job', () => {
+    // The exact failure. Under the old rule this went to Foundry Health.
+    const guess = bestOwner(twoJobs, 'GPS polling and driver tracking.');
+    expect(guess?.ownerId).not.toBe('wrk_new');
+  });
+
+  it('follows the employer when the answer names one', () => {
+    expect(bestOwner(twoJobs, 'That was at Foundry Health.')?.ownerId).toBe('wrk_new');
+  });
+
+  it('declines to guess when nothing points anywhere', () => {
+    // Better one more question than work filed under the wrong employer.
+    expect(bestOwner(twoJobs, 'It went pretty well overall.')).toBeNull();
+  });
+
+  it('says why, so the guess can be checked', () => {
+    expect(bestOwner(twoJobs, 'Fastlane and CI/CD pipelines.')?.reason).toContain('Halcyon Fleet');
+  });
+});
+
+describe('projects', () => {
+  it('asks about a project that is barely described', () => {
+    const withThin = profileSchema.parse({
+      ...profile(),
+      projects: [{ id: 'prj_1', name: 'react-native-object-capture', bullets: [{ id: 'pb1', text: 'A public React Native library.' }] }],
+    });
+    const gaps = findGaps(withThin, { now: new Date(NOW), limit: 12 });
+
+    expect(gaps.map((g) => g.subject)).toContain('react-native-object-capture');
+  });
+
+  it('asks whether there are projects it has never been told about', () => {
+    // Nothing read profile.projects at all, so a published package could never
+    // come up however much work it represented.
+    const gaps = findGaps(profile(), { now: new Date(NOW), limit: 12 });
+    expect(gaps.map((g) => g.kind)).toContain('more-projects');
+  });
+
+  it('offers a tap for both project questions', () => {
+    for (const kind of ['more-projects', 'thin-project'] as const) {
+      expect(quickReplies(gap({ kind })).length, kind).toBeGreaterThan(0);
+      expect(quickReplies(gap({ kind })).some((r) => r.immediate), kind).toBe(true);
+    }
   });
 });
