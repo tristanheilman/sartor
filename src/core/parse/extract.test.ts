@@ -97,6 +97,42 @@ describe('extractResumeText, PDF', () => {
     expect(safari.text).toBe(expected);
   });
 
+  it('reads a two-column resume without interleaving the sidebar', async () => {
+    // The layout that broke extraction, as a real PDF rather than the synthetic
+    // coordinates in layout.test.ts. A sidebar shares vertical positions with
+    // the main column, so bucketing on y alone reads them a row at a time —
+    // producing "Staff Software Engineer, Northwind Payments SKILLS" and
+    // contact details woven through the header.
+    const { text } = await extractResumeText(fixture('resume-two-column.pdf'), opts);
+    const lines = text.split('\n');
+
+    // Each column is read through before the next begins. Without column
+    // detection the sidebar's first heading lands on line 0, above everything.
+    const at = (heading: string) => {
+      const i = lines.indexOf(heading);
+      expect(i, `"${heading}" is not on a line of its own`).toBeGreaterThanOrEqual(0);
+      return i;
+    };
+    expect(at('EDUCATION')).toBeGreaterThan(at('EXPERIENCE'));
+    expect(at('CONTACT')).toBeGreaterThan(at('EDUCATION'));
+    expect(at('SKILLS')).toBeGreaterThan(at('CONTACT'));
+
+    // And no single line may carry text from both columns.
+    const mainColumn = /Northwind|Cobalt|ledger|idempotency|Urbana/;
+    const sidebar = /example\.com|\(555\)|Austin, TX|Terraform|TypeScript/;
+    for (const line of lines) {
+      expect(
+        mainColumn.test(line) && sidebar.test(line),
+        `columns merged on one line: ${line}`,
+      ).toBe(false);
+    }
+
+    // Nothing is lost on the way through.
+    expect(text).toContain('cutting');
+    expect(text).toContain('jordan.avery@example.com');
+    expect(text).toContain('Terraform');
+  });
+
   it('explains that a scanned PDF cannot be read', async () => {
     await expect(extractResumeText(fixture('resume-scanned.pdf'), opts)).rejects.toThrow(
       ExtractionError,

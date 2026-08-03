@@ -123,6 +123,53 @@ function TextResume() {
 }
 
 /**
+ * A two-column resume: main column left, skills-and-contact sidebar right.
+ *
+ * The layout that broke extraction. A sidebar shares vertical positions with
+ * the main column, so bucketing text by its y coordinate alone interleaves the
+ * two — an employer line and a GitHub URL land on one line. It is also an
+ * extremely common resume template, so this belongs in the fixtures as a real
+ * PDF rather than only as synthetic coordinates in a unit test.
+ */
+function TwoColumnResume() {
+  const side = { fontSize: 8.5, marginBottom: 3, color: '#333333' };
+  return h(
+    Document,
+    null,
+    h(
+      Page,
+      { size: 'LETTER', style: { padding: 40, flexDirection: 'row', fontSize: 10 } },
+      // Main column
+      h(
+        View,
+        { style: { flex: 2, paddingRight: 26 } },
+        h(Text, { style: { fontSize: 18 } }, RESUME.name),
+        h(Text, { style: { fontSize: 10.5, color: '#333333', marginBottom: 10 } }, RESUME.label),
+        h(Text, { style: { fontSize: 10.5, marginBottom: 4 } }, 'EXPERIENCE'),
+        ...RESUME.roles.flatMap((r, i) => [
+          h(Text, { key: `t${i}`, style: { marginTop: 6 } }, `${r.title}, ${r.company}`),
+          h(Text, { key: `d${i}`, style: { fontSize: 9, color: '#555555' } }, r.dates),
+          ...r.bullets.map((b, j) =>
+            h(Text, { key: `b${i}-${j}`, style: { marginTop: 2, paddingLeft: 8 } }, `• ${b}`),
+          ),
+        ]),
+        h(Text, { style: { fontSize: 10.5, marginTop: 12, marginBottom: 4 } }, 'EDUCATION'),
+        h(Text, null, RESUME.education),
+      ),
+      // Sidebar
+      h(
+        View,
+        { style: { flex: 1, borderLeftWidth: 0.5, borderLeftColor: '#CCCCCC', paddingLeft: 16 } },
+        h(Text, { style: { fontSize: 10.5, marginBottom: 4 } }, 'CONTACT'),
+        ...RESUME.contact.split(' | ').map((line, i) => h(Text, { key: `c${i}`, style: side }, line)),
+        h(Text, { style: { fontSize: 10.5, marginTop: 12, marginBottom: 4 } }, 'SKILLS'),
+        ...RESUME.skills.split(', ').map((sk, i) => h(Text, { key: `s${i}`, style: side }, sk)),
+      ),
+    ),
+  );
+}
+
+/**
  * A greyscale PNG of nothing in particular, as a stand-in for a page scan.
  * Hand-rolled so the fixtures need no image assets of their own.
  */
@@ -192,6 +239,7 @@ async function writePdf(element, name) {
 }
 
 await writePdf(h(TextResume), 'resume.pdf');
+await writePdf(h(TwoColumnResume), 'resume-two-column.pdf');
 await writePdf(
   ScannedResume(`data:image/png;base64,${greyPng(612, 792).toString('base64')}`),
   'resume-scanned.pdf',
