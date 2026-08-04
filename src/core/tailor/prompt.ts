@@ -128,6 +128,57 @@ function profileForModel(profile: Profile) {
 }
 
 /**
+ * How many bullets are left once everything else on the page is paid for.
+ *
+ * This was a flat 14 for one page, which ignored the whole top of the
+ * document. Measured on a real profile, fifteen kept bullets still came to two
+ * pages: a nine-line summary, five skill groups, three role headings, project
+ * headings and an education entry cost about thirty-five lines before a single
+ * bullet is printed. The same flat number is far too generous for a full
+ * profile and needlessly stingy for a sparse one.
+ *
+ * The arithmetic mirrors `estimateLines`, which is what the page-fit check
+ * measures the result against — so the budget and the verdict are computed the
+ * same way rather than drifting apart. Fifty lines is a page in the default
+ * template; a denser one simply leaves room to spare.
+ *
+ * Entry counts come from the profile, which over-states the overhead, since
+ * tailoring may drop entries. That errs toward fitting, which is the direction
+ * to err in: a resume that comes in short is a smaller problem than one that
+ * silently runs onto a second page.
+ */
+function bulletBudget(profile: Profile, pageTarget: 1 | 2): number {
+  const LINES_PER_PAGE = 50;
+  let overhead = 4; // name and contact block
+
+  if (profile.basics.summary.trim()) {
+    overhead += 2 + Math.ceil(profile.basics.summary.length / 105);
+  }
+  if (profile.skills.length) {
+    overhead +=
+      2 +
+      profile.skills.reduce(
+        (n, g) => n + Math.ceil((g.name.length + g.keywords.join(', ').length) / 100),
+        0,
+      );
+  }
+  // Two lines per entry: the title and employer line, and the dates and
+  // location beside it.
+  if (profile.work.length) overhead += 2 + profile.work.length * 2;
+  if (profile.projects.length) overhead += 2 + profile.projects.length * 2;
+  if (profile.education.length) overhead += 2 + profile.education.length * 2;
+
+  // A bullet is one line more often than two, but long ones wrap.
+  const AVERAGE_BULLET_LINES = 1.25;
+  const available = LINES_PER_PAGE * pageTarget - overhead;
+
+  // Even a crowded profile has to be allowed to say something; below this the
+  // advice stops being a budget and becomes an instruction to delete the
+  // resume.
+  return Math.max(6, Math.floor(available / AVERAGE_BULLET_LINES));
+}
+
+/**
  * Rough guidance so the model prunes rather than overflowing the page.
  *
  * Counts projects as well as roles. It used to count `profile.work` alone,
@@ -144,7 +195,7 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
   const roleBullets = profile.work.reduce((n, w) => n + w.bullets.length, 0);
   const projectBullets = profile.projects.reduce((n, p) => n + p.bullets.length, 0);
   const totalBullets = roleBullets + projectBullets;
-  const budget = pageTarget === 1 ? 14 : 26;
+  const budget = bulletBudget(profile, pageTarget);
 
   const inventory =
     projectBullets > 0
@@ -153,7 +204,7 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
 
   return totalBullets > budget
     ? `The profile has ${inventory} and the target is ${pageTarget} page(s), which fits roughly ${budget} in total. You will need to drop bullets — bullets, not whole roles. Drop the ones least relevant to this posting, taking them from the entries that have the most and from the oldest first. Project bullets count against the same budget as role bullets, so cut them on relevance too rather than protecting one section. Say why in each rationale.`
-    : `The profile has ${inventory}, which fits within ${pageTarget} page(s). Include what is relevant; you do not need to cut aggressively.`;
+    : `The profile has ${inventory}, which fits within ${pageTarget} page(s) — roughly ${budget} fit alongside the summary, skills and headings. Include what is relevant; you do not need to cut aggressively.`;
 }
 
 export function buildTailorUserPrompt(

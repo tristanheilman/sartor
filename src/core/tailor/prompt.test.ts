@@ -58,7 +58,7 @@ describe('the length budget', () => {
   });
 
   it('still asks for cuts when the work alone overflows', () => {
-    expect(prompt(30, 0)).toMatch(/need to drop/i);
+    expect(prompt(80, 0)).toMatch(/need to drop/i);
   });
 
   it('says bullets may be cut from projects as well as roles', () => {
@@ -68,9 +68,83 @@ describe('the length budget', () => {
   });
 
   it('gives a two-page target a larger budget', () => {
-    const one = prompt(20, 4, 1);
-    const two = prompt(20, 4, 2);
-    expect(one).not.toBe(two);
-    expect(two).toMatch(/26/);
+    const budget = (p: string) => Number(p.match(/roughly (\d+)/)![1]);
+    expect(budget(prompt(20, 4, 2))).toBeGreaterThan(budget(prompt(20, 4, 1)));
+  });
+});
+
+describe('the budget accounts for what else is on the page', () => {
+  /**
+   * A flat "roughly 14 bullets" ignored everything competing for the same
+   * space. Measured on a real profile, 15 kept bullets still came to two pages,
+   * because a 900-character summary, five skill groups, three role headings,
+   * project headings and an education entry cost about thirty-five lines before
+   * any bullet is printed.
+   */
+  const withOverhead = (over: Partial<Record<string, unknown>>): Profile =>
+    profileSchema.parse({
+      id: 'prf_1',
+      createdAt: 'now',
+      updatedAt: 'now',
+      basics: { name: 'Tristan Heilman', summary: 'Mobile developer.' },
+      work: [{ id: 'wrk_1', name: 'A', position: 'Dev', startDate: '01/2020', bullets: bullets(30, 'w') }],
+      ...over,
+    });
+
+  const budgetIn = (p: Profile) => {
+    const m = buildTailorUserPrompt(p, jd, DEFAULT_CONSTRAINTS).match(/roughly (\d+)/);
+    return m ? Number(m[1]) : null;
+  };
+
+  it('leaves less room for bullets when the summary is long', () => {
+    const short = budgetIn(withOverhead({}))!;
+    const long = budgetIn(
+      withOverhead({
+        basics: { name: 'T', summary: 'A very deliberate sentence about the work. '.repeat(20) },
+      }),
+    )!;
+    expect(long).toBeLessThan(short);
+  });
+
+  it('leaves less room when there are many skill groups', () => {
+    const few = budgetIn(withOverhead({}))!;
+    const many = budgetIn(
+      withOverhead({
+        skills: Array.from({ length: 6 }, (_, i) => ({
+          id: `s${i}`,
+          name: `Group ${i}`,
+          keywords: ['One', 'Two', 'Three'],
+        })),
+      }),
+    )!;
+    expect(many).toBeLessThan(few);
+  });
+
+  it('leaves less room when there are project entries to head', () => {
+    const none = budgetIn(withOverhead({}))!;
+    const some = budgetIn(
+      withOverhead({
+        projects: Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, name: `p-${i}`, bullets: bullets(3, `pb${i}`) })),
+      }),
+    )!;
+    expect(some).toBeLessThan(none);
+  });
+
+  it('gives two pages roughly twice the room of one', () => {
+    const p = withOverhead({});
+    const one = Number(buildTailorUserPrompt(p, jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 1 }).match(/roughly (\d+)/)![1]);
+    const two = Number(buildTailorUserPrompt(p, jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 2 }).match(/roughly (\d+)/)![1]);
+    expect(two).toBeGreaterThan(one * 1.5);
+  });
+
+  it('never asks for so few that the resume is empty', () => {
+    // A pathological profile — enormous summary, many groups — must still leave
+    // room to say something.
+    const crowded = withOverhead({
+      basics: { name: 'T', summary: 'x'.repeat(4000) },
+      skills: Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, name: `G${i}`, keywords: ['a'] })),
+      projects: Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, name: `p${i}`, bullets: bullets(3, `q${i}`) })),
+    });
+    expect(budgetIn(crowded)!).toBeGreaterThanOrEqual(6);
   });
 });
