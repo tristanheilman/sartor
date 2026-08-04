@@ -57,8 +57,18 @@ function makeStyles(t: Template) {
       lineHeight: t.lineHeight,
       color: '#111111',
     },
-    name: { fontFamily: t.headingFont, fontSize: t.baseSize * 1.9, marginBottom: 2 },
-    label: { fontSize: t.baseSize * 1.05, color: '#333333', marginBottom: 3 },
+    // The page sets `lineHeight` for body text, and at nearly twice the body
+    // size the name inherits a line box too tight for its own descenders — the
+    // headline underneath sat hard against it. Both get their own leading and
+    // a real gap, so the three header lines read as a block rather than as one
+    // collided line and two loose ones.
+    name: {
+      fontFamily: t.headingFont,
+      fontSize: t.baseSize * 1.9,
+      lineHeight: 1.2,
+      marginBottom: 4,
+    },
+    label: { fontSize: t.baseSize * 1.05, lineHeight: 1.3, color: '#333333', marginBottom: 4 },
     // Contact details render as ordinary body text, inline, at the top of the
     // page — deliberately not in a PDF header, which extractors often skip.
     contact: { fontSize: t.baseSize * 0.95, color: '#333333', marginBottom: t.sectionGap },
@@ -82,12 +92,20 @@ function makeStyles(t: Template) {
     bulletRow: { flexDirection: 'row', marginBottom: t.bulletGap, paddingRight: 4 },
     bulletGlyph: { width: 10 },
     bulletText: { flex: 1 },
-    skillRow: { flexDirection: 'row', marginBottom: 2 },
-    skillName: { fontFamily: t.headingFont, marginRight: 4 },
-    skillKeywords: { flex: 1 },
+    skillRow: { marginBottom: 2 },
+    skillName: { fontFamily: t.headingFont },
     listItem: { marginBottom: 2 },
   });
 }
+
+/**
+ * Points of room a heading needs beneath it before it will sit on a page.
+ *
+ * Roughly two lines and a bullet in the default template. Enough that a
+ * heading always arrives with something under it, small enough that it does
+ * not push headings onto a new page for the sake of it.
+ */
+const MIN_ROOM_AFTER_HEADING = 48;
 
 type Styles = ReturnType<typeof makeStyles>;
 
@@ -98,11 +116,22 @@ function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
     return (
       <>
         {section.skills?.map((g) => (
-          // A two-Text row, not a table cell. Reading order is name then values.
-          <View key={g.sourceId} style={s.skillRow} wrap={false}>
-            <Text style={s.skillName}>{g.name}:</Text>
-            <Text style={s.skillKeywords}>{g.keywords.join(', ')}</Text>
-          </View>
+          // One paragraph, not two columns. As a flex row the keywords formed
+          // their own column, so every wrapped line hung at wherever that
+          // column happened to start — a different indent for each group,
+          // because the labels are different lengths. "Mobile & Web
+          // Development" pushed its continuation a third of the way across the
+          // page while "Tools & DevOps" barely moved, and the section read as
+          // ragged and half-centred.
+          //
+          // Nested Text keeps the label bold and lets the whole thing wrap back
+          // to the left margin like the prose it is. It also puts the group and
+          // its keywords in one text run, which is friendlier to extraction
+          // than two adjacent boxes.
+          <Text key={g.sourceId} style={s.skillRow}>
+            <Text style={s.skillName}>{g.name}: </Text>
+            {g.keywords.join(', ')}
+          </Text>
         ))}
       </>
     );
@@ -123,17 +152,26 @@ function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
   return (
     <>
       {section.entries?.map((e) => (
-        <View key={e.sourceId} style={s.entry} wrap={false}>
-          <View style={s.entryTopRow}>
-            <Text style={s.entryPrimary}>{e.primary}</Text>
-            {e.meta ? <Text style={s.entryMeta}>{e.meta}</Text> : null}
-          </View>
-          {e.secondary || e.aside ? (
-            <View style={s.entrySecondRow}>
-              <Text style={s.entrySecondary}>{e.secondary}</Text>
-              {e.aside ? <Text style={s.entryMeta}>{e.aside}</Text> : null}
+        // Not `wrap={false}`. A role with fifteen bullets cannot fit in a
+        // part-used page, so refusing to split moved the entire entry to the
+        // next one — stranding the section heading above a third of a page of
+        // white space. Entries may break; the header rows below may not.
+        <View key={e.sourceId} style={s.entry}>
+          {/* Job title, employer and dates stay together, and take a bullet
+              with them — a role heading alone at the foot of a page reads as
+              though the job had nothing in it. */}
+          <View wrap={false} minPresenceAhead={MIN_ROOM_AFTER_HEADING}>
+            <View style={s.entryTopRow}>
+              <Text style={s.entryPrimary}>{e.primary}</Text>
+              {e.meta ? <Text style={s.entryMeta}>{e.meta}</Text> : null}
             </View>
-          ) : null}
+            {e.secondary || e.aside ? (
+              <View style={s.entrySecondRow}>
+                <Text style={s.entrySecondary}>{e.secondary}</Text>
+                {e.aside ? <Text style={s.entryMeta}>{e.aside}</Text> : null}
+              </View>
+            ) : null}
+          </View>
           {e.summary ? <Text style={s.entrySummary}>{e.summary}</Text> : null}
           {e.bullets.map((b) => (
             <View key={b.sourceId} style={s.bulletRow}>
@@ -169,7 +207,9 @@ export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId
 
         {doc.sections.map((section) => (
           <View key={section.key} style={s.section}>
-            <Text style={s.heading}>
+            {/* A heading with nothing under it is worse than a heading on the
+                next page, so require room for something to follow it. */}
+            <Text style={s.heading} minPresenceAhead={MIN_ROOM_AFTER_HEADING}>
               {t.uppercaseHeadings ? section.heading.toUpperCase() : section.heading}
             </Text>
             <SectionBody section={section} s={s} />
