@@ -87,7 +87,12 @@ export function quickReplies(gap: Gap): QuickReply[] {
         // The lane that did not exist. An unevidenced keyword is the weakest
         // line on a resume, and "I am learning it" produced nothing at all —
         // the claim simply stayed. Taking it off is a real, honest outcome.
-        reply('learning', 'Only learning it', 'drop-skill', { immediate: true }),
+        //
+        // Labelled for the reason people actually give. "Only learning it" is
+        // one way to have no story behind a skill and not the common one;
+        // "I used it briefly years ago and could not tell you what for" is,
+        // and it had no button.
+        reply('learning', "I don't really use it", 'drop-skill', { immediate: true }),
         reply('keep', 'Leave it, no story to tell', 'none', { immediate: true }),
       ];
 
@@ -372,4 +377,24 @@ export function followUpQuestion(gap: Gap, modelQuestion: string): string {
     case 'no-summary':
       return 'What kind of work do you want to be doing next, and what should someone reading this know first?';
   }
+}
+
+/**
+ * The replies to show, given whether a follow-up is already pending.
+ *
+ * A follow-up wants a typed answer, so the panel hid the taps while one was on
+ * screen. That also hid the only way to say there is nothing here — and a
+ * follow-up is asked precisely when the first answer produced nothing, so the
+ * escape hatch disappeared exactly where it was most likely to be needed.
+ * Asked a second time what they had used Azure DevOps for, the honest reply was
+ * "I guess I didn't really use it", and there was no button for that.
+ *
+ * The replies that survive are the ones that resolve with no model call: they
+ * settle the question outright, which is the whole point of still being there.
+ * The rest only set the prompt and focus the textarea, and the person is
+ * already in the textarea.
+ */
+export function repliesFor(gap: Gap, followUpPending: boolean): QuickReply[] {
+  const all = quickReplies(gap);
+  return followUpPending ? all.filter((r) => r.immediate) : all;
 }

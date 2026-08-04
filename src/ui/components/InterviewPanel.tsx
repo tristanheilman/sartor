@@ -12,7 +12,7 @@ import {
   ids,
   profileSchema,
   progress,
-  quickReplies,
+  repliesFor,
   DRAFTED_BULLETS_JSON_SCHEMA,
   INTERVIEW_SYSTEM_PROMPT,
   type Gap,
@@ -75,7 +75,9 @@ export function InterviewPanel({
   );
   const current = currentQuestion(pinned, openGaps);
   const stats = progress(openGaps.length, answered, floor);
-  const replies = current ? quickReplies(current) : [];
+  // `prompt` is set while a follow-up is waiting on a typed answer. The taps
+  // that settle a question outright stay available through it — see repliesFor.
+  const replies = current ? repliesFor(current, Boolean(prompt)) : [];
 
   // Ask the next question whenever one comes up that has not been asked. A
   // pinned question is already on screen with its follow-up.
@@ -355,7 +357,7 @@ export function InterviewPanel({
         </div>
       )}
 
-      {!busy && replies.length > 0 && !prompt && (
+      {!busy && replies.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {replies.map((r) => (
             <button

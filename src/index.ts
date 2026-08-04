@@ -235,6 +235,7 @@ export {
   bestOwner,
   currentQuestion,
   followUpQuestion,
+  repliesFor,
   lanesFor,
   progress,
   type LaneKind,

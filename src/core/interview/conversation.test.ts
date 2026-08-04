@@ -5,6 +5,7 @@ import {
   bestOwner,
   currentQuestion,
   followUpQuestion,
+  repliesFor,
   lanesFor,
   progress,
   quickReplies,
@@ -418,5 +419,48 @@ describe('the question asked when the model supplies none', () => {
     for (const kind of kinds) {
       expect(followUpQuestion({ ...skill, kind }, '').trim(), kind).not.toBe('');
     }
+  });
+});
+
+describe('the way out of a follow-up', () => {
+  const skill = gap({ id: 'unbacked:azure', subject: 'Azure DevOps' });
+
+  it('offers every reply when a question is first asked', () => {
+    expect(repliesFor(skill, false)).toEqual(quickReplies(skill));
+  });
+
+  it('keeps the replies that need no model while a follow-up is pending', () => {
+    // The case this exists for. Asked what they used Azure DevOps for, the
+    // honest answer was "I guess I didn't really use it" — and the only reply
+    // that acts on that had been hidden, because a pending follow-up wants
+    // typing. The escape hatch has to survive the question being asked twice.
+    const during = repliesFor(skill, true);
+
+    expect(during.length).toBeGreaterThan(0);
+    expect(during.every((r) => r.immediate)).toBe(true);
+    expect(during.some((r) => r.lane === 'drop-skill')).toBe(true);
+  });
+
+  it('drops the replies that would only reopen the box', () => {
+    // "I use it at work" sets the prompt and focuses the textarea, which is
+    // where the person already is.
+    expect(repliesFor(skill, true).some((r) => r.followUp)).toBe(false);
+  });
+
+  it('leaves a summary question with nothing to tap, as before', () => {
+    expect(repliesFor(gap({ kind: 'no-summary' }), true)).toEqual([]);
+  });
+});
+
+describe('saying a skill is not really yours', () => {
+  it('does not require having been learning it', () => {
+    // The label was "Only learning it", which is one reason a skill has no
+    // story behind it and not the common one. "I didn't really use it" had no
+    // button, so an honest answer had nowhere to go.
+    const drop = quickReplies(gap()).find((r) => r.lane === 'drop-skill');
+
+    expect(drop).toBeDefined();
+    expect(drop?.label).not.toMatch(/learning/i);
+    expect(drop?.immediate).toBe(true);
   });
 });
