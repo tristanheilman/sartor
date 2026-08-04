@@ -3,6 +3,7 @@ import {
   applyQuickReply,
   bestOwner,
   buildAnswerPrompt,
+  currentQuestion,
   draftedBulletsSchema,
   findGaps,
   needsFollowUp,
@@ -63,7 +64,7 @@ export function InterviewPanel({
   // from the profile on every change, so without pinning, answering the
   // follow-up recorded it against whichever gap had floated to the top —
   // asking about one thing and filing the answer under another.
-  const [pinned, setPinned] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<Gap | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
@@ -71,7 +72,7 @@ export function InterviewPanel({
     () => findGaps(profile, { limit: 12 }).filter((g) => !skipped.includes(g.id)),
     [profile, skipped],
   );
-  const current = (pinned ? openGaps.find((g) => g.id === pinned) : null) ?? openGaps[0] ?? null;
+  const current = currentQuestion(pinned, openGaps);
   const stats = progress(openGaps.length, answered, floor);
   const replies = current ? quickReplies(current) : [];
 
@@ -241,7 +242,7 @@ export function InterviewPanel({
       if (again.follow && canAskAgain && (drafted.followUp.trim() || checked.rejected.length)) {
         setFollowedUp((ids) => [...ids, current.id]);
         // Hold this question open until the follow-up is answered.
-        setPinned(current.id);
+        setPinned(current);
         // Whatever *was* writable still lands now, rather than waiting on the
         // rest of the answer.
         if (next !== profile) onProfile(next, 'partial');

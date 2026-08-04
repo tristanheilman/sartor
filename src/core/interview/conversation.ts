@@ -306,3 +306,21 @@ export function bestOwner(profile: Profile, answer: string): OwnerGuess | null {
   // One or two incidental words in common is noise, not a signal.
   return best && best.confidence >= 0.2 ? best : null;
 }
+
+/**
+ * Which question is on screen.
+ *
+ * A question with a follow-up pending must stay put, and the obvious way to do
+ * that — hold its id and look it up again — fails in the one case that matters.
+ * Answering a question usually *fills the gap it came from*: describe a project
+ * with two lines and it now has six, so `thin-project` no longer fires for it
+ * and the id resolves to nothing. The lookup then falls through to whatever gap
+ * is now first, and the follow-up is asked under someone else's heading.
+ *
+ * Holding the gap itself keeps the question stable through exactly that, which
+ * is the normal outcome of answering rather than an edge case. The pin is
+ * cleared when the answer settles, so a stale gap cannot outlive its question.
+ */
+export function currentQuestion(pinned: Gap | null, openGaps: Gap[]): Gap | null {
+  return pinned ?? openGaps[0] ?? null;
+}

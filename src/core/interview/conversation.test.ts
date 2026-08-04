@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { profileSchema, type Profile } from '../schema';
-import { applyQuickReply, bestOwner, lanesFor, progress, quickReplies } from './conversation';
+import {
+  applyQuickReply,
+  bestOwner,
+  currentQuestion,
+  lanesFor,
+  progress,
+  quickReplies,
+} from './conversation';
 import { findGaps } from './gaps';
 import type { Gap } from './gaps';
 
@@ -312,5 +319,42 @@ describe('projects', () => {
       expect(quickReplies(gap({ kind })).length, kind).toBeGreaterThan(0);
       expect(quickReplies(gap({ kind })).some((r) => r.immediate), kind).toBe(true);
     }
+  });
+});
+
+describe('which question stays on screen', () => {
+  const sartor: Gap = {
+    id: 'thin-project:prj_sartor',
+    kind: 'thin-project',
+    subject: 'Sartor',
+    ownerId: 'prj_sartor',
+    ownerLabel: 'Sartor',
+    why: 'Sartor has only 2 lines describing it.',
+    weight: 58,
+  };
+  const swing: Gap = { ...sartor, id: 'thin-project:prj_swing', subject: 'diy-swing-analysis', ownerId: 'prj_swing' };
+
+  it('shows the highest-ranked gap when nothing is pinned', () => {
+    expect(currentQuestion(null, [sartor, swing])?.id).toBe(sartor.id);
+  });
+
+  it('keeps a pinned question after answering has filled its gap', () => {
+    // The real sequence: describing Sartor took it from 2 bullets to 6, so
+    // `thin-project` stopped firing for it and it left the open list entirely
+    // — while a follow-up about it was still on screen awaiting an answer.
+    expect(currentQuestion(sartor, [swing])?.subject).toBe('Sartor');
+  });
+
+  it('keeps a pinned question when the ranking reshuffles under it', () => {
+    expect(currentQuestion(sartor, [swing, sartor])?.id).toBe(sartor.id);
+  });
+
+  it('has nothing to ask when the list empties and nothing is pinned', () => {
+    expect(currentQuestion(null, [])).toBeNull();
+  });
+
+  it('still has the pinned question when the list empties completely', () => {
+    // Answering the last open gap must not close the follow-up it just asked.
+    expect(currentQuestion(sartor, [])?.id).toBe(sartor.id);
   });
 });
