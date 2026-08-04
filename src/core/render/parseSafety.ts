@@ -1,6 +1,21 @@
 import { SECTION_HEADINGS } from './model';
 import type { ResumeDocument } from './model';
-import { estimateLines, LINES_PER_PAGE } from './model';
+import { estimateLines, linesPerPage, LINES_PER_PAGE } from './model';
+
+/** The subset of a template that decides how much text fits on a page. */
+export interface PageMetrics {
+  baseSize: number;
+  lineHeight: number;
+  pageMargin: number;
+}
+
+/**
+ * The densest built-in template, as a threshold rather than a name.
+ *
+ * Compact's own metrics, inlined so this module does not import the template
+ * registry — which imports zod, for a check that is otherwise pure arithmetic.
+ */
+const DENSEST: PageMetrics = { baseSize: 9.5, lineHeight: 1.28, pageMargin: 32 };
 
 /**
  * The parse-safety checklist.
@@ -23,7 +38,11 @@ export interface ParseCheck {
   structural: boolean;
 }
 
-export function parseSafetyChecks(doc: ResumeDocument, pageTarget: 1 | 2): ParseCheck[] {
+export function parseSafetyChecks(
+  doc: ResumeDocument,
+  pageTarget: 1 | 2,
+  template?: PageMetrics,
+): ParseCheck[] {
   const checks: ParseCheck[] = [
     {
       id: 'single-column',
@@ -86,7 +105,11 @@ export function parseSafetyChecks(doc: ResumeDocument, pageTarget: 1 | 2): Parse
   });
 
   const lines = estimateLines(doc);
-  const estPages = Math.max(1, Math.ceil(lines / LINES_PER_PAGE));
+  const perPage = template ? linesPerPage(template) : LINES_PER_PAGE;
+  const estPages = Math.max(1, Math.ceil(lines / perPage));
+  // Only suggest a denser template when there is one to move to. Telling
+  // someone on Compact to switch to Compact is the bug this replaced.
+  const alreadyDense = template ? linesPerPage(template) >= linesPerPage(DENSEST) : false;
   checks.push({
     id: 'length',
     label: `Fits the ${pageTarget}-page target`,
@@ -95,7 +118,9 @@ export function parseSafetyChecks(doc: ResumeDocument, pageTarget: 1 | 2): Parse
     detail:
       estPages <= pageTarget
         ? `Estimated ${estPages} page(s).`
-        : `Estimated ${estPages} page(s) against a ${pageTarget}-page target. Reject a few kept bullets, or switch to the Compact template.`,
+        : `Estimated ${estPages} page(s) against a ${pageTarget}-page target. Reject a few kept bullets${
+            alreadyDense ? '' : ', or switch to the Compact template'
+          }.`,
   });
 
   const emptySections = doc.sections.filter(

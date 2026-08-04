@@ -130,5 +130,38 @@ export function estimateLines(doc: ResumeDocument): number {
   return lines;
 }
 
-/** Lines that comfortably fit on one page at our template's metrics. */
+/**
+ * Lines that comfortably fit on one page, for the template actually chosen.
+ *
+ * This was a single constant, which made the page-fit check give advice it
+ * could not act on: it warned "estimated 2 pages — switch to the Compact
+ * template", and switching changed nothing, because the estimate never looked
+ * at the template. A remedy that provably does not work is worse than none.
+ *
+ * Templates already carry what this needs. US Letter is 792pt tall, the margin
+ * is taken off top and bottom, and a line of body text occupies `baseSize x
+ * lineHeight`.
+ *
+ * Section, entry and bullet gaps are deliberately *not* subtracted here.
+ * `estimateLines` already charges two lines per section and two per entry for
+ * exactly that whitespace, and taking it off both sides put Roomy at 29 lines
+ * a page — tighter than a page really is, and tight enough to warn about
+ * documents that fit.
+ */
+export function linesPerPage(template: {
+  baseSize: number;
+  lineHeight: number;
+  pageMargin: number;
+}): number {
+  const PAGE_HEIGHT = 792;
+  const usable = PAGE_HEIGHT - template.pageMargin * 2;
+  const lineHeightPt = template.baseSize * template.lineHeight;
+  return Math.max(1, Math.floor(usable / lineHeightPt));
+}
+
+/**
+ * The old fixed value, kept because it is exported API.
+ *
+ * @deprecated Use `linesPerPage(template)`; a page depends on the template.
+ */
 export const LINES_PER_PAGE = 52;
