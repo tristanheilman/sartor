@@ -150,3 +150,77 @@ describe('dropping questions an answer already covered', () => {
     expect(remainingGaps(gaps, ['Not really, no.'])).toEqual(gaps);
   });
 });
+
+describe('the limit counts questions worth asking', () => {
+  /**
+   * A profile with far more unbacked skills than the cap, so the ranking has
+   * to choose — which is when excluding the answered ones starts to matter.
+   */
+  const many = (n: number) =>
+    profileSchema.parse({
+      id: 'prf_many',
+      createdAt: 'now',
+      updatedAt: 'now',
+      basics: { name: 'Priya Raman', summary: 'Mobile developer.' },
+      work: [
+        {
+          id: 'wrk_1',
+          name: 'Halcyon Fleet',
+          position: 'Lead Mobile Developer',
+          startDate: '05/2022',
+          endDate: '',
+          bullets: [
+            { id: 'b1', text: 'Owned the release process end to end.' },
+            { id: 'b2', text: 'Rebuilt the sync layer.' },
+            { id: 'b3', text: 'Cut cold start time.' },
+          ],
+        },
+      ],
+      skills: [
+        {
+          id: 'skl_1',
+          name: 'Tools',
+          keywords: Array.from({ length: n }, (_, i) => `Tool${String(i).padStart(2, '0')}`),
+        },
+      ],
+    });
+
+  it('still caps how many are returned', () => {
+    expect(findGaps(many(40), { limit: 12 }).length).toBe(12);
+  });
+
+  it('pulls in the next-ranked gap when one is excluded', () => {
+    // The defect: the panel filtered its skipped list *after* the cap, so
+    // skipping a question shrank the queue instead of revealing the one
+    // behind it. Skip eight and only four remain — the thirteenth-ranked
+    // skill can never be asked about, however long the session runs.
+    const all = findGaps(many(40), { limit: 12 });
+    const skip = all.slice(0, 8).map((g) => g.id);
+
+    const after = findGaps(many(40), { limit: 12, exclude: skip });
+
+    expect(after.length).toBe(12);
+    expect(after.some((g) => skip.includes(g.id))).toBe(false);
+  });
+
+  it('reveals a gap that was ranked below the cap', () => {
+    const all = findGaps(many(40), { limit: 12 });
+    const beyond = findGaps(many(40), { limit: 40 })[12];
+    expect(beyond).toBeDefined();
+    expect(all.some((g) => g.id === beyond!.id)).toBe(false);
+
+    const after = findGaps(many(40), { limit: 12, exclude: all.map((g) => g.id) });
+    expect(after.some((g) => g.id === beyond!.id)).toBe(true);
+  });
+
+  it('accepts a Set as well as an array', () => {
+    const all = findGaps(many(40), { limit: 12 });
+    const excluded = findGaps(many(40), { limit: 12, exclude: new Set([all[0]!.id]) });
+    expect(excluded.some((g) => g.id === all[0]!.id)).toBe(false);
+  });
+
+  it('runs out only when every gap really is answered', () => {
+    const everything = findGaps(many(40), { limit: 200 });
+    expect(findGaps(many(40), { limit: 12, exclude: everything.map((g) => g.id) })).toEqual([]);
+  });
+});

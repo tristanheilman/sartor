@@ -70,7 +70,10 @@ export function InterviewPanel({
   const box = useRef<HTMLTextAreaElement>(null);
 
   const openGaps = useMemo(
-    () => findGaps(profile, { limit: 12 }).filter((g) => !skipped.includes(g.id)),
+    // `exclude` rather than filtering the result: the cap has to apply to
+    // questions still worth asking, or skipping one shrinks the queue instead
+    // of revealing the next.
+    () => findGaps(profile, { limit: 12, exclude: skipped }),
     [profile, skipped],
   );
   const current = currentQuestion(pinned, openGaps);
