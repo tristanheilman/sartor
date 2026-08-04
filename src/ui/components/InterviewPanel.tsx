@@ -104,6 +104,11 @@ export function InterviewPanel({
 
   function settle(gap: Gap, next: Profile, note: string, detail?: string[]) {
     setPinned(null);
+    // A settled question takes its follow-up with it. `send` passes
+    // `prompt ?? current.why` as the question the model is answering, so a
+    // prompt left behind means the next reply is read against the previous
+    // question — an answer about one subject, interpreted as another.
+    setPrompt(null);
     setAnswered((n) => n + 1);
     setFloor(stats.remaining);
     setSkipped((s) => [...s, gap.id]);
