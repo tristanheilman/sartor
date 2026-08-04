@@ -4,6 +4,7 @@ import {
   bestOwner,
   buildAnswerPrompt,
   currentQuestion,
+  followUpQuestion,
   draftedBulletsSchema,
   findGaps,
   needsFollowUp,
@@ -239,7 +240,11 @@ export function InterviewPanel({
       const again = needsFollowUp(checked, text);
       const canAskAgain = !followedUp.includes(current.id);
 
-      if (again.follow && canAskAgain && (drafted.followUp.trim() || checked.rejected.length)) {
+      // No third condition. Requiring the model to have supplied a question
+      // meant that when it returned neither bullets nor a follow-up — the exact
+      // shape of a reply that needs one — the decision to ask was thrown away
+      // and the interview moved on without a word.
+      if (again.follow && canAskAgain) {
         setFollowedUp((ids) => [...ids, current.id]);
         // Hold this question open until the follow-up is answered.
         setPinned(current);
@@ -247,9 +252,7 @@ export function InterviewPanel({
         // rest of the answer.
         if (next !== profile) onProfile(next, 'partial');
 
-        const question =
-          drafted.followUp.trim() ||
-          `Some of that could not be backed up by what you said. Can you give me the specifics?`;
+        const question = followUpQuestion(current, drafted.followUp);
 
         say({
           kind: 'result',

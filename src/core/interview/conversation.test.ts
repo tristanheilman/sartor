@@ -4,6 +4,7 @@ import {
   applyQuickReply,
   bestOwner,
   currentQuestion,
+  followUpQuestion,
   lanesFor,
   progress,
   quickReplies,
@@ -356,5 +357,66 @@ describe('which question stays on screen', () => {
   it('still has the pinned question when the list empties completely', () => {
     // Answering the last open gap must not close the follow-up it just asked.
     expect(currentQuestion(sartor, [])?.id).toBe(sartor.id);
+  });
+});
+
+describe('the question asked when the model supplies none', () => {
+  const skill: Gap = {
+    id: 'unbacked:azure-devops',
+    kind: 'unbacked-skill',
+    subject: 'Azure DevOps',
+    ownerId: null,
+    ownerLabel: 'Tools',
+    why: 'You list Azure DevOps as a skill, but no bullet shows you using it.',
+    weight: 90,
+  };
+
+  it('prefers the model’s own follow-up, which is specific to the answer', () => {
+    expect(followUpQuestion(skill, 'What did the pipelines actually do?')).toBe(
+      'What did the pipelines actually do?',
+    );
+  });
+
+  it('falls back to a question about the subject rather than staying silent', () => {
+    // "I used Azure DevOps at Wridz for a very short period of time. The work
+    // and commits were in a private company repo." — 23 words, no bullet
+    // earned, and no follow-up from the model. `needsFollowUp` said to ask;
+    // the panel had nothing to ask with, so it moved on instead.
+    const q = followUpQuestion(skill, '');
+    expect(q).toContain('Azure DevOps');
+    expect(q.trim()).not.toBe('');
+  });
+
+  it('never falls back to a bare "tell me more"', () => {
+    // The prompt forbids this of the model for good reason; the fallback must
+    // hold to the same rule or it undoes it.
+    expect(followUpQuestion(skill, '')).not.toMatch(/tell me more|more about/i);
+  });
+
+  it('asks about authorship for a project, not about usage', () => {
+    const project: Gap = {
+      ...skill,
+      id: 'thin-project:prj_1',
+      kind: 'thin-project',
+      subject: 'react-native-island',
+      ownerId: 'prj_1',
+    };
+    expect(followUpQuestion(project, '')).toContain('react-native-island');
+  });
+
+  it('has something to ask for every kind of gap', () => {
+    const kinds: Gap['kind'][] = [
+      'recent-work',
+      'more-projects',
+      'thin-project',
+      'missing-requirement',
+      'unbacked-skill',
+      'thin-role',
+      'undated-role',
+      'no-summary',
+    ];
+    for (const kind of kinds) {
+      expect(followUpQuestion({ ...skill, kind }, '').trim(), kind).not.toBe('');
+    }
   });
 });

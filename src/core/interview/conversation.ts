@@ -324,3 +324,52 @@ export function bestOwner(profile: Profile, answer: string): OwnerGuess | null {
 export function currentQuestion(pinned: Gap | null, openGaps: Gap[]): Gap | null {
   return pinned ?? openGaps[0] ?? null;
 }
+
+/**
+ * The follow-up to ask when the model did not supply one.
+ *
+ * `needsFollowUp` can decide an answer warrants asking again in a case where
+ * there is nothing to ask *with*: the model returned no bullets and no
+ * question, so the panel had a decision and no way to act on it, and silently
+ * moved on. Asked about Azure DevOps, someone replied "I used it at Wridz for a
+ * very short period of time, the work and commits were in a private company
+ * repo" — twenty-three words, plainly an answer, and the interview said nothing
+ * and advanced. The skill stayed on the resume with nothing behind it.
+ *
+ * These are deliberately about the subject rather than the reply. A generic
+ * "can you tell me more?" is banned from the model's follow-ups because it puts
+ * the work back on the person; a fallback that reached for it would undo the
+ * rule it is standing in for.
+ */
+export function followUpQuestion(gap: Gap, modelQuestion: string): string {
+  // The model saw the answer and this did not, so its question is better
+  // whenever there is one.
+  const supplied = modelQuestion.trim();
+  if (supplied) return supplied;
+
+  const subject = gap.subject.trim() || 'that';
+
+  switch (gap.kind) {
+    case 'unbacked-skill':
+    case 'missing-requirement':
+      return `What did you build or ship with ${subject}? Even a small thing is worth more than the keyword on its own.`;
+
+    case 'thin-project':
+      return `Which parts of ${subject} did you write yourself, and what does it do that something off the shelf does not?`;
+
+    case 'more-projects':
+      return 'Which ones, and what does each do? A name and a sentence is enough.';
+
+    case 'thin-role':
+      return `What did a normal week at ${subject} involve — what were you actually responsible for?`;
+
+    case 'recent-work':
+      return 'Where are you now, and what are you doing there?';
+
+    case 'undated-role':
+      return `When did ${subject} start and end? Month and year is enough.`;
+
+    case 'no-summary':
+      return 'What kind of work do you want to be doing next, and what should someone reading this know first?';
+  }
+}

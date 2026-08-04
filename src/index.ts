@@ -234,6 +234,7 @@ export {
   applyQuickReply,
   bestOwner,
   currentQuestion,
+  followUpQuestion,
   lanesFor,
   progress,
   type LaneKind,
