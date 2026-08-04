@@ -466,14 +466,22 @@ function Footer() {
  * trusting a tool. This updates as each answer lands, so the effect of a reply
  * is visible in the same moment it is given.
  */
-function LiveProfile({ profile }: { profile: Profile }) {
-  const bullets = profile.work.reduce((n, w) => n + w.bullets.length, 0);
+export function LiveProfile({ profile }: { profile: Profile }) {
+  // Projects count too. The interview asks about them more than anything else,
+  // and a total that ignores them sits unchanged while someone answers four
+  // questions in a row — which reads as the answers having been thrown away.
+  const bullets =
+    profile.work.reduce((n, w) => n + w.bullets.length, 0) +
+    profile.projects.reduce((n, p) => n + p.bullets.length, 0);
 
   return (
     <div className="card-glass sticky top-4 p-4">
       <h3 className="text-sm font-semibold">Your profile, live</h3>
       <p className="mt-1 font-mono text-xs text-stone-500">
-        {profile.work.length} role{profile.work.length === 1 ? '' : 's'} · {bullets} bullet
+        {profile.work.length} role{profile.work.length === 1 ? '' : 's'}
+        {profile.projects.length > 0 &&
+          ` · ${profile.projects.length} project${profile.projects.length === 1 ? '' : 's'}`}{' '}
+        · {bullets} bullet
         {bullets === 1 ? '' : 's'} · {profile.skills.reduce((n, s) => n + s.keywords.length, 0)} skills
       </p>
 
@@ -500,6 +508,29 @@ function LiveProfile({ profile }: { profile: Profile }) {
             </ul>
           </div>
         ))}
+
+        {profile.projects.length > 0 && (
+          <>
+            <p className="mt-1 font-mono text-[10px] tracking-wide text-stone-400 uppercase">
+              Projects
+            </p>
+            {profile.projects.map((p) => (
+              <div key={p.id}>
+                <p className="text-xs font-semibold">{p.name || 'Untitled project'}</p>
+                {p.description && (
+                  <p className="font-mono text-[11px] text-stone-500">{p.description}</p>
+                )}
+                <ul className="mt-1 flex flex-col gap-1">
+                  {p.bullets.map((b) => (
+                    <li key={b.id} className="text-[11px] leading-snug text-stone-600">
+                      · {b.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );
