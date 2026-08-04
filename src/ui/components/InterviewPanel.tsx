@@ -260,7 +260,11 @@ export function InterviewPanel({
       // A confident answer can still be filed in the wrong place, so a
       // low-confidence placement earns the follow-up that the answer itself
       // did not. Only when there is nothing more pressing to ask.
-      const confirming = !again.follow && Boolean(unsure);
+      // Only when a bullet actually landed. A draft can be dropped by the merge
+      // as a duplicate, and asking "I have put that under Formedics — is that
+      // right?" about a bullet that does not exist is worse than not asking:
+      // it describes a change that was never made.
+      const confirming = !again.follow && Boolean(unsure) && counts.newBullets > 0;
 
       if ((again.follow || confirming) && canAskAgain) {
         setFollowedUp((ids) => [...ids, current.id]);
