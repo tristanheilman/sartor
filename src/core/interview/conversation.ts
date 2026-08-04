@@ -398,3 +398,98 @@ export function repliesFor(gap: Gap, followUpPending: boolean): QuickReply[] {
   const all = quickReplies(gap);
   return followUpPending ? all.filter((r) => r.immediate) : all;
 }
+
+/* ------------------------------------------------------------------ *
+ * Where a bullet lands, and how sure we are
+ * ------------------------------------------------------------------ */
+
+/**
+ * Below this, a placement is a guess worth checking rather than a conclusion.
+ *
+ * `bestOwner` already refuses to return anything under 0.2, so the band between
+ * that and this is the interesting one: enough overlap to prefer a role, not
+ * enough to put it on someone's resume without asking.
+ */
+export const CONFIDENT_OWNER = 0.45;
+
+export interface Placement {
+  ownerId: string;
+  /** 0–1. Zero means nothing in the answer pointed anywhere. */
+  confidence: number;
+  /** Why this entry, in a sentence, for the confirmation question. */
+  reason: string;
+  /** False when this should be confirmed before it settles. */
+  certain: boolean;
+}
+
+/**
+ * Which entry a bullet belongs to, and whether that was worked out or guessed.
+ *
+ * Three signals already existed and only one of them was ever read. The model
+ * marks a bullet `uncertain` when it had to choose between readings, and that
+ * does trigger a follow-up. `bestOwner` computes a confidence *and* a reason —
+ * the reason's own comment says it is "for the confirmation step" — and the
+ * caller took the id and dropped both. So a bullet routed on a fifth of the
+ * answer's words looked exactly like one routed on evidence, and when neither
+ * matched, the newest role won by position alone.
+ *
+ * That last case is the one that puts wrong things on a resume. "I have used
+ * Firebase Cloud Messaging" names no employer, and silently filing it under the
+ * current job asserts something about where the work happened that the answer
+ * never said.
+ *
+ * Precedence is unchanged — what the model said, then what the question was
+ * about, then what the answer resembles, then position. What is new is that the
+ * last of those admits to being a guess.
+ */
+export function placeBullet(
+  modelOwnerId: string,
+  gap: Gap,
+  guess: OwnerGuess | null,
+  firstRoleId: string,
+): Placement {
+  const chosen = modelOwnerId.trim();
+  if (chosen) {
+    // The model read the answer and named a role. Its own doubt is carried
+    // separately, by the `uncertain` flag.
+    return { ownerId: chosen, confidence: 0.9, reason: 'The answer named this role.', certain: true };
+  }
+
+  if (gap.ownerId) {
+    return {
+      ownerId: gap.ownerId,
+      confidence: 1,
+      reason: `The question was about ${gap.ownerLabel}.`,
+      certain: true,
+    };
+  }
+
+  if (guess) {
+    return {
+      ownerId: guess.ownerId,
+      confidence: guess.confidence,
+      reason: guess.reason,
+      certain: guess.confidence >= CONFIDENT_OWNER,
+    };
+  }
+
+  return {
+    ownerId: firstRoleId,
+    confidence: 0,
+    reason: 'Nothing in the answer pointed to a role, so this is the most recent one.',
+    // An empty profile has nowhere to put anything, and there is no point
+    // asking someone to confirm a placement that was never made.
+    certain: !firstRoleId,
+  };
+}
+
+/**
+ * The question to ask when a bullet was placed on a guess.
+ *
+ * Deliberately not "is that right?". A yes/no question makes "no" a dead end —
+ * the person then has to volunteer the correction unprompted, and the reply has
+ * to carry it in one go, because there is only ever one follow-up per question.
+ */
+export function confirmPlacement(roleLabel: string): string {
+  return `I have put that under ${roleLabel} — is that where it belongs, or was it somewhere else?`;
+}

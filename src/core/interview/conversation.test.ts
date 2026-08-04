@@ -6,6 +6,8 @@ import {
   currentQuestion,
   followUpQuestion,
   repliesFor,
+  placeBullet,
+  confirmPlacement,
   lanesFor,
   progress,
   quickReplies,
@@ -462,5 +464,95 @@ describe('saying a skill is not really yours', () => {
     expect(drop).toBeDefined();
     expect(drop?.label).not.toMatch(/learning/i);
     expect(drop?.immediate).toBe(true);
+  });
+});
+
+describe('how confident the placement is', () => {
+  const p = profile({
+    work: [
+      {
+        id: 'wrk_new',
+        name: 'Formedics',
+        position: 'Native App Developer',
+        startDate: '10/2025',
+        endDate: '',
+        bullets: [{ id: 'b1', text: 'Built the Auth0 integration for Figure1.' }],
+      },
+      {
+        id: 'wrk_old',
+        name: 'Wridz LLC',
+        position: 'Lead Mobile App Developer',
+        startDate: '05/2022',
+        endDate: '09/2025',
+        bullets: [{ id: 'b2', text: 'Refactored driver tracking geolocation and GPS polling.' }],
+      },
+    ],
+  });
+  const g = gap();
+
+  it('is certain when the model named the role itself', () => {
+    const placed = placeBullet('wrk_old', g, null, p.work[0]!.id);
+    expect(placed).toMatchObject({ ownerId: 'wrk_old', certain: true });
+  });
+
+  it('is certain when the question was already about one entry', () => {
+    const owned = gap({ kind: 'thin-role', ownerId: 'wrk_old' });
+    const placed = placeBullet('', owned, null, p.work[0]!.id);
+
+    expect(placed.ownerId).toBe('wrk_old');
+    expect(placed.certain).toBe(true);
+    expect(placed.confidence).toBe(1);
+  });
+
+  it('is certain when the answer clearly points at a role', () => {
+    const guess = bestOwner(p, 'I refactored the driver tracking geolocation and GPS polling at Wridz');
+    expect(guess).not.toBeNull();
+
+    const placed = placeBullet('', g, guess, p.work[0]!.id);
+    expect(placed.ownerId).toBe('wrk_old');
+    expect(placed.certain).toBe(true);
+  });
+
+  it('is not certain when nothing in the answer pointed anywhere', () => {
+    // The real case: "I have used Firebase Cloud Messaging" names no employer,
+    // so the bullet landed on a role by position rather than by evidence — and
+    // looked exactly like one placed on evidence.
+    const placed = placeBullet('', g, null, p.work[0]!.id);
+
+    expect(placed.ownerId).toBe('wrk_new');
+    expect(placed.certain).toBe(false);
+    expect(placed.confidence).toBe(0);
+    expect(placed.reason).toBeTruthy();
+  });
+
+  it('is not certain on a weak match', () => {
+    const weak = { ownerId: 'wrk_old', confidence: 0.25, reason: 'Shares a word or two.' };
+    expect(placeBullet('', g, weak, p.work[0]!.id).certain).toBe(false);
+  });
+
+  it('prefers the model over the guess, and the guess over position', () => {
+    const guess = { ownerId: 'wrk_old', confidence: 0.9, reason: 'x' };
+    expect(placeBullet('wrk_new', g, guess, 'wrk_old').ownerId).toBe('wrk_new');
+    expect(placeBullet('', g, guess, 'wrk_new').ownerId).toBe('wrk_old');
+  });
+
+  it('has nothing to place when there are no roles at all', () => {
+    expect(placeBullet('', g, null, '').ownerId).toBe('');
+    expect(placeBullet('', g, null, '').certain).toBe(true);
+  });
+});
+
+describe('asking whether a placement is right', () => {
+  it('names the role it chose and offers to move it', () => {
+    const q = confirmPlacement('Lead Mobile App Developer at Wridz LLC');
+
+    expect(q).toContain('Lead Mobile App Developer at Wridz LLC');
+    expect(q).toMatch(/\?$/);
+  });
+
+  it('does not ask a yes-or-no question that dead-ends', () => {
+    // "Is that right?" invites "no" and nothing else. The reply has to be able
+    // to carry the correction.
+    expect(confirmPlacement('Native App Developer at Formedics')).toMatch(/where|which|somewhere/i);
   });
 });

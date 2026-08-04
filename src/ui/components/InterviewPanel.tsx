@@ -5,6 +5,9 @@ import {
   buildAnswerPrompt,
   currentQuestion,
   followUpQuestion,
+  placeBullet,
+  confirmPlacement,
+  type Placement,
   draftedBulletsSchema,
   findGaps,
   needsFollowUp,
@@ -163,10 +166,15 @@ export function InterviewPanel({
       // An answer that named no role is placed by what the profile already
       // says, not by which job is newest.
       const guessed = aboutProjects ? null : bestOwner(profile, text);
-      const fallback = aboutProjects
-        ? ''
-        : current.ownerId || guessed?.ownerId || profile.work[0]?.id || '';
-      const ownerOf = (b: { ownerId: string }) => b.ownerId || fallback;
+      const placementOf = (b: { ownerId: string }): Placement =>
+        aboutProjects
+          ? { ownerId: '', confidence: 1, reason: '', certain: true }
+          : placeBullet(b.ownerId, current, guessed, profile.work[0]?.id || '');
+      const ownerOf = (b: { ownerId: string }) => placementOf(b).ownerId;
+
+      // A bullet placed on a guess rather than on evidence. Worth one question
+      // before it becomes a claim about where someone did their work.
+      const unsure = bullets.map(placementOf).find((p) => !p.certain && p.ownerId);
 
       const asBullets = (owner: string) =>
         bullets
@@ -249,7 +257,12 @@ export function InterviewPanel({
       // meant that when it returned neither bullets nor a follow-up — the exact
       // shape of a reply that needs one — the decision to ask was thrown away
       // and the interview moved on without a word.
-      if (again.follow && canAskAgain) {
+      // A confident answer can still be filed in the wrong place, so a
+      // low-confidence placement earns the follow-up that the answer itself
+      // did not. Only when there is nothing more pressing to ask.
+      const confirming = !again.follow && Boolean(unsure);
+
+      if ((again.follow || confirming) && canAskAgain) {
         setFollowedUp((ids) => [...ids, current.id]);
         // Hold this question open until the follow-up is answered.
         setPinned(current);
@@ -257,7 +270,13 @@ export function InterviewPanel({
         // rest of the answer.
         if (next !== profile) onProfile(next, 'partial');
 
-        const question = followUpQuestion(current, drafted.followUp);
+        const owner = unsure && profile.work.find((w) => w.id === unsure.ownerId);
+        const question =
+          confirming && owner
+            ? confirmPlacement(
+                [owner.position || 'that role', owner.name].filter(Boolean).join(' at '),
+              )
+            : followUpQuestion(current, drafted.followUp);
 
         say({
           kind: 'result',
