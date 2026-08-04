@@ -23,6 +23,8 @@ import { getApiKey, setApiKey as persistKey, clearApiKey } from '../storage/keys
 
 interface Store {
   ready: boolean;
+  /** Set when local storage could not be opened at all. */
+  failure: string | null;
   settings: db.StoredSettings;
   profiles: Profile[];
   profile: Profile | null;
@@ -52,6 +54,9 @@ interface Store {
     doc: ResumeDocument;
   }): Promise<void>;
   removeExport(id: string): Promise<void>;
+  /** The profile being worked on but not yet confirmed, restored across reloads. */
+  draft: Profile | null;
+  saveDraft(profile: Profile | null): Promise<void>;
   saveKey(key: string): void;
   forgetKey(): void;
   eraseEverything(): Promise<void>;
@@ -68,18 +73,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [runs, setRuns] = useState<TailorRun[]>([]);
   const [exports, setExports] = useState<db.ExportRecord[]>([]);
   const [apiKey, setKeyState] = useState<string | null>(null);
+  const [draft, setDraftState] = useState<Profile | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
-      const [loadedSettings, loadedProfiles] = await Promise.all([db.loadSettings(), db.listProfiles()]);
+      const [loadedSettings, loadedProfiles, loadedDraft] = await Promise.all([
+        db.loadSettings(),
+        db.listProfiles(),
+        db.loadDraft(),
+      ]);
       setSettings(loadedSettings);
       setProfiles(loadedProfiles);
+      setDraftState(loadedDraft);
       const active =
         loadedProfiles.find((p) => p.id === loadedSettings.activeProfileId) ?? loadedProfiles[0] ?? null;
       setProfile(active);
       setKeyState(getApiKey(loadedSettings.providerId));
       setReady(true);
-    })();
+    })().catch((err: unknown) => {
+      // Without this the app sits on "Loading…" forever. A blocked upgrade is
+      // the common cause and it has a specific, actionable fix.
+      setFailure(err instanceof Error ? err.message : String(err));
+    });
   }, []);
 
   // History follows whichever profile is active. Runs belong to a profile, and
@@ -234,8 +250,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setKeyState(null);
   }, [settings.providerId]);
 
+  /**
+   * Persists the profile being worked on, or clears it.
+   *
+   * Written on every answer rather than on a timer: the interview is a series
+   * of discrete commits, and losing the most recent one is exactly what makes
+   * a reload feel like starting over.
+   */
+  const saveDraft = useCallback(async (next: Profile | null) => {
+    setDraftState(next);
+    if (next) await db.saveDraft(next);
+    else await db.clearDraft();
+  }, []);
+
   const eraseEverything = useCallback(async () => {
     await db.eraseEverything();
+    await db.clearDraft();
+    setDraftState(null);
     setProfiles([]);
     setProfile(null);
     setRun(null);
@@ -247,6 +278,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Store>(
     () => ({
       ready,
+      failure,
       settings,
       profiles,
       profile,
@@ -254,6 +286,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       runs,
       exports,
       apiKey,
+      draft,
+      saveDraft,
       updateSettings,
       selectProfile,
       upsertProfile,
@@ -271,6 +305,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       ready,
+      failure,
       settings,
       profiles,
       profile,
@@ -278,6 +313,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       runs,
       exports,
       apiKey,
+      draft,
+      saveDraft,
       updateSettings,
       selectProfile,
       upsertProfile,

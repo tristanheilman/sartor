@@ -216,3 +216,33 @@ describe('eraseEverything', () => {
     expect((await db.loadSettings()).templateId).toBe('classic');
   });
 });
+
+describe('the draft in flight', () => {
+  it('survives being read back', async () => {
+    const profile = profileSchema.parse({
+      id: 'prf_draft',
+      createdAt: 'now',
+      updatedAt: 'now',
+      basics: { name: 'Dana Reyes' },
+    });
+
+    await db.saveDraft(profile);
+    expect((await db.loadDraft())?.basics.name).toBe('Dana Reyes');
+
+    await db.clearDraft();
+    expect(await db.loadDraft()).toBeNull();
+  });
+
+  it('is null when there has never been one', async () => {
+    await db.clearDraft();
+    expect(await db.loadDraft()).toBeNull();
+  });
+
+  it('drops a draft the schema no longer accepts', async () => {
+    // Same discipline as every other read: a record written by an older
+    // schema surfaces at the storage boundary, not three screens later
+    // inside a renderer.
+    await db.saveDraft({ id: 'prf_x', basics: {} } as never);
+    expect(await db.loadDraft()).toBeNull();
+  });
+});

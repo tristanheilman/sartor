@@ -39,6 +39,21 @@ function Shell() {
   const { ready: keyReady } = useActiveProvider();
   const [step, setStep] = useState<Step>('profile');
 
+  if (store.failure) {
+    return (
+      <div className="mx-auto max-w-lg p-10">
+        <Aurora />
+        <div className="card p-5">
+          <h2 className="text-base font-semibold">Cannot open your local data</h2>
+          <p className="mt-2 text-sm text-stone-600">{store.failure}</p>
+          <button type="button" className="btn-primary mt-4" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!store.ready) {
     return <div className="p-10 text-sm text-stone-500">Loading your local data…</div>;
   }
@@ -110,8 +125,8 @@ function Shell() {
 /* ------------------------------------------------------------------ */
 
 function ProfileStep({ onDone }: { onDone(): void }) {
-  const { profile, profiles, upsertProfile, selectProfile, removeProfile } = useStore();
-  const [draft, setDraft] = useState<Profile | null>(null);
+  const { profile, profiles, upsertProfile, selectProfile, removeProfile, draft, saveDraft } =
+    useStore();
   const [warnings, setWarnings] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   // The interview runs against the draft, before anything is persisted, so a
@@ -125,14 +140,14 @@ function ProfileStep({ onDone }: { onDone(): void }) {
     return (
       <ImportPanel
         onParsed={(p, w) => {
-          setDraft(p);
+          void saveDraft(p);
           setWarnings(w);
           // Straight into the questions: the gaps are most obvious, and most
           // worth filling, the moment a resume has been read.
           setInterviewing(true);
         }}
         onBlank={(p) => {
-          setDraft(p);
+          void saveDraft(p);
           setWarnings([]);
         }}
       />
@@ -150,7 +165,9 @@ function ProfileStep({ onDone }: { onDone(): void }) {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
         <InterviewPanel
           profile={editing}
-          onProfile={(next) => setDraft(next)}
+          // Written through on every answer, so a reload picks up where the
+          // conversation left off instead of throwing it away.
+          onProfile={(next) => void saveDraft(next)}
           onDone={() => setInterviewing(false)}
         />
         {/* The profile as it stands, updating as each answer lands. Hidden on
@@ -208,7 +225,7 @@ function ProfileStep({ onDone }: { onDone(): void }) {
         </span>
       </div>
 
-      <ProfileEditor profile={editing} onChange={(p) => setDraft(p)} warnings={warnings} />
+      <ProfileEditor profile={editing} onChange={(p) => void saveDraft(p)} warnings={warnings} />
 
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -218,7 +235,7 @@ function ProfileStep({ onDone }: { onDone(): void }) {
           onClick={async () => {
             setSaving(true);
             await upsertProfile(editing);
-            setDraft(null);
+            await saveDraft(null);
             setWarnings([]);
             setSaving(false);
             onDone();
@@ -231,7 +248,7 @@ function ProfileStep({ onDone }: { onDone(): void }) {
             type="button"
             className="btn-secondary"
             onClick={() => {
-              setDraft(null);
+              void saveDraft(null);
               setWarnings([]);
             }}
           >

@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import {
+  safeParseProfile,
   profileSchema,
   templateSchema,
   type Profile,
@@ -65,18 +66,54 @@ interface SartorDB extends DBSchema {
   runs: { key: string; value: TailorRun; indexes: { byProfile: string; byCreated: string } };
   settings: { key: string; value: StoredSettings };
   exports: { key: string; value: ExportRecord; indexes: { byProfile: string; byCreated: string } };
+  /**
+   * A profile being worked on but not yet confirmed.
+   *
+   * The interview deliberately runs against an unsaved profile so someone can
+   * walk away from the whole thing. That also meant a refresh, a crash or a
+   * closed tab threw away every answer they had given — which for a flow that
+   * asks a dozen questions is the difference between a demo and something you
+   * would trust with a real evening's work.
+   *
+   * One slot, keyed by a constant: there is only ever one draft in flight, and
+   * a list of half-finished profiles would be its own kind of mess.
+   */
+  drafts: { key: string; value: { id: string; profile: Profile; savedAt: string } };
 }
 
 const DB_NAME = 'sartor';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise: Promise<IDBPDatabase<SartorDB>> | null = null;
+
+/**
+ * Raised when another tab is holding the database at an older version.
+ *
+ * IndexedDB will not upgrade a schema while any connection to the old version
+ * is open, and by default it simply never resolves — so a version bump left
+ * the app sitting on "Loading your local data…" forever with nothing to act
+ * on. Failing loudly is the only honest option: the fix is to close the other
+ * tab, and nobody can do that if they are not told.
+ */
+export class DatabaseBlockedError extends Error {
+  constructor() {
+    super(
+      'Another tab has this app open on an older version. Close the other tabs and reload — ' +
+        'the browser cannot upgrade the local database while they are holding it open.',
+    );
+  }
+}
 
 function db() {
   dbPromise ??= openDB<SartorDB>(DB_NAME, DB_VERSION, {
     // Stepwise and additive: a browser sitting at version 1 with real profiles
     // in it must gain the new store without touching the old ones.
     upgrade(database, oldVersion) {
+      if (oldVersion < 3) {
+        if (!database.objectStoreNames.contains('drafts')) {
+          database.createObjectStore('drafts', { keyPath: 'id' });
+        }
+      }
       if (oldVersion < 1) {
         database.createObjectStore('profiles', { keyPath: 'id' });
         const runs = database.createObjectStore('runs', { keyPath: 'id' });
@@ -89,6 +126,28 @@ function db() {
         exports.createIndex('byProfile', 'profileId');
         exports.createIndex('byCreated', 'createdAt');
       }
+    },
+
+    /**
+     * Another connection is holding the old version open. Say so rather than
+     * hanging: the promise would otherwise never settle.
+     */
+    blocked() {
+      throw new DatabaseBlockedError();
+    },
+
+    /**
+     * This tab is the one in the way of someone else's upgrade. Close and let
+     * them through — a stale tab should not hold a newer one hostage.
+     */
+    blocking(_current, _blocked, event) {
+      (event.target as IDBDatabase | null)?.close();
+      dbPromise = null;
+    },
+
+    /** The browser dropped the connection. Reconnect on the next call. */
+    terminated() {
+      dbPromise = null;
     },
   });
   return dbPromise;
@@ -197,4 +256,33 @@ export async function eraseEverything(): Promise<void> {
     database.clear('settings'),
     database.clear('exports'),
   ]);
+}
+
+/* ------------------------------------------------------------------ *
+ * The draft in flight
+ * ------------------------------------------------------------------ */
+
+const DRAFT_KEY = 'current';
+
+/** Stores the profile being worked on, so a reload does not lose the answers. */
+export async function saveDraft(profile: Profile): Promise<void> {
+  await (await db()).put('drafts', { id: DRAFT_KEY, profile, savedAt: new Date().toISOString() });
+}
+
+/**
+ * The draft, if there is one.
+ *
+ * Re-validated like everything else read back from storage: a record written
+ * by an older schema must surface here, not three screens later inside a
+ * renderer.
+ */
+export async function loadDraft(): Promise<Profile | null> {
+  const row = await (await db()).get('drafts', DRAFT_KEY);
+  if (!row) return null;
+  const parsed = safeParseProfile(row.profile);
+  return parsed.success ? parsed.data : null;
+}
+
+export async function clearDraft(): Promise<void> {
+  await (await db()).delete('drafts', DRAFT_KEY);
 }

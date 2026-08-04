@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
 import 'fake-indexeddb/auto';
 import { App } from './App';
+import { clearDraft, loadDraft } from '../storage/db';
 
 /**
  * Smoke tests for the shell.
@@ -13,8 +14,14 @@ import { App } from './App';
  * is usable enough to reach the import step without one.
  */
 
-beforeEach(() => {
+beforeEach(async () => {
   sessionStorage.clear();
+  // A draft now outlives a reload, which is the point of it — so a test that
+  // starts one changes the first screen every test after it sees. Cleared
+  // through the app's own function rather than by deleting the database:
+  // the connection is cached at module level, and dropping it underneath
+  // leaves every later test waiting on a database that never comes back.
+  await clearDraft();
 });
 
 afterEach(cleanup);
@@ -198,5 +205,47 @@ describe('App', () => {
     const text = document.body.textContent ?? '';
     expect(text).toContain('sessionStorage');
     expect(text).toContain('anthropic-dangerous-direct-browser-access');
+  });
+
+  it('keeps a profile in progress across a reload', async () => {
+    // The interview runs against an unsaved profile on purpose, so someone can
+    // walk away from all of it. That also meant a refresh, a crash or a closed
+    // tab threw away every answer given — which for a flow that asks a dozen
+    // questions is the difference between a demo and something you would trust
+    // with a real evening's work.
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('Sartor')).toBeDefined());
+
+    fireEvent.click(screen.getByRole('button', { name: /build one from scratch/i }));
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Dana Reyes' } });
+
+    // Never saved — this is a draft, and the tab goes away.
+    await waitFor(() =>
+      expect((screen.getByLabelText(/full name/i) as HTMLInputElement).value).toBe('Dana Reyes'),
+    );
+    cleanup();
+
+    render(<App />);
+    await waitFor(() =>
+      expect((screen.getByLabelText(/full name/i) as HTMLInputElement).value).toBe('Dana Reyes'),
+    );
+    // Still unsaved: nothing has been committed to the profile list.
+    expect(screen.getByRole('button', { name: /save profile and continue/i })).toBeDefined();
+  });
+
+  it('lets go of the draft once it is saved', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('Sartor')).toBeDefined());
+
+    fireEvent.click(screen.getByRole('button', { name: /build one from scratch/i }));
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Dana Reyes' } });
+    fireEvent.click(screen.getByRole('button', { name: /save profile and continue/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: /the job posting/i })).toBeDefined());
+
+    // A saved profile is not a draft any more; restoring one would resurrect
+    // edits the user had already committed or discarded.
+    await waitFor(async () => expect(await loadDraft()).toBeNull());
   });
 });
