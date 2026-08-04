@@ -113,6 +113,69 @@ export function documentToText(doc: ResumeDocument): string {
   ].join('\n');
 }
 
+/**
+ * How tall the document renders, in points, for a given template.
+ *
+ * `estimateLines` counts lines and charges flat constants for headings and
+ * entries, which is close enough to warn on but not close enough to trim
+ * against: it models neither leading nor the gaps between sections, entries
+ * and bullets, all of which the template specifies in points. A document it
+ * measured at exactly one page rendered as two, and the workaround — ten lines
+ * of headroom — was costing a whole projects section.
+ *
+ * This measures what the renderer is told to do. Characters-per-line is still
+ * an approximation, because the fonts are not measured, but everything else is
+ * the template's own numbers.
+ */
+export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
+  const line = t.baseSize * t.lineHeight;
+  // Width available for text, over the average advance of the body font at
+  // this size. 0.5 em is close for Helvetica and Times at resume sizes.
+  const perLine = Math.max(20, Math.floor((612 - t.pageMargin * 2) / (t.baseSize * 0.5)));
+  const wrapped = (text: string) => Math.max(1, Math.ceil(text.length / perLine));
+
+  // Name, headline, contact — three lines, the first at nearly twice the size.
+  let height = line * 1.2 * 1.9 + line * 1.3 + line + 4 + 4;
+
+  for (const s of doc.sections) {
+    height += t.sectionGap;
+    height += line + 4 + (t.headingRule ? 2 : 0); // heading, margin, rule
+
+    if (s.summary) height += wrapped(s.summary) * line;
+
+    for (const g of s.skills ?? []) {
+      height += wrapped(`${g.name}: ${g.keywords.join(', ')}`) * line + 2;
+    }
+
+    for (const e of s.entries ?? []) {
+      height += t.entryGap;
+      height += line * 2 + 2; // title row and employer row
+      if (e.summary) height += wrapped(e.summary) * line + 2;
+      for (const b of e.bullets) height += wrapped(b.text) * line + t.bulletGap;
+    }
+
+    for (const _ of s.items ?? []) height += line + 2;
+  }
+
+  return height;
+}
+
+/** Usable height of one page, in points. */
+export function pageHeight(t: PageMetrics): number {
+  return 792 - t.pageMargin * 2;
+}
+
+/** The subset of a template that decides how tall things render. */
+export interface PageMetrics {
+  baseSize: number;
+  lineHeight: number;
+  pageMargin: number;
+  sectionGap: number;
+  entryGap: number;
+  bulletGap: number;
+  headingRule: boolean;
+}
+
 /** Rough length estimate, used only to warn about overflow before rendering. */
 export function estimateLines(doc: ResumeDocument): number {
   let lines = 4; // contact block

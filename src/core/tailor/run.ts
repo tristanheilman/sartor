@@ -6,6 +6,7 @@ import { tailorPlanSchema, TAILOR_PLAN_JSON_SCHEMA, type TailorPlan } from './pl
 import { TAILOR_SYSTEM_PROMPT, buildTailorUserPrompt, type TailorConstraints } from './prompt';
 import { buildChanges, type TailorRun } from './apply';
 import { fitToTarget } from './fit';
+import type { PageMetrics } from '../render/model';
 
 /**
  * Drops anything in the plan that does not point at a real profile element.
@@ -77,7 +78,7 @@ export interface RunOptions {
    * page holds. Omitted, the trim assumes the default density — which errs
    * toward cutting slightly more than a compact template needs.
    */
-  template?: { baseSize: number; lineHeight: number; pageMargin: number };
+  template?: PageMetrics;
 }
 
 export interface TailorOutcome {
@@ -89,7 +90,13 @@ export interface TailorOutcome {
    * `false` means the document is as small as the trim is willing to make it —
    * roles and their first bullet are never taken.
    */
-  fit: { dropped: string[]; droppedEntries: string[]; fits: boolean };
+  fit: {
+    dropped: string[];
+    droppedEntries: string[];
+    fits: boolean;
+    /** A project the posting asked for that the model had dropped, put back. */
+    reinstated: string | null;
+  };
 }
 
 /** One call in, one reviewable run out. */
@@ -144,6 +151,11 @@ export async function runTailor(
       notes: plan.notes,
     },
     dropped,
-    fit: { dropped: fitted.dropped, droppedEntries: fitted.droppedEntries, fits: fitted.fits },
+    fit: {
+      dropped: fitted.dropped,
+      droppedEntries: fitted.droppedEntries,
+      fits: fitted.fits,
+      reinstated: fitted.reinstated,
+    },
   };
 }

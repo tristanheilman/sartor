@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { profileSchema, type Profile } from '../schema';
 import { tailorPlanSchema, type TailorPlan } from './plan';
 import { buildChanges, buildDocument } from './apply';
-import { estimateLines } from '../render/model';
+import { estimateHeight, pageHeight } from '../render/model';
 import { getTemplate } from '../render/templates';
 import { fitToTarget } from './fit';
 
@@ -61,11 +61,16 @@ const keepAll = (): TailorPlan =>
     skills: profile.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
   });
 
-const pages = (plan: TailorPlan, templateId = 'classic') => {
-  const perPage = 50;
-  void templateId;
-  return Math.ceil(estimateLines(buildDocument(profile, plan, buildChanges(profile, plan))) / perPage);
+const CLASSIC_METRICS = {
+  baseSize: 10, lineHeight: 1.4, pageMargin: 42,
+  sectionGap: 12, entryGap: 9, bulletGap: 3, headingRule: true,
 };
+
+const pages = (plan: TailorPlan) =>
+  Math.ceil(
+    estimateHeight(buildDocument(profile, plan, buildChanges(profile, plan)), CLASSIC_METRICS) /
+      pageHeight(CLASSIC_METRICS),
+  );
 
 describe('trimming a plan to the page target', () => {
   it('gets an over-generous plan onto one page', () => {
@@ -192,19 +197,22 @@ describe('headroom against the estimate being wrong', () => {
    * entry and does not model leading, rules, or a heading refusing to be
    * stranded.
    */
+  const CLASSIC = {
+    baseSize: 10, lineHeight: 1.4, pageMargin: 42,
+    sectionGap: 12, entryGap: 9, bulletGap: 3, headingRule: true,
+  };
+  const heightOf = (plan: TailorPlan) =>
+    estimateHeight(buildDocument(profile, plan, buildChanges(profile, plan)), CLASSIC);
+
   it('leaves room, rather than filling the page to the last line', () => {
     const { plan } = fitToTarget(profile, keepAll(), 1);
-    const lines = estimateLines(buildDocument(profile, plan, buildChanges(profile, plan)));
-
-    expect(lines).toBeLessThanOrEqual(50 - 10);
+    expect(heightOf(plan)).toBeLessThanOrEqual(pageHeight(CLASSIC));
   });
 
   it('still fills most of the page', () => {
     // Headroom is not an excuse to produce a half-empty resume.
     const { plan } = fitToTarget(profile, keepAll(), 1);
-    const lines = estimateLines(buildDocument(profile, plan, buildChanges(profile, plan)));
-
-    expect(lines).toBeGreaterThan(24);
+    expect(heightOf(plan)).toBeGreaterThan(pageHeight(CLASSIC) * 0.55);
   });
 });
 
@@ -370,5 +378,177 @@ describe('entries left with nothing under them', () => {
     });
     const { plan } = fitToTarget(profile, rolesEmptied, 1);
     expect(plan.work.every((w) => w.include)).toBe(true);
+  });
+});
+
+describe('a project the model dropped that the posting asked for', () => {
+  /**
+   * The ranking only orders what the plan kept. Across runs of one profile
+   * against one posting, the model sometimes included `react-native-island` and
+   * sometimes did not — and when it did not, a posting whose nice-to-haves read
+   * "published open-source React Native libraries" produced a resume with no
+   * projects section, from a profile containing exactly that library.
+   *
+   * So one project may be put back: the best match, only when it is a real
+   * match, and only if the page can hold it. Everything else the model dropped
+   * stays dropped — this is a floor under relevance, not a second opinion on
+   * the model's judgement.
+   */
+  const jd = `Senior Mobile Engineer. React Native, Swift and Kotlin native modules.
+     Nice to have: published open-source React Native libraries.`;
+
+  const p: Profile = profileSchema.parse({
+    ...profile,
+    work: [profile.work[0]],
+    projects: [
+      { id: 'prj_island', name: 'react-native-island', bullets: [
+        { id: 'i0', text: 'Built and maintain an open-source React Native library exposing iOS Live Activities and Android notifications.' },
+        { id: 'i1', text: 'Bridged native iOS and Android features into React Native for other developers.' },
+      ] },
+      { id: 'prj_recipes', name: 'recipe-box', bullets: [
+        { id: 'r0', text: 'A weekend recipe organiser storing everything in a local file.' },
+      ] },
+    ],
+  });
+
+  /** What the model returned: every project switched off. */
+  const noProjects = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j < 3, order: j })),
+      })),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: false, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
+      })),
+      skills: p.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  it('puts the matching project back', () => {
+    const { plan, reinstated } = fitToTarget(p, noProjects(), 1, undefined, jd);
+    const island = plan.projects.find((x) => x.id === 'prj_island')!;
+
+    expect(island.include).toBe(true);
+    expect(island.bullets.filter((b) => b.include).length).toBeGreaterThan(0);
+    expect(reinstated).toBe('prj_island');
+  });
+
+  it('puts back only the best one', () => {
+    const { plan } = fitToTarget(p, noProjects(), 1, undefined, jd);
+    expect(plan.projects.filter((x) => x.include).map((x) => x.id)).toEqual(['prj_island']);
+  });
+
+  it('leaves the model alone when nothing is a real match', () => {
+    // A posting about something else entirely. The model dropped the projects
+    // and it was right to.
+    const unrelated = 'Senior Accountant. Reconciliations, ledgers, audit support, month-end close.';
+    const { plan, reinstated } = fitToTarget(p, noProjects(), 1, undefined, unrelated);
+
+    expect(reinstated).toBeNull();
+    expect(plan.projects.every((x) => !x.include)).toBe(true);
+  });
+
+  it('leaves the model alone when it kept a project already', () => {
+    const kept = tailorPlanSchema.parse({
+      ...noProjects(),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: i === 1, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: i === 1 && j === 0, order: j })),
+      })),
+    });
+    expect(fitToTarget(p, kept, 1, undefined, jd).reinstated).toBeNull();
+  });
+
+  it('does not put one back when there is no room', () => {
+    // A summary that fills the page on its own. Skills can be trimmed and roles
+    // reduced to a bullet each, and it still does not fit — so there is nothing
+    // to reinstate into.
+    const crowded = profileSchema.parse({ ...p, basics: { ...p.basics, summary: 'x '.repeat(4000) } });
+    const { plan, fits } = fitToTarget(crowded, noProjects(), 1, undefined, jd);
+
+    expect(plan.projects.every((x) => !x.include)).toBe(true);
+    expect(fits).toBe(false);
+  });
+
+  it('reinstates nothing without a posting to judge against', () => {
+    expect(fitToTarget(p, noProjects(), 1).reinstated).toBeNull();
+  });
+});
+
+describe('skill groups as the compressible part of the page', () => {
+  /**
+   * With roles down to a bullet each, the page still overflowed and the
+   * protected project was sacrificed — while six skill groups sat there taking
+   * eleven lines, two of them naming nothing the posting had asked for.
+   *
+   * Skills are the cheapest thing on a resume to lose: a group the posting
+   * never mentions is a list of words nobody reads. They are cut before a
+   * project the posting explicitly asked for.
+   */
+  const jd = 'React Native, Swift, Kotlin. Published open-source React Native libraries.';
+
+  const p: Profile = profileSchema.parse({
+    ...profile,
+    basics: { ...profile.basics, summary: 'Mobile developer who owns more than the app. '.repeat(14) },
+    projects: [
+      { id: 'prj_island', name: 'react-native-island', bullets: [
+        { id: 'i0', text: 'Built and maintain an open-source React Native library exposing iOS Live Activities.' },
+        { id: 'i1', text: 'Bridged native iOS and Android features into React Native.' },
+      ] },
+    ],
+    skills: [
+      { id: 'skl_lang', name: 'Languages', keywords: ['React Native', 'Swift', 'Kotlin'] },
+      { id: 'skl_a', name: 'Office', keywords: ['Excel', 'Powerpoint', 'Word', 'Outlook', 'Sharepoint'] },
+      { id: 'skl_b', name: 'Hobbies', keywords: ['Woodworking', 'Cycling', 'Baking', 'Photography', 'Chess'] },
+      { id: 'skl_c', name: 'Languages Spoken', keywords: ['English', 'Spanish', 'German', 'Portuguese'] },
+      { id: 'skl_d', name: 'Certifications', keywords: ['First Aid', 'Food Safety', 'Forklift', 'Scuba'] },
+    ],
+  });
+
+  const plan = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: true, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      skills: p.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  it('drops skill groups the posting never mentions', () => {
+    const { plan: out } = fitToTarget(p, plan(), 1, undefined, jd);
+    const kept = out.skills.filter((s) => s.include).map((s) => s.id);
+
+    expect(kept.length).toBeLessThan(5);
+    expect(kept).toContain('skl_lang');
+  });
+
+  it('keeps the project the posting asked for', () => {
+    const { plan: out } = fitToTarget(p, plan(), 1, undefined, jd);
+    const island = out.projects.find((x) => x.id === 'prj_island')!;
+    expect(island.include).toBe(true);
+  });
+
+  it('never strips skills down to nothing', () => {
+    // A resume with no skills section reads as an omission, not as focus.
+    const { plan: out } = fitToTarget(p, plan(), 1, undefined, jd);
+    expect(out.skills.filter((s) => s.include).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('leaves skills alone when the page already fits', () => {
+    const small = profileSchema.parse({ ...p, work: [p.work[0]], projects: [] });
+    const { plan: out } = fitToTarget(small, plan(), 1, undefined, jd);
+    expect(out.skills.filter((s) => s.include).length).toBe(5);
+  });
+
+  it('does not touch skills without a posting to judge relevance', () => {
+    const { plan: out } = fitToTarget(p, plan(), 1);
+    expect(out.skills.filter((s) => s.include).length).toBe(5);
   });
 });

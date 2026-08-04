@@ -1,6 +1,6 @@
 import type { Profile } from '../schema';
 import { buildChanges, buildDocument } from './apply';
-import { estimateLines, linesPerPage } from '../render/model';
+import { estimateHeight, pageHeight, type PageMetrics } from '../render/model';
 import { buildLexicon, tokenize } from './lexicon';
 import { isCommonSentenceOpener } from './stopwords';
 import type { TailorPlan, PlannedEntry } from './plan';
@@ -53,45 +53,44 @@ import type { TailorPlan, PlannedEntry } from './plan';
  * everything.
  */
 
-/** A page's worth of lines in the default template, when none is given. */
-const DEFAULT_LINES_PER_PAGE = 50;
+/** The default template's metrics, when the caller does not say which. */
+const DEFAULT_METRICS: PageMetrics = {
+  baseSize: 10,
+  lineHeight: 1.4,
+  pageMargin: 42,
+  sectionGap: 12,
+  entryGap: 9,
+  bulletGap: 3,
+  headingRule: true,
+};
 
 /**
- * Lines held back from the target, because the estimate is an estimate.
+ * Points held back from the page, because the estimate is still an estimate.
  *
- * `estimateLines` counts wrapped text and charges a flat two lines per section
- * and per entry; the renderer then adds real leading, section rules and — since
- * headings refuse to be stranded — sometimes moves a whole section rather than
- * split it. A document measured at exactly one page came out as one page plus
- * a single education entry, seventy characters alone on page two.
+ * `estimateHeight` uses the template's own leading and gaps, so what remains
+ * unmodelled is character width — the fonts are not measured. A line's worth
+ * of slack covers a wrapped line landing differently than counted.
  *
- * Calibrated, not guessed. Five lines was not enough: a document the estimate
- * put at one page rendered as one page plus the education block — a heading
- * and two lines — with a quarter of page one still empty. Ten covers that
- * block and the leading around it, which is the largest single thing the
- * estimate fails to see.
- *
- * The honest fix is for `estimateLines` to model leading and section rules
- * rather than charging a flat two lines per heading. Until it does, headroom
- * is what stands between an accurate-looking estimate and a second sheet of
- * paper.
+ * This was ten *lines* while the estimate counted lines and modelled no
+ * spacing at all, and it cost a whole projects section: roles cut to a bullet
+ * each, skills cut to two groups, and still no room for the library the
+ * posting had asked for.
  */
-const SAFETY_LINES = 10;
+const SAFETY_POINTS = 16;
 
 export interface FitResult {
   plan: TailorPlan;
+  /**
+   * A project the model dropped that the posting asked for, put back — or null,
+   * which is the usual answer.
+   */
+  reinstated: string | null;
   /** Bullet ids switched off to make it fit, in the order they were dropped. */
   dropped: string[];
   /** Project entry ids switched off entirely. */
   droppedEntries: string[];
   /** Whether it fits now. False means it is as small as this will make it. */
   fits: boolean;
-}
-
-interface PageMetrics {
-  baseSize: number;
-  lineHeight: number;
-  pageMargin: number;
 }
 
 /** Bullets still switched on for an entry, in the model's own order. */
@@ -150,6 +149,26 @@ function projectsByRelevance(plan: TailorPlan, profile: Profile, jdText: string)
  * it was real, which is what a nice-to-have on a posting is worth.
  */
 const PROTECTED_PROJECT_BULLETS = 2;
+
+/**
+ * How much of a project's vocabulary the posting must share before it is worth
+ * overriding the model to put it back.
+ *
+ * Deliberately a real bar. This is a floor under relevance, not a second
+ * opinion on the model's judgement: below it, the model dropping the project
+ * was almost certainly right, and putting things back on a weak signal would
+ * make the resume worse in exactly the way a keyword-stuffer does.
+ */
+const REINSTATE_THRESHOLD = 0.12;
+
+/**
+ * Skill groups a resume keeps whatever else has to go.
+ *
+ * A skills section stripped to one line reads as an omission rather than as
+ * focus, and the groups are ranked, so the two that survive are the two the
+ * posting cares about most.
+ */
+const MIN_SKILL_GROUPS = 2;
 
 /**
  * The next thing to give up, or null when there is nothing left worth taking.
@@ -224,8 +243,8 @@ export function fitToTarget(
   /** The posting, so projects can be ranked by what it actually asked for. */
   jdText?: string,
 ): FitResult {
-  const perPage = template ? linesPerPage(template) : DEFAULT_LINES_PER_PAGE;
-  const budget = perPage * pageTarget - SAFETY_LINES;
+  const metrics = template ?? DEFAULT_METRICS;
+  const budget = pageHeight(metrics) * pageTarget - SAFETY_POINTS;
 
   // Structured clone would drop nothing here, but the plan is plain data and
   // callers should not find their input mutated underneath them.
@@ -233,6 +252,38 @@ export function fitToTarget(
   const dropped: string[] = [];
   const droppedEntries: string[] = [];
   const ranking = jdText?.trim() ? projectsByRelevance(plan, profile, jdText) : null;
+
+  // The ranking can only order what the plan kept. Across runs of one profile
+  // against one posting the model sometimes kept `react-native-island` and
+  // sometimes did not, and when it did not, a posting asking for published
+  // React Native libraries produced a resume with no projects — from a profile
+  // containing exactly that.
+  //
+  // So one may be put back: the best match, only if it is a real match, and
+  // only if the page turns out to hold it. The trim runs afterwards and will
+  // take it out again if it does not fit, so this cannot push the resume over.
+  let reinstated: string | null = null;
+  if (ranking && next.projects.every((e) => !e.include)) {
+    const best = ranking[ranking.length - 1];
+    const entry = best ? next.projects.find((e) => e.id === best) : undefined;
+    const source = best ? profile.projects.find((pr) => pr.id === best) : undefined;
+
+    if (entry && source) {
+      const score = relevanceTo(
+        buildLexicon(jdText!),
+        source.name,
+        source.bullets.map((b) => b.text).join(' '),
+      );
+      if (score >= REINSTATE_THRESHOLD) {
+        entry.include = true;
+        // Its own best lines, in the order the model gave them.
+        for (const b of [...entry.bullets].sort((a, c) => a.order - c.order).slice(0, PROTECTED_PROJECT_BULLETS)) {
+          b.include = true;
+        }
+        reinstated = entry.id;
+      }
+    }
+  }
 
   // A project the plan kept but emptied is a heading, a date range and nothing
   // else. The model does return these — one run shipped a PROJECTS section
@@ -256,7 +307,26 @@ export function fitToTarget(
   // `buildChanges` marks everything accepted, which is the state the user
   // reaches with "Accept all".
   const overflows = () =>
-    estimateLines(buildDocument(profile, next, buildChanges(profile, next))) > budget;
+    estimateHeight(buildDocument(profile, next, buildChanges(profile, next)), metrics) > budget;
+
+  // Skills before the protected project. Roles down to a bullet each still left
+  // the page overflowing while six skill groups took eleven lines, two of them
+  // naming nothing the posting had asked for — and the project the posting *had*
+  // asked for was sacrificed to keep them. A group nobody reads is the cheapest
+  // thing on a resume to lose.
+  if (ranking) {
+    const jdLexicon = buildLexicon(jdText!);
+    const scored = next.skills
+      .filter((g) => g.include)
+      .map((g) => ({ g, score: relevanceTo(jdLexicon, '', g.keywords.join(' ')) }))
+      .sort((a, b) => a.score - b.score);
+
+    for (const { g } of scored) {
+      if (!overflows()) break;
+      if (next.skills.filter((x) => x.include).length <= MIN_SKILL_GROUPS) break;
+      g.include = false;
+    }
+  }
 
   // Bounded by the number of bullets, and every iteration switches one off, so
   // this terminates. The guard is against a bug in `nextCut`, not against the
@@ -282,5 +352,17 @@ export function fitToTarget(
     }
   }
 
-  return { plan: next, dropped, droppedEntries, fits: !overflows() };
+  // If it could not be kept after all, say so rather than reporting a change
+  // the document does not show.
+  const stillThere = reinstated
+    ? (next.projects.find((e) => e.id === reinstated)?.include ?? false)
+    : false;
+
+  return {
+    plan: next,
+    reinstated: stillThere ? reinstated : null,
+    dropped,
+    droppedEntries,
+    fits: !overflows(),
+  };
 }

@@ -1,21 +1,25 @@
 import { SECTION_HEADINGS } from './model';
 import type { ResumeDocument } from './model';
-import { estimateLines, linesPerPage, LINES_PER_PAGE } from './model';
+import { estimateHeight, pageHeight, type PageMetrics as HeightMetrics } from './model';
 
 /** The subset of a template that decides how much text fits on a page. */
-export interface PageMetrics {
-  baseSize: number;
-  lineHeight: number;
-  pageMargin: number;
-}
+export type PageMetrics = HeightMetrics;
 
 /**
  * The densest built-in template, as a threshold rather than a name.
  *
  * Compact's own metrics, inlined so this module does not import the template
- * registry — which imports zod, for a check that is otherwise pure arithmetic.
+ * registry — which pulls in zod, for a check that is otherwise arithmetic.
  */
-const DENSEST: PageMetrics = { baseSize: 9.5, lineHeight: 1.28, pageMargin: 32 };
+const DENSEST: PageMetrics = {
+  baseSize: 9.5,
+  lineHeight: 1.28,
+  pageMargin: 32,
+  sectionGap: 8,
+  entryGap: 6,
+  bulletGap: 2,
+  headingRule: false,
+};
 
 /**
  * The parse-safety checklist.
@@ -110,12 +114,11 @@ export function parseSafetyChecks(
   });
 
   if (pageTarget !== null) {
-  const lines = estimateLines(doc);
-  const perPage = template ? linesPerPage(template) : LINES_PER_PAGE;
-  const estPages = Math.max(1, Math.ceil(lines / perPage));
+  const metrics = template ?? DENSEST;
+  const estPages = Math.max(1, Math.ceil(estimateHeight(doc, metrics) / pageHeight(metrics)));
   // Only suggest a denser template when there is one to move to. Telling
   // someone on Compact to switch to Compact is the bug this replaced.
-  const alreadyDense = template ? linesPerPage(template) >= linesPerPage(DENSEST) : false;
+  const alreadyDense = template ? pageHeight(template) / (template.baseSize * template.lineHeight) >= pageHeight(DENSEST) / (DENSEST.baseSize * DENSEST.lineHeight) : false;
   checks.push({
     id: 'length',
     label: `Fits the ${pageTarget}-page target`,
