@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ids,
+  splitKeywords,
   type Bullet,
   type Education,
   type Profile,
@@ -247,12 +248,11 @@ export function ProfileEditor({ profile, onChange, warnings = [] }: Props) {
                   label="Keywords (comma separated)"
                   value={group.keywords.join(', ')}
                   onChange={(v) =>
-                    updateSkill(i, {
-                      keywords: v
-                        .split(',')
-                        .map((k) => k.trim())
-                        .filter(Boolean),
-                    })
+                    // Not `split(',')`. People write "AWS (Lambda, S3, ECR)",
+                    // and a naive split turns one skill into four fragments —
+                    // on every keystroke, since this field re-parses what it
+                    // just rendered.
+                    updateSkill(i, { keywords: splitKeywords(v) })
                   }
                 />
                 <button

@@ -1,4 +1,5 @@
 import type { Profile } from '../schema';
+import { keywordHead } from '../skills';
 import { buildCoverage } from '../tailor/coverage';
 import { buildLexicon, isGrounded } from '../tailor/lexicon';
 import { isOngoing, toMonths } from '../dates';
@@ -62,7 +63,8 @@ function unbackedSkills(profile: Profile, emphasised: Set<string>): Gap[] {
     for (const keyword of group.keywords) {
       // Compound entries like "Firebase (Authentication, Firestore)" are really
       // several keywords; the head is the one worth asking about.
-      const head = keyword.split(/[(/,]/)[0]?.trim() ?? keyword;
+      const head = keywordHead(keyword);
+      if (!head) continue;
       if (head.length < 2 || isGrounded(norm(head), evidence)) continue;
 
       gaps.push({

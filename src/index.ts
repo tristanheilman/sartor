@@ -46,6 +46,12 @@ export {
 
 export { ids, newId } from './core/ids';
 
+/**
+ * Reading a comma-separated skills line without shredding the bracketed
+ * groups people write inside it.
+ */
+export { splitKeywords, keywordHead } from './core/skills';
+
 /* -- The fabrication guard ------------------------------------------------ */
 /**
  * Nothing in the guard is resume-specific. `buildLexicon` accepts any
