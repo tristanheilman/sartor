@@ -48,7 +48,8 @@ export function ExportPanel({
   onDeleteTemplate(id: string): void;
   /** Called once per download, with the template actually used. */
   onExported(formats: string[], template: Template): void;
-  pageTarget: 1 | 2;
+  /** `null` for the master profile, which has no length to miss. */
+  pageTarget: 1 | 2 | null;
   fileBase: string;
 }) {
   const [busy, setBusy] = useState<Format | null>(null);

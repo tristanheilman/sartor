@@ -77,6 +77,9 @@ requires seeks takes uses wants works
 builds delivers designs develops drives ensures enjoys grows guides implements improves integrates leads
 maintains manages mentors operates optimizes owns partners performs plans prepares presents prioritizes provides
 reports researches reviews scales ships solves supports tests understands writes
+architects automates collaborates coordinates creates debugs deploys documents enables establishes extends
+introduces launches maintains migrates monitors publishes refactors releases runs secures standardizes
+streamlines tracks trains validates wires
 
 additional additionally broad closely comfortable complex consistent consistently continuous continuously
 current currently daily deep deeply demonstrated direct directly effective effectively efficient efficiently

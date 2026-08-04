@@ -103,3 +103,24 @@ describe('the page-fit warning', () => {
     expect(fit(doc(120), 'classic').detail).toMatch(/Compact/);
   });
 });
+
+describe('a document with no page target', () => {
+  /**
+   * The master profile is deliberately long — it is the superset every tailored
+   * version is selected from. Warning that it does not fit one page is not a
+   * finding, it is the point of the document.
+   */
+  it('skips the length check entirely', () => {
+    const checks = parseSafetyChecks(doc(200), null, getTemplate('classic'));
+    expect(checks.find((c) => c.id === 'length')).toBeUndefined();
+  });
+
+  it('still runs every other parse check', () => {
+    const withTarget = parseSafetyChecks(doc(10), 1, getTemplate('classic')).map((c) => c.id);
+    const without = parseSafetyChecks(doc(10), null, getTemplate('classic')).map((c) => c.id);
+
+    expect(without).toEqual(withTarget.filter((id) => id !== 'length'));
+    expect(without).toContain('single-column');
+    expect(without).toContain('name-present');
+  });
+});

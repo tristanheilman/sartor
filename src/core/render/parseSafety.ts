@@ -40,7 +40,12 @@ export interface ParseCheck {
 
 export function parseSafetyChecks(
   doc: ResumeDocument,
-  pageTarget: 1 | 2,
+  /**
+   * `null` when the document is not meant to fit a page count — the master
+   * profile is deliberately long, and telling someone their superset does not
+   * fit on one page reports the intent as a defect.
+   */
+  pageTarget: 1 | 2 | null,
   template?: PageMetrics,
 ): ParseCheck[] {
   const checks: ParseCheck[] = [
@@ -104,6 +109,7 @@ export function parseSafetyChecks(
     detail: hasName ? `Reads as "${doc.contact.name}".` : 'Your profile has no name set.',
   });
 
+  if (pageTarget !== null) {
   const lines = estimateLines(doc);
   const perPage = template ? linesPerPage(template) : LINES_PER_PAGE;
   const estPages = Math.max(1, Math.ceil(lines / perPage));
@@ -122,6 +128,7 @@ export function parseSafetyChecks(
             alreadyDense ? '' : ', or switch to the Compact template'
           }.`,
   });
+  }
 
   const emptySections = doc.sections.filter(
     (s) =>

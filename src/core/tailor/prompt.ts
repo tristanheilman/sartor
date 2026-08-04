@@ -127,13 +127,33 @@ function profileForModel(profile: Profile) {
   };
 }
 
-/** Rough guidance so the model prunes rather than overflowing the page. */
+/**
+ * Rough guidance so the model prunes rather than overflowing the page.
+ *
+ * Counts projects as well as roles. It used to count `profile.work` alone,
+ * which made the budget wrong for exactly the people this tool is for: someone
+ * with six published projects was told their eight experience bullets "fit
+ * within 1 page" while thirty project lines competed for the same space, and
+ * the tailored resume came out at two pages against a one-page target.
+ *
+ * A project bullet occupies a line just like a role bullet does, and a project
+ * entry costs a heading on top of that. Nothing about the page cares which
+ * section a line came from.
+ */
 function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
-  const totalBullets = profile.work.reduce((n, w) => n + w.bullets.length, 0);
+  const roleBullets = profile.work.reduce((n, w) => n + w.bullets.length, 0);
+  const projectBullets = profile.projects.reduce((n, p) => n + p.bullets.length, 0);
+  const totalBullets = roleBullets + projectBullets;
   const budget = pageTarget === 1 ? 14 : 26;
+
+  const inventory =
+    projectBullets > 0
+      ? `${totalBullets} bullets across experience and projects (${roleBullets} in roles, ${projectBullets} in projects)`
+      : `${totalBullets} experience bullets`;
+
   return totalBullets > budget
-    ? `The profile has ${totalBullets} experience bullets and the target is ${pageTarget} page(s), which fits roughly ${budget}. You will need to drop bullets — bullets, not roles. Drop the ones least relevant to this posting, taking them from the roles that have the most and from the oldest roles first, and say why in each rationale.`
-    : `The profile has ${totalBullets} experience bullets, which fits within ${pageTarget} page(s). Include what is relevant; you do not need to cut aggressively.`;
+    ? `The profile has ${inventory} and the target is ${pageTarget} page(s), which fits roughly ${budget} in total. You will need to drop bullets — bullets, not whole roles. Drop the ones least relevant to this posting, taking them from the entries that have the most and from the oldest first. Project bullets count against the same budget as role bullets, so cut them on relevance too rather than protecting one section. Say why in each rationale.`
+    : `The profile has ${inventory}, which fits within ${pageTarget} page(s). Include what is relevant; you do not need to cut aggressively.`;
 }
 
 export function buildTailorUserPrompt(

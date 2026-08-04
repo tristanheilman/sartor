@@ -147,3 +147,47 @@ describe('past-tense verbs a rephrasing actually opens with', () => {
     expect(openers.filter((w) => traps.includes(w))).toEqual([]);
   });
 });
+
+describe('third-person verbs a summary opens lines with', () => {
+  /**
+   * The second false positive in as many export runs, and the same shape as the
+   * first. A rewritten summary opened "Publishes open-source React Native
+   * libraries", and "Publishes" was flagged as a possible product name —
+   * although "published" was already on the list. The past-tense block had been
+   * maintained and the third-person one had not.
+   */
+  const openers = [
+    'publishes', 'architects', 'automates', 'collaborates', 'coordinates', 'creates',
+    'debugs', 'deploys', 'documents', 'enables', 'establishes', 'extends', 'introduces',
+    'launches', 'migrates', 'monitors', 'refactors', 'releases', 'runs', 'secures',
+    'standardizes', 'streamlines', 'tracks', 'trains', 'validates', 'wires',
+  ];
+
+  it.each(openers)('treats "%s" as ordinary English at the start of a line', (word) => {
+    expect(isCommonSentenceOpener(word)).toBe(true);
+  });
+
+  it('does not flag the summary that started this', () => {
+    const lexicon = buildLexicon('I publish open-source React Native libraries.');
+    const { violations } = checkText(
+      'Publishes open-source React Native libraries that bridge native features into JavaScript.',
+      lexicon,
+      't',
+    );
+    expect(violations.map((v) => v.token)).not.toContain('Publishes');
+  });
+
+  it('keeps the past-tense and third-person forms in step', () => {
+    // The gap that caused this: "published" was allowed and "publishes" was
+    // not. Where both forms are ordinary English, both belong.
+    for (const [past, third] of [
+      ['published', 'publishes'],
+      ['deployed', 'deploys'],
+      ['migrated', 'migrates'],
+      ['monitored', 'monitors'],
+    ]) {
+      expect(isCommonSentenceOpener(past!), past).toBe(true);
+      expect(isCommonSentenceOpener(third!), third).toBe(true);
+    }
+  });
+});

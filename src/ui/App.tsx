@@ -366,24 +366,42 @@ function ReviewStep({ onDone }: { onDone(): void }) {
 
 function ExportStep() {
   const { profile, run, settings, updateSettings, exports, recordExport, removeExport } = useStore();
+  // Which document is on offer. Tailoring produced one version of a resume;
+  // the master profile is the superset it was selected from, and there was no
+  // way to reach it once a run existed — the only route to the full document
+  // was to have never tailored at all.
+  const [source, setSource] = useState<'tailored' | 'master'>('tailored');
+  const tailored = run !== null && source === 'tailored';
 
   // No run means no tailoring: the identity plan renders the master profile
   // verbatim. Nothing was rewritten, so there is nothing to accept, nothing to
   // block on, and no posting to measure coverage against.
   const doc = useMemo(
     () =>
-      profile ? buildDocument(profile, run ? run.plan : identityPlan(), run?.changes ?? []) : null,
-    [profile, run],
+      profile
+        ? buildDocument(
+            profile,
+            tailored && run ? run.plan : identityPlan(),
+            tailored && run ? run.changes : [],
+          )
+        : null,
+    [profile, run, tailored],
   );
 
   const coverage = useMemo(
-    () => (doc && profile && run ? buildCoverage(run.jd.text, documentToSlices(doc), profile) : null),
-    [doc, profile, run],
+    () =>
+      doc && profile && run && tailored
+        ? buildCoverage(run.jd.text, documentToSlices(doc), profile)
+        : null,
+    [doc, profile, run, tailored],
   );
 
   if (!profile || !doc) return null;
 
-  const fileBase = [profile.basics.name || 'resume', run ? run.jd.company || run.jd.title : '']
+  const fileBase = [
+    profile.basics.name || 'resume',
+    tailored && run ? run.jd.company || run.jd.title : 'Master',
+  ]
     .filter(Boolean)
     .join(' — ')
     .replace(/[^\w\s—-]/g, '')
@@ -392,16 +410,50 @@ function ExportStep() {
   const templates = [...TEMPLATES, ...settings.customTemplates];
 
   // What this document was for, in the words the user will recognise later.
-  const label = run
-    ? [run.jd.title, run.jd.company].filter(Boolean).join(' · ') || 'Untitled posting'
-    : 'Master profile';
+  const label =
+    tailored && run
+      ? [run.jd.title, run.jd.company].filter(Boolean).join(' · ') || 'Untitled posting'
+      : 'Master profile';
 
   return (
     <>
+    {/* Only worth showing once there is a choice to make. Without a run the
+        master profile is all there is, and a switch with one position is
+        furniture. */}
+    {run && (
+      <div className="card flex flex-wrap items-center gap-3 p-3">
+        <span className="label mb-0">Export</span>
+        <div className="flex gap-2">
+          {([
+            ['tailored', 'Tailored for this posting'],
+            ['master', 'Master profile'],
+          ] as const).map(([id, text]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={source === id}
+              onClick={() => setSource(id)}
+              className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                source === id
+                  ? 'border-stone-800 bg-stone-800 text-white'
+                  : 'border-stone-300 bg-white text-stone-700 hover:border-stone-400'
+              }`}
+            >
+              {text}
+            </button>
+          ))}
+        </div>
+        <p className="w-full text-xs text-stone-500">
+          {tailored
+            ? 'The selection made for this posting, at the length you asked for.'
+            : 'Everything on your profile, in full. No posting, no cuts, and no page limit — this is the document the tailored versions are chosen from.'}
+        </p>
+      </div>
+    )}
     <ExportPanel
       doc={doc}
       coverage={coverage}
-      blocking={run ? blockingChanges(run.changes) : []}
+      blocking={tailored && run ? blockingChanges(run.changes) : []}
       templates={templates}
       templateId={settings.templateId}
       onTemplate={(id) => void updateSettings({ templateId: id })}
@@ -423,11 +475,13 @@ function ExportStep() {
           fileBase: fileBase || 'resume',
           formats,
           template,
-          pageTarget: run ? run.constraints.pageTarget : settings.pageTarget,
+          pageTarget: tailored && run ? run.constraints.pageTarget : settings.pageTarget,
           doc,
         });
       }}
-      pageTarget={run ? run.constraints.pageTarget : settings.pageTarget}
+      // The master profile is meant to be long — it is the superset every
+      // tailored version is chosen from — so it has no page target to miss.
+      pageTarget={tailored && run ? run.constraints.pageTarget : null}
       fileBase={fileBase || 'resume'}
     />
     <ExportHistoryPanel records={exports} onDelete={(id) => void removeExport(id)} />
