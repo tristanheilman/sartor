@@ -196,7 +196,7 @@ describe('headroom against the estimate being wrong', () => {
     const { plan } = fitToTarget(profile, keepAll(), 1);
     const lines = estimateLines(buildDocument(profile, plan, buildChanges(profile, plan)));
 
-    expect(lines).toBeLessThanOrEqual(50 - 5);
+    expect(lines).toBeLessThanOrEqual(50 - 10);
   });
 
   it('still fills most of the page', () => {
@@ -204,7 +204,7 @@ describe('headroom against the estimate being wrong', () => {
     const { plan } = fitToTarget(profile, keepAll(), 1);
     const lines = estimateLines(buildDocument(profile, plan, buildChanges(profile, plan)));
 
-    expect(lines).toBeGreaterThan(28);
+    expect(lines).toBeGreaterThan(24);
   });
 });
 

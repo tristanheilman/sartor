@@ -65,11 +65,18 @@ const DEFAULT_LINES_PER_PAGE = 50;
  * split it. A document measured at exactly one page came out as one page plus
  * a single education entry, seventy characters alone on page two.
  *
- * Five lines is about a heading and an entry: enough that the arithmetic being
- * a little optimistic does not cost a whole extra sheet of paper, small enough
- * that it does not throw away content for nothing.
+ * Calibrated, not guessed. Five lines was not enough: a document the estimate
+ * put at one page rendered as one page plus the education block — a heading
+ * and two lines — with a quarter of page one still empty. Ten covers that
+ * block and the leading around it, which is the largest single thing the
+ * estimate fails to see.
+ *
+ * The honest fix is for `estimateLines` to model leading and section rules
+ * rather than charging a flat two lines per heading. Until it does, headroom
+ * is what stands between an accurate-looking estimate and a second sheet of
+ * paper.
  */
-const SAFETY_LINES = 5;
+const SAFETY_LINES = 10;
 
 export interface FitResult {
   plan: TailorPlan;

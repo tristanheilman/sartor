@@ -99,13 +99,26 @@ function makeStyles(t: Template) {
 }
 
 /**
- * Points of room a heading needs beneath it before it will sit on a page.
+ * Points of room a section heading needs beneath it before it will sit on a
+ * page — about the two lines of an entry header.
  *
- * Roughly two lines and a bullet in the default template. Enough that a
- * heading always arrives with something under it, small enough that it does
- * not push headings onto a new page for the sake of it.
+ * Was 48, and applied to the entry header as well, which compounded: the
+ * heading demanded 48pt, then the header inside it demanded another 48. An
+ * education entry has no bullets, so that space could never exist and the whole
+ * section moved to a page of its own — eighty characters alone on page two,
+ * while a quarter of page one sat empty.
  */
-const MIN_ROOM_AFTER_HEADING = 48;
+const MIN_ROOM_AFTER_HEADING = 30;
+
+/**
+ * Room an entry header needs before it will sit on a page.
+ *
+ * One line: enough that a job title is not the last thing on a page with its
+ * first bullet overleaf. Only asked for when there is a bullet to follow —
+ * demanding space after an entry that has nothing after it is how education
+ * ended up on its own page.
+ */
+const MIN_ROOM_AFTER_ENTRY_HEADER = 18;
 
 type Styles = ReturnType<typeof makeStyles>;
 
@@ -160,7 +173,10 @@ function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
           {/* Job title, employer and dates stay together, and take a bullet
               with them — a role heading alone at the foot of a page reads as
               though the job had nothing in it. */}
-          <View wrap={false} minPresenceAhead={MIN_ROOM_AFTER_HEADING}>
+          <View
+            wrap={false}
+            minPresenceAhead={e.bullets.length ? MIN_ROOM_AFTER_ENTRY_HEADER : 0}
+          >
             <View style={s.entryTopRow}>
               <Text style={s.entryPrimary}>{e.primary}</Text>
               {e.meta ? <Text style={s.entryMeta}>{e.meta}</Text> : null}
