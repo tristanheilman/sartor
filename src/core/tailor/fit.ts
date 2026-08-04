@@ -1,6 +1,8 @@
 import type { Profile } from '../schema';
 import { buildChanges, buildDocument } from './apply';
 import { estimateLines, linesPerPage } from '../render/model';
+import { buildLexicon, tokenize } from './lexicon';
+import { isCommonSentenceOpener } from './stopwords';
 import type { TailorPlan, PlannedEntry } from './plan';
 
 /**
@@ -28,10 +30,17 @@ import type { TailorPlan, PlannedEntry } from './plan';
  * The model ranked the content; this respects that ranking and only ever
  * removes from the end of it. Within that, the order of sacrifice is:
  *
- *   1. Project bullets, from the project with the most, working up.
+ *   1. Project bullets, from the project the posting cares about *least*.
  *   2. Whole projects, once one is down to a single bullet — a heading and one
  *      line costs three lines to say almost nothing.
  *   3. Role bullets, from the oldest role with the most, working up.
+ *
+ * The most relevant project is held back until every other project is gone, so
+ * a page spent on projects is spent on the one the posting asked about. The
+ * first version of this ranked by size instead, and produced a resume with no
+ * projects at all for a posting whose nice-to-haves were "published
+ * open-source React Native libraries" — while the summary still said the
+ * person published them.
  *
  * Roles are never dropped whole. A missing job leaves a gap in a timeline that
  * a reader fills in for themselves, badly, and no amount of saved space is
@@ -84,38 +93,114 @@ function keptBullets(entry: PlannedEntry) {
 }
 
 /**
+ * How much of a project's own vocabulary the posting also uses.
+ *
+ * A proportion, not a count, so a wordy project does not outrank a terse one
+ * that is squarely on topic. Ordinary English is excluded — matching on "built"
+ * and "with" would rank every entry the same, which is how a naive overlap
+ * score fails.
+ */
+function relevanceTo(jdLexicon: Set<string>, name: string, bulletText: string): number {
+  const terms = new Set<string>();
+  for (const t of tokenize(`${name} ${bulletText}`)) {
+    if (t.norm.length < 3 || isCommonSentenceOpener(t.norm)) continue;
+    terms.add(t.norm);
+  }
+  if (terms.size === 0) return 0;
+
+  let hits = 0;
+  for (const term of terms) if (jdLexicon.has(term)) hits++;
+  return hits / terms.size;
+}
+
+/** Project ids, least relevant first. Ties keep the profile's own order. */
+function projectsByRelevance(plan: TailorPlan, profile: Profile, jdText: string): string[] {
+  const jdLexicon = buildLexicon(jdText);
+  const byId = new Map(profile.projects.map((p) => [p.id, p]));
+
+  return plan.projects
+    .map((e, i) => {
+      const source = byId.get(e.id);
+      const score = source
+        ? relevanceTo(jdLexicon, source.name, source.bullets.map((b) => b.text).join(' '))
+        : 0;
+      return { id: e.id, score, i };
+    })
+    .sort((a, b) => a.score - b.score || a.i - b.i)
+    .map((x) => x.id);
+}
+
+/**
  * The next thing to give up, or null when there is nothing left worth taking.
  *
  * Returns the *last* bullet of the chosen entry: the model put it last, so it
  * is the one the model thought least of.
  */
+/**
+ * Bullets the best-matching project keeps before roles start paying instead.
+ *
+ * One line is a stub; three is a section. Two says what the thing is and that
+ * it was real, which is what a nice-to-have on a posting is worth.
+ */
+const PROTECTED_PROJECT_BULLETS = 2;
+
+/**
+ * The next thing to give up, or null when there is nothing left worth taking.
+ *
+ * Returns the *last* bullet of the chosen entry: the model put it last, so it
+ * is the one the model thought least of.
+ *
+ * Order of preference, and the reason for each:
+ *
+ *   1. Projects the posting did not ask about. Cheapest thing on the page.
+ *   2. Role bullets — but only once the best project is down to a line or two,
+ *      so a relevant library is not sacrificed to keep a fourth bullet on a job
+ *      the reader can already see three of.
+ *   3. The best project after all, if roles have nothing left to give.
+ */
 function nextCut(
   plan: TailorPlan,
   profile: Profile,
+  ranking: string[] | null,
 ): { entry: PlannedEntry; bulletId: string; kind: 'project' | 'work' } | null {
-  const projects = plan.projects.filter((e) => e.include && keptBullets(e).length > 0);
-  if (projects.length) {
-    // The fattest project first, so the cuts land where there is most to spare
-    // rather than hollowing out one entry at a time.
-    const fattest = projects.sort((a, b) => keptBullets(b).length - keptBullets(a).length)[0]!;
-    const bullets = keptBullets(fattest);
-    return { entry: fattest, bulletId: bullets[bullets.length - 1]!.bulletId, kind: 'project' };
-  }
+  const live = plan.projects.filter((e) => e.include && keptBullets(e).length > 0);
+
+  const take = (entry: PlannedEntry, kind: 'project' | 'work') => {
+    const bullets = keptBullets(entry);
+    return { entry, bulletId: bullets[bullets.length - 1]!.bulletId, kind };
+  };
+
+  // Least relevant first; without a posting, the one with most to spare.
+  const order = ranking ? new Map(ranking.map((id, i) => [id, i])) : null;
+  const byPreference = [...live].sort((a, b) =>
+    order
+      ? (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
+      : keptBullets(b).length - keptBullets(a).length,
+  );
+
+  // The most relevant project is the last one the ranking would reach.
+  const best = order && byPreference.length ? byPreference[byPreference.length - 1] : null;
+  const unprotected = byPreference.filter(
+    (e) => e !== best || keptBullets(e).length > PROTECTED_PROJECT_BULLETS,
+  );
+
+  if (unprotected.length) return take(unprotected[0]!, 'project');
 
   // Oldest first: recent work is what a reader weighs, and the oldest role
   // carrying five bullets is the least defensible use of a page.
-  const order = new Map(profile.work.map((w, i) => [w.id, i]));
+  const seniority = new Map(profile.work.map((w, i) => [w.id, i]));
   const roles = plan.work
     .filter((e) => e.include && keptBullets(e).length > 1)
     .sort((a, b) => {
       const byCount = keptBullets(b).length - keptBullets(a).length;
-      return byCount !== 0 ? byCount : (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0);
+      return byCount !== 0 ? byCount : (seniority.get(b.id) ?? 0) - (seniority.get(a.id) ?? 0);
     });
 
-  const role = roles[0];
-  if (!role) return null;
-  const bullets = keptBullets(role);
-  return { entry: role, bulletId: bullets[bullets.length - 1]!.bulletId, kind: 'work' };
+  if (roles[0]) return take(roles[0], 'work');
+
+  // Nothing left but the project we were holding back. A resume that does not
+  // fit is worse than one without a projects section.
+  return live.length ? take(byPreference[byPreference.length - 1]!, 'project') : null;
 }
 
 /**
@@ -129,6 +214,8 @@ export function fitToTarget(
   plan: TailorPlan,
   pageTarget: 1 | 2,
   template?: PageMetrics,
+  /** The posting, so projects can be ranked by what it actually asked for. */
+  jdText?: string,
 ): FitResult {
   const perPage = template ? linesPerPage(template) : DEFAULT_LINES_PER_PAGE;
   const budget = perPage * pageTarget - SAFETY_LINES;
@@ -138,6 +225,22 @@ export function fitToTarget(
   let next: TailorPlan = JSON.parse(JSON.stringify(plan));
   const dropped: string[] = [];
   const droppedEntries: string[] = [];
+  const ranking = jdText?.trim() ? projectsByRelevance(plan, profile, jdText) : null;
+
+  // A project the plan kept but emptied is a heading, a date range and nothing
+  // else. The model does return these — one run shipped a PROJECTS section
+  // containing only "Revento (Full Stack Application), 10/2019 — Present" —
+  // and the trim would never have looked at it, because it only considers
+  // entries that still have bullets to take.
+  //
+  // Roles are different: a role with no bullets still says the person was
+  // employed, and taking it out opens a gap in the timeline.
+  for (const entry of next.projects) {
+    if (entry.include && entry.bullets.every((b) => !b.include)) {
+      entry.include = false;
+      droppedEntries.push(entry.id);
+    }
+  }
 
   // Changes, not an empty array. `buildDocument` only honours a drop once the
   // corresponding change is accepted, so measuring against `[]` renders the
@@ -154,7 +257,7 @@ export function fitToTarget(
   const limit = plan.work.concat(plan.projects).reduce((n, e) => n + e.bullets.length, 0) + 1;
 
   for (let i = 0; i < limit && overflows(); i++) {
-    const cut = nextCut(next, profile);
+    const cut = nextCut(next, profile, ranking);
     if (!cut) break;
 
     for (const b of cut.entry.bullets) {

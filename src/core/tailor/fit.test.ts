@@ -207,3 +207,168 @@ describe('headroom against the estimate being wrong', () => {
     expect(lines).toBeGreaterThan(28);
   });
 });
+
+describe('which project survives the cut', () => {
+  /**
+   * The first version sacrificed projects wholesale — fattest first, all of
+   * them, before touching a single role bullet. On a posting whose
+   * nice-to-haves included "published open-source React Native libraries",
+   * that produced a resume with no projects section at all, while the summary
+   * still claimed the person publishes React Native libraries.
+   *
+   * The fix is not "keep projects". It is to spend the page on what the posting
+   * asked for: cut the least relevant project first and protect the most
+   * relevant one, so the library that answers the posting outlives the golf
+   * app that does not.
+   */
+  const jd = `Senior Mobile Engineer. React Native, Swift and Kotlin native modules.
+     Nice to have: published open-source React Native libraries.`;
+
+  const withProjects: Profile = profileSchema.parse({
+    ...profile,
+    projects: [
+      { id: 'prj_golf', name: 'diy-swing-analysis', bullets: [
+        { id: 'g0', text: 'Built a golf swing analysis desktop app using pose estimation and OpenCV.' },
+        { id: 'g1', text: 'Detected swing phase boundaries from the wrist trajectory across frames.' },
+        { id: 'g2', text: 'Wired a coaching service that returns structured feedback and practice drills.' },
+      ] },
+      { id: 'prj_island', name: 'react-native-island', bullets: [
+        { id: 'i0', text: 'Built and maintain an open-source React Native library exposing iOS Live Activities and Android notifications.' },
+        { id: 'i1', text: 'Bridged native iOS and Android features into React Native for other developers to consume.' },
+        { id: 'i2', text: 'Published the library and continue to maintain it.' },
+      ] },
+      { id: 'prj_recipes', name: 'recipe-box', bullets: [
+        { id: 'r0', text: 'Built a small recipe organiser for personal use over a weekend.' },
+        { id: 'r1', text: 'Stored everything in a local file with no server involved.' },
+      ] },
+    ],
+  });
+
+  const planFor = (p: Profile): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: true, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      skills: p.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  const fit = (p = withProjects) =>
+    fitToTarget(p, planFor(p), 1, undefined, jd);
+
+  it('keeps the project the posting actually asked about', () => {
+    const { plan } = fit();
+    const island = plan.projects.find((p) => p.id === 'prj_island')!;
+
+    expect(island.include).toBe(true);
+    expect(island.bullets.filter((b) => b.include).length).toBeGreaterThan(0);
+  });
+
+  it('drops the least relevant project first', () => {
+    const { droppedEntries } = fit();
+    expect(droppedEntries).toContain('prj_recipes');
+    expect(droppedEntries).not.toContain('prj_island');
+  });
+
+  it('ranks a partly-relevant project above an unrelated one', () => {
+    // Two projects that both mention the posting's subject to different
+    // degrees. Ordering between two that match nothing at all is arbitrary and
+    // not worth asserting; ordering between these is the whole point.
+    const p: Profile = profileSchema.parse({
+      ...profile,
+      projects: [
+        { id: 'prj_recipes', name: 'recipe-box', bullets: [
+          { id: 'r0', text: 'A weekend recipe organiser storing everything in a local file.' },
+          { id: 'r1', text: 'No server, no accounts, nothing to run.' },
+          { id: 'r2', text: 'Written for personal use and never published.' },
+        ] },
+        { id: 'prj_native', name: 'swift-bridge-kit', bullets: [
+          { id: 'n0', text: 'Swift and Kotlin native modules exposed to React Native.' },
+          { id: 'n1', text: 'Published as an open-source React Native library.' },
+          { id: 'n2', text: 'Used by other developers building mobile applications.' },
+        ] },
+      ],
+    });
+
+    const { droppedEntries, plan } = fitToTarget(p, planFor(p), 1, undefined, jd);
+    const native = plan.projects.find((x) => x.id === 'prj_native')!;
+
+    expect(droppedEntries).toContain('prj_recipes');
+    expect(native.include).toBe(true);
+  });
+
+  it('still never drops a role', () => {
+    const { plan } = fit();
+    expect(plan.work.every((w) => w.include)).toBe(true);
+  });
+
+  it('still fits the page', () => {
+    const { fits } = fit();
+    expect(fits).toBe(true);
+  });
+
+  it('falls back to size order when there is no posting to rank against', () => {
+    // Without a JD there is nothing to be relevant *to*, so the old behaviour
+    // is the right one rather than an arbitrary ranking.
+    const { plan } = fitToTarget(withProjects, planFor(withProjects), 1);
+    expect(plan.work.every((w) => w.include)).toBe(true);
+  });
+});
+
+describe('entries left with nothing under them', () => {
+  /**
+   * A real run returned a plan with `Revento` included and every one of its
+   * bullets excluded. The trim never looked at it — it only considers entries
+   * that still have bullets to take — so the resume shipped with a PROJECTS
+   * section containing a heading, a date range and nothing else.
+   *
+   * The "no empty sections" check passes, because the section is not empty: it
+   * has an entry. The entry is.
+   */
+  const hollow = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: profile.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j < 2, order: j })),
+      })),
+      projects: profile.projects.map((p, i) => ({
+        id: p.id, include: true, order: i,
+        // Included, with nothing to show — exactly what the model returned.
+        bullets: p.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
+      })),
+      skills: profile.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  it('drops a project the plan kept but emptied', () => {
+    const { plan } = fitToTarget(profile, hollow(), 1);
+    const hollowProjects = plan.projects.filter(
+      (p) => p.include && p.bullets.filter((b) => b.include).length === 0,
+    );
+    expect(hollowProjects).toEqual([]);
+  });
+
+  it('reports those drops like any other', () => {
+    const { droppedEntries } = fitToTarget(profile, hollow(), 1);
+    expect(droppedEntries.length).toBeGreaterThan(0);
+  });
+
+  it('leaves an emptied role alone, because dates carry the timeline', () => {
+    // A role with no bullets still says the person was employed, and removing
+    // it opens a gap. A project with no bullets says nothing at all.
+    const rolesEmptied = tailorPlanSchema.parse({
+      ...hollow(),
+      work: profile.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
+      })),
+    });
+    const { plan } = fitToTarget(profile, rolesEmptied, 1);
+    expect(plan.work.every((w) => w.include)).toBe(true);
+  });
+});

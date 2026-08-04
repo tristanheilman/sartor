@@ -128,7 +128,7 @@ export async function runTailor(
   // trimmed to fit rather than trusted to. Nothing is rewritten — bullets are
   // switched off, which the review screen already shows as changes the user can
   // put back one at a time.
-  const fitted = fitToTarget(profile, plan, constraints.pageTarget, opts.template);
+  const fitted = fitToTarget(profile, plan, constraints.pageTarget, opts.template, jd.text);
 
   return {
     run: {
