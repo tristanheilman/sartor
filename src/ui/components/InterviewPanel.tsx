@@ -141,10 +141,17 @@ export function InterviewPanel({
       // Everything lands through the ordinary merge, so duplicate detection,
       // fresh IDs and date corrections all come along unchanged.
       const bullets = current.kind === 'no-summary' ? [] : checked.kept.map((k) => k.bullet);
+      // A question about projects can never write to an employer. Personal
+      // work filed under a job says something untrue about who it was for, and
+      // a fallback owner is exactly how that happened.
+      const aboutProjects = current.kind === 'more-projects' || current.kind === 'thin-project';
+
       // An answer that named no role is placed by what the profile already
       // says, not by which job is newest.
-      const guessed = bestOwner(profile, text);
-      const fallback = current.ownerId || guessed?.ownerId || profile.work[0]?.id || '';
+      const guessed = aboutProjects ? null : bestOwner(profile, text);
+      const fallback = aboutProjects
+        ? ''
+        : current.ownerId || guessed?.ownerId || profile.work[0]?.id || '';
       const ownerOf = (b: { ownerId: string }) => b.ownerId || fallback;
 
       const asBullets = (owner: string) =>
@@ -152,12 +159,38 @@ export function InterviewPanel({
           .filter((b) => ownerOf(b) === owner && b.text.trim())
           .map((b) => ({ id: ids.bullet(), text: b.text.trim(), tags: [], variants: [] }));
 
+      // Projects: a thin-project answer lands on the project it was asked
+      // about, and anything else the answer describes becomes its own entry.
+      const projects = profile.projects.map((p) => ({
+        ...p,
+        bullets:
+          current.kind === 'thin-project' && current.ownerId === p.id
+            ? asBullets(p.id)
+            : [],
+      }));
+
+      for (const drafted_p of drafted.newProjects) {
+        if (!drafted_p.name.trim()) continue;
+        projects.push({
+          id: ids.project(),
+          name: drafted_p.name.trim(),
+          description: '',
+          url: drafted_p.url.trim() || undefined,
+          startDate: '',
+          endDate: '',
+          tags: [],
+          bullets: drafted_p.bullets
+            .filter((t) => t.trim())
+            .map((t) => ({ id: ids.bullet(), text: t.trim(), tags: [], variants: [] })),
+        });
+      }
+
       const work = profile.work.map((w) => ({
         ...w,
         endDate: drafted.endedRole.ownerId === w.id && drafted.endedRole.endDate
           ? drafted.endedRole.endDate
           : w.endDate,
-        bullets: asBullets(w.id),
+        bullets: aboutProjects ? [] : asBullets(w.id),
       }));
 
       if (drafted.newRole.name.trim()) {
@@ -179,6 +212,7 @@ export function InterviewPanel({
         id: ids.profile(),
         basics: { ...profile.basics, summary: drafted.summary.trim() || profile.basics.summary },
         work,
+        projects,
       });
 
       const plan = planMerge(profile, incoming);
@@ -186,7 +220,7 @@ export function InterviewPanel({
       const counts = summarizeMerge(plan);
 
       const parts = [
-        counts.newEntries && `${counts.newEntries} new role`,
+        counts.newEntries && `${counts.newEntries} new ${aboutProjects ? 'project' : 'role'}${counts.newEntries > 1 ? 's' : ''}`,
         counts.newBullets && `${counts.newBullets} new bullet${counts.newBullets > 1 ? 's' : ''}`,
         counts.datesCorrected && `${counts.datesCorrected} date corrected`,
         drafted.summary.trim() && 'summary written',
@@ -223,7 +257,7 @@ export function InterviewPanel({
         [
           ...bullets.map((b) => b.text),
           ...checked.rejected.map((r) => `not used — ${r.bullet.text}`),
-        ],
+        ].filter((line) => line.trim()),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

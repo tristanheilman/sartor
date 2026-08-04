@@ -137,3 +137,38 @@ describe('asking the questions', () => {
     expect(prompt).not.toContain('555');
   });
 });
+
+describe('a projects question', () => {
+  const projectGap = gap({ id: 'more-projects', kind: 'more-projects', subject: 'Other projects', ownerId: null });
+  const prompt = () =>
+    buildAnswerPrompt(projectGap, 'Any projects worth adding?', 'I publish React Native libraries.', profile);
+
+  it('never mentions an employer', () => {
+    // The defect: the role-attaching prompt opens by listing employers and
+    // closes by asking for bullets, so a clause in the middle about projects
+    // lost — and personal work was filed under a job. A question that is not
+    // about a job does not get a prompt about jobs.
+    expect(prompt()).not.toContain('Halcyon Fleet');
+    expect(prompt()).not.toContain('wrk_current');
+    expect(prompt()).not.toContain('ownerId');
+  });
+
+  it('asks for one entry per project, not bullets', () => {
+    expect(prompt()).toMatch(/newProjects/);
+    expect(prompt()).toMatch(/one entry per project/i);
+    expect(prompt()).toMatch(/Return no ordinary bullets/);
+  });
+
+  it('lists what is already on file so an answer merges instead of duplicating', () => {
+    const withProject = profileSchema.parse({
+      ...profile,
+      projects: [{ id: 'prj_1', name: 'react-native-object-capture' }],
+    });
+    expect(buildAnswerPrompt(projectGap, 'q', 'a', withProject)).toContain('react-native-object-capture');
+  });
+
+  it('names the project when the question was about a specific one', () => {
+    const thin = gap({ id: 'thin-project:prj_1', kind: 'thin-project', subject: 'react-native-island', ownerId: 'prj_1' });
+    expect(buildAnswerPrompt(thin, 'q', 'a', profile)).toContain('react-native-island');
+  });
+});

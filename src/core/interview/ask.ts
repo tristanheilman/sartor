@@ -107,7 +107,25 @@ export const endedRoleSchema = z.object({
   endDate: z.string().default(''),
 });
 
+/**
+ * A project the answer describes.
+ *
+ * Separate from bullets because a project is an entry, not a line under an
+ * existing one. Without this, an answer about side projects had nowhere to go
+ * and its bullets fell through to whichever employer owned the fallback — so
+ * personal work published on someone's own time was filed under their current
+ * job, which is a factual error a reader would hold against them.
+ */
+export const draftedProjectSchema = z.object({
+  name: z.string().default(''),
+  url: z.string().default(''),
+  bullets: z.array(z.string()).default([]),
+});
+export type DraftedProject = z.infer<typeof draftedProjectSchema>;
+
 export const draftedBulletsSchema = z.object({
+  /** Projects the answer describes. Empty unless it was about projects. */
+  newProjects: z.array(draftedProjectSchema).default([]),
   bullets: z.array(draftedBulletSchema).default([]),
   newRole: draftedRoleSchema.prefault({}),
   endedRole: endedRoleSchema.prefault({}),
@@ -155,10 +173,19 @@ export const QUESTIONS_JSON_SCHEMA = {
 export const DRAFTED_BULLETS_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['bullets', 'newRole', 'endedRole', 'summary', 'followUp'],
+  required: ['bullets', 'newProjects', 'newRole', 'endedRole', 'summary', 'followUp'],
   properties: {
     summary: S,
     followUp: S,
+    newProjects: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['name', 'url', 'bullets'],
+        properties: { name: S, url: S, bullets: { type: 'array', items: S } },
+      },
+    },
     endedRole: {
       type: 'object',
       additionalProperties: false,
@@ -234,6 +261,38 @@ export function buildAnswerPrompt(
     role: `${w.position} at ${w.name}`,
     dates: `${w.startDate}–${w.endDate || 'present'}`,
   }));
+
+  // A question about projects is not a question about a job, so it is not
+  // given a prompt about jobs. Adding a clause to the role-attaching prompt
+  // was not enough: that prompt opens by listing employers and closes by
+  // asking for bullets, so the conditional in the middle lost — and the
+  // content was dropped rather than written up.
+  if (gap.kind === 'more-projects' || gap.kind === 'thin-project') {
+    const known = profile.projects.map((p) => ({ id: p.id, name: p.name }));
+
+    return `Question asked: ${question}
+
+Their answer, verbatim:
+${quote(answer)}
+
+Put every project the answer describes into "newProjects": its name, its URL if
+they gave one, and its own bullets. One entry per project — an answer listing
+four packages is four entries, not four lines under one heading.
+
+Already on file, so do not repeat them:
+
+${JSON.stringify(known, null, 2)}
+
+${
+  gap.kind === 'thin-project'
+    ? `This question was about ${gap.subject}. Put what they said about it under that name so it merges with the entry already there.`
+    : 'If the answer only elaborates on a project already listed above, use that same name so it merges rather than duplicating.'
+}
+
+Return no ordinary bullets and leave "newRole", "endedRole" and "summary"
+empty. A side project is not work done at an employer, and filing it under one
+says something untrue about who it was for.`;
+  }
 
   // A summary describes a career, not something that happened at one employer.
   // Asking for bullets here and then placing them is how an answer about the
