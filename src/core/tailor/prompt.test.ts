@@ -54,11 +54,11 @@ describe('the length budget', () => {
 
   it('asks for cuts once the two together overflow', () => {
     // The defect: this profile was told it fitted, because only the 8 counted.
-    expect(prompt(8, 6)).toMatch(/need to drop/i);
+    expect(prompt(8, 6)).toMatch(/need to cut/i);
   });
 
   it('still asks for cuts when the work alone overflows', () => {
-    expect(prompt(80, 0)).toMatch(/need to drop/i);
+    expect(prompt(80, 0)).toMatch(/need to cut/i);
   });
 
   it('says bullets may be cut from projects as well as roles', () => {
@@ -146,5 +146,82 @@ describe('the budget accounts for what else is on the page', () => {
       projects: Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, name: `p${i}`, bullets: bullets(3, `q${i}`) })),
     });
     expect(budgetIn(crowded)!).toBeGreaterThanOrEqual(6);
+  });
+});
+
+describe('what has to give when a page is genuinely full', () => {
+  /**
+   * A real profile: three roles, six projects, six skill groups, a long
+   * summary. Seven entry headings and the skills block cost about forty-four
+   * lines before a single bullet, so a one-page target left room for six —
+   * which is not a resume, it is a business card.
+   *
+   * Squeezing bullets was the wrong lever. Nobody lists six side projects on a
+   * one-pager; they list the two or three that fit the job. Roles are
+   * different — dropping one leaves an unexplained gap in a timeline, which
+   * costs far more than it saves.
+   */
+  const real = (projects: number): Profile =>
+    profileSchema.parse({
+      id: 'prf_1',
+      createdAt: 'now',
+      updatedAt: 'now',
+      basics: {
+        name: 'Tristan Heilman',
+        summary: 'Mobile developer who owns more than the app. '.repeat(20),
+      },
+      work: Array.from({ length: 3 }, (_, i) => ({
+        id: `wrk_${i}`,
+        name: `Employer ${i}`,
+        position: 'Developer',
+        startDate: '01/2020',
+        bullets: bullets(10, `w${i}`),
+      })),
+      projects: Array.from({ length: projects }, (_, i) => ({
+        id: `prj_${i}`,
+        name: `project-${i}`,
+        bullets: bullets(5, `p${i}`),
+      })),
+      skills: Array.from({ length: 6 }, (_, i) => ({
+        id: `skl_${i}`,
+        name: `Group ${i}`,
+        keywords: ['One', 'Two', 'Three', 'Four'],
+      })),
+    });
+
+  const p1 = () => buildTailorUserPrompt(real(6), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 1 });
+
+  it('tells the model to keep only a few projects on one page', () => {
+    expect(p1()).toMatch(/project/i);
+    expect(p1()).toMatch(/include:\s*false|drop/i);
+  });
+
+  it('protects roles from being dropped', () => {
+    // An employment gap a reader cannot explain is worse than a long resume.
+    expect(p1()).toMatch(/every role|all .*roles|not .*roles/i);
+  });
+
+  it('leaves a workable number of bullets rather than collapsing to the floor', () => {
+    // With projects pruned the overhead falls and the budget recovers off its
+    // minimum — six bullets across three roles was not a resume.
+    const budget = Number(p1().match(/roughly (\d+)/)![1]);
+    expect(budget).toBeGreaterThan(6);
+  });
+
+  it('asks for fewer projects on one page than on two', () => {
+    // Eight projects, so both targets have something to prune.
+    const cap = (t: 1 | 2) =>
+      Number(
+        buildTailorUserPrompt(real(8), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: t }).match(
+          /at most (\d+) project/,
+        )![1],
+      );
+    expect(cap(1)).toBeLessThan(cap(2));
+  });
+
+  it('says nothing about pruning projects when there are few enough already', () => {
+    expect(buildTailorUserPrompt(real(2), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 1 })).not.toMatch(
+      /at most \d+ project/,
+    );
   });
 });

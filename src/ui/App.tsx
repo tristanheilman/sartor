@@ -274,7 +274,7 @@ function ProfileStep({ onDone }: { onDone(): void }) {
 }
 
 function JobStep({ keyReady, onDone }: { keyReady: boolean; onDone(): void }) {
-  const { profile, setRun, runs, run: currentRun, openRun, removeRun } = useStore();
+  const { profile, setRun, runs, run: currentRun, openRun, removeRun, settings } = useStore();
   const { provider, config } = useActiveProvider();
   const [jd, setJd] = useState<JobDescription | null>(null);
   const [constraints, setConstraints] = useState<TailorConstraints>(DEFAULT_CONSTRAINTS);
@@ -288,7 +288,12 @@ function JobStep({ keyReady, onDone }: { keyReady: boolean; onDone(): void }) {
     setError(null);
     setDropped([]);
     try {
-      const outcome = await runTailor(profile, jd, constraints, provider, config);
+      // The trim needs to know how much a page holds, which depends on the
+      // template the result will be rendered in.
+      const template =
+        settings.customTemplates.find((t) => t.id === settings.templateId) ??
+        TEMPLATES.find((t) => t.id === settings.templateId);
+      const outcome = await runTailor(profile, jd, constraints, provider, config, { template });
       setRun(outcome.run);
       setDropped(outcome.dropped);
       onDone();

@@ -5,6 +5,7 @@ import type { JobDescription } from '../jd/normalize';
 import { tailorPlanSchema, TAILOR_PLAN_JSON_SCHEMA, type TailorPlan } from './plan';
 import { TAILOR_SYSTEM_PROMPT, buildTailorUserPrompt, type TailorConstraints } from './prompt';
 import { buildChanges, type TailorRun } from './apply';
+import { fitToTarget } from './fit';
 
 /**
  * Drops anything in the plan that does not point at a real profile element.
@@ -71,12 +72,24 @@ export function validatePlan(
 export interface RunOptions {
   signal?: AbortSignal;
   onToken?: (chunk: string) => void;
+  /**
+   * The template the result will be rendered in, which decides how much text a
+   * page holds. Omitted, the trim assumes the default density — which errs
+   * toward cutting slightly more than a compact template needs.
+   */
+  template?: { baseSize: number; lineHeight: number; pageMargin: number };
 }
 
 export interface TailorOutcome {
   run: TailorRun;
   /** Plan elements discarded for pointing at nothing real. Shown to the user. */
   dropped: string[];
+  /**
+   * Bullets switched off to reach the page target, and whether it worked.
+   * `false` means the document is as small as the trim is willing to make it —
+   * roles and their first bullet are never taken.
+   */
+  fit: { dropped: string[]; droppedEntries: string[]; fits: boolean };
 }
 
 /** One call in, one reviewable run out. */
@@ -109,6 +122,14 @@ export async function runTailor(
 
   const { plan, dropped } = validatePlan(parsed.data, profile);
 
+  // Length is arithmetic, and the model has never reliably done it. Asking for
+  // "roughly 6 bullets" produced twenty-five; the same prompt across three runs
+  // gave two, two and three pages against a one-page target. So the plan is
+  // trimmed to fit rather than trusted to. Nothing is rewritten — bullets are
+  // switched off, which the review screen already shows as changes the user can
+  // put back one at a time.
+  const fitted = fitToTarget(profile, plan, constraints.pageTarget, opts.template);
+
   return {
     run: {
       id: ids.run(),
@@ -118,10 +139,11 @@ export async function runTailor(
       model: result.model || cfg.model,
       jd,
       constraints,
-      plan,
-      changes: buildChanges(profile, plan),
+      plan: fitted.plan,
+      changes: buildChanges(profile, fitted.plan),
       notes: plan.notes,
     },
     dropped,
+    fit: { dropped: fitted.dropped, droppedEntries: fitted.droppedEntries, fits: fitted.fits },
   };
 }

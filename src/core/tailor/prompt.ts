@@ -147,6 +147,19 @@ function profileForModel(profile: Profile) {
  * to err in: a resume that comes in short is a smaller problem than one that
  * silently runs onto a second page.
  */
+/**
+ * How many project entries a page can carry alongside the roles.
+ *
+ * Every entry costs two lines of heading before any of its content, and a full
+ * profile can easily list six. Nobody puts six side projects on a one-page
+ * resume; they put the two or three that fit the job. Roles are not subject to
+ * this — dropping one leaves a gap in a timeline that a reader will explain to
+ * themselves, badly.
+ */
+function projectCap(pageTarget: 1 | 2): number {
+  return pageTarget === 1 ? 3 : 6;
+}
+
 function bulletBudget(profile: Profile, pageTarget: 1 | 2): number {
   const LINES_PER_PAGE = 50;
   let overhead = 4; // name and contact block
@@ -165,7 +178,10 @@ function bulletBudget(profile: Profile, pageTarget: 1 | 2): number {
   // Two lines per entry: the title and employer line, and the dates and
   // location beside it.
   if (profile.work.length) overhead += 2 + profile.work.length * 2;
-  if (profile.projects.length) overhead += 2 + profile.projects.length * 2;
+  // Only the projects that will survive the cut are charged for. Budgeting for
+  // all six left six lines for bullets, which is not a resume.
+  const projectsKept = Math.min(profile.projects.length, projectCap(pageTarget));
+  if (projectsKept) overhead += 2 + projectsKept * 2;
   if (profile.education.length) overhead += 2 + profile.education.length * 2;
 
   // A bullet is one line more often than two, but long ones wrap.
@@ -196,6 +212,11 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
   const projectBullets = profile.projects.reduce((n, p) => n + p.bullets.length, 0);
   const totalBullets = roleBullets + projectBullets;
   const budget = bulletBudget(profile, pageTarget);
+  const cap = projectCap(pageTarget);
+  const pruneProjects =
+    profile.projects.length > cap
+      ? ` Keep at most ${cap} projects — the ones this posting would care about — and set include:false on the rest; each project heading costs space whether or not it has bullets under it. Keep every role: an unexplained gap in a timeline costs more than a long resume.`
+      : '';
 
   const inventory =
     projectBullets > 0
@@ -203,7 +224,7 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
       : `${totalBullets} experience bullets`;
 
   return totalBullets > budget
-    ? `The profile has ${inventory} and the target is ${pageTarget} page(s), which fits roughly ${budget} in total. You will need to drop bullets — bullets, not whole roles. Drop the ones least relevant to this posting, taking them from the entries that have the most and from the oldest first. Project bullets count against the same budget as role bullets, so cut them on relevance too rather than protecting one section. Say why in each rationale.`
+    ? `The profile has ${inventory} and the target is ${pageTarget} page(s), which fits roughly ${budget} in total. You will need to cut. Drop the bullets least relevant to this posting, taking them from the entries that have the most and from the oldest first; project bullets count against the same budget as role bullets.${pruneProjects} Say why in each rationale.`
     : `The profile has ${inventory}, which fits within ${pageTarget} page(s) — roughly ${budget} fit alongside the summary, skills and headings. Include what is relevant; you do not need to cut aggressively.`;
 }
 

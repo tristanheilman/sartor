@@ -129,6 +129,12 @@ export {
 
 export { runTailor, validatePlan, type RunOptions, type TailorOutcome } from './core/tailor/run';
 
+/**
+ * Trimming a plan to the page it was asked to fit. Deterministic, because the
+ * model is not reliable about length and this is arithmetic.
+ */
+export { fitToTarget, type FitResult } from './core/tailor/fit';
+
 /* -- Job descriptions ----------------------------------------------------- */
 export {
   fromPaste,
