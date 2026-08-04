@@ -191,3 +191,51 @@ describe('third-person verbs a summary opens lines with', () => {
     }
   });
 });
+
+describe('regular past-tense verbs, without listing every one', () => {
+  /**
+   * Third of its kind: "Guarded" blocked an export, then "Publishes", then
+   * "Exposed". Each was added to the list and the next run found another. A
+   * hand-maintained vocabulary of English will always be one word short.
+   *
+   * Words ending in -ed are the reliable case. A rephrasing opens with them
+   * constantly, and almost nothing is named after one — every product this
+   * file already warns about is a noun or a bare verb, never a past participle.
+   * Third-person -s forms stay on the list, because Kubernetes, Redis and Rails
+   * all end in s and the risk there is real.
+   */
+  const openers = ['exposed', 'surfaced', 'unblocked', 'shepherded', 'recalibrated', 'decommissioned'];
+
+  it.each(openers)('accepts "%s" without it being listed', (word) => {
+    expect(SENTENCE_START_ALLOWLIST.has(word)).toBe(false);
+    expect(isCommonSentenceOpener(word)).toBe(true);
+  });
+
+  it('does not extend the same courtesy to -s forms', () => {
+    // Kubernetes, Redis, Rails. A product ending in -s is ordinary.
+    for (const w of ['kubernetes', 'redis', 'rails']) {
+      expect(isCommonSentenceOpener(w), w).toBe(false);
+    }
+  });
+
+  it('leaves every technology trap exactly where it was', () => {
+    const traps = ['go','rust','swift','dart','ruby','julia','crystal','elm','nim','react','angular','ember','meteor','spark','storm','kafka','hadoop'];
+    expect(traps.filter((t) => isCommonSentenceOpener(t))).toEqual([]);
+  });
+
+  it('still needs a real word, not any string ending in ed', () => {
+    // Too short to be a verb anyone writes a bullet with.
+    expect(isCommonSentenceOpener('ed')).toBe(false);
+    expect(isCommonSentenceOpener('bed')).toBe(false);
+  });
+
+  it('does not flag the bullet that started this', () => {
+    const lexicon = buildLexicon('Built a library that exposes iOS Live Activities.');
+    const { violations } = checkText(
+      'Exposed iOS Live Activities and Android notifications through an open-source library.',
+      lexicon,
+      't',
+    );
+    expect(violations.map((v) => v.token)).not.toContain('Exposed');
+  });
+});

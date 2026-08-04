@@ -115,10 +115,32 @@ export const GENERIC_TERMS = new Set(
     .split(/\s+/),
 );
 
+/**
+ * Regular past-tense verbs, without having to list every one.
+ *
+ * Three separate exports were blocked by this list being one word short —
+ * "Guarded", then "Publishes", then "Exposed" — and each fix was to add the
+ * word that had just failed. A hand-maintained vocabulary of English loses that
+ * race indefinitely.
+ *
+ * A word ending in -ed is the case worth generalising. Rephrasings open with
+ * them constantly, and virtually nothing in this industry is named after a past
+ * participle: every trap this file warns about — go, rust, swift, dart, ruby,
+ * react, spark, kafka — is a noun or a bare verb.
+ *
+ * Deliberately not extended to -s forms. Kubernetes, Redis and Rails all end in
+ * s, and exempting that shape would mask exactly the fabrications the guard
+ * exists to catch. Those stay on the explicit list.
+ */
+function looksLikePastTense(norm: string): boolean {
+  return norm.length >= 5 && norm.endsWith('ed') && /^[a-z]+$/.test(norm);
+}
+
 export function isCommonSentenceOpener(norm: string): boolean {
   return (
     SENTENCE_START_ALLOWLIST.has(norm) ||
     CALENDAR_WORDS.has(norm) ||
-    GENERIC_TERMS.has(norm)
+    GENERIC_TERMS.has(norm) ||
+    looksLikePastTense(norm)
   );
 }
