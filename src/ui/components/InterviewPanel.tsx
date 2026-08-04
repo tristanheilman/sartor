@@ -59,6 +59,11 @@ export function InterviewPanel({
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [followedUp, setFollowedUp] = useState<string[]>([]);
+  // While a follow-up is pending, the question must not move. Gaps recompute
+  // from the profile on every change, so without pinning, answering the
+  // follow-up recorded it against whichever gap had floated to the top —
+  // asking about one thing and filing the answer under another.
+  const [pinned, setPinned] = useState<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLTextAreaElement>(null);
 
@@ -66,19 +71,20 @@ export function InterviewPanel({
     () => findGaps(profile, { limit: 12 }).filter((g) => !skipped.includes(g.id)),
     [profile, skipped],
   );
-  const current = openGaps[0] ?? null;
+  const current = (pinned ? openGaps.find((g) => g.id === pinned) : null) ?? openGaps[0] ?? null;
   const stats = progress(openGaps.length, answered, floor);
   const replies = current ? quickReplies(current) : [];
 
-  // Ask the next question whenever one comes up that has not been asked.
+  // Ask the next question whenever one comes up that has not been asked. A
+  // pinned question is already on screen with its follow-up.
   useEffect(() => {
-    if (!current) return;
+    if (!current || pinned) return;
     setLog((entries) =>
       entries.some((e) => e.kind === 'question' && e.gap.id === current.id)
         ? entries
         : [...entries, { kind: 'question', id: `q-${current.id}`, gap: current, text: current.why }],
     );
-  }, [current]);
+  }, [current, pinned]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -87,6 +93,7 @@ export function InterviewPanel({
   const say = (entry: Entry) => setLog((entries) => [...entries, entry]);
 
   function settle(gap: Gap, next: Profile, note: string, detail?: string[]) {
+    setPinned(null);
     setAnswered((n) => n + 1);
     setFloor(stats.remaining);
     setSkipped((s) => [...s, gap.id]);
@@ -233,6 +240,10 @@ export function InterviewPanel({
 
       if (again.follow && canAskAgain && (drafted.followUp.trim() || checked.rejected.length)) {
         setFollowedUp((ids) => [...ids, current.id]);
+        // Hold this question open until the follow-up is answered.
+        setPinned(current.id);
+        // Whatever *was* writable still lands now, rather than waiting on the
+        // rest of the answer.
         if (next !== profile) onProfile(next, 'partial');
 
         const question =
@@ -241,11 +252,16 @@ export function InterviewPanel({
 
         say({
           kind: 'result',
-          id: `f-${current.id}`,
-          text: `One more — ${again.because}.`,
-          detail: checked.rejected.map((r) => `dropped: ${r.bullet.text}`),
+          id: `f-${current.id}-${Date.now()}`,
+          // Say what was kept as well as what was not. "Nothing was specific
+          // enough" is wrong and discouraging when a bullet did land.
+          text: parts.length ? `Added: ${parts.join(', ')}. One more —` : `One more —`,
+          detail: [
+            ...bullets.map((b) => b.text),
+            ...checked.rejected.map((r) => `not used — ${r.bullet.text}`),
+          ].filter((line) => line.trim()),
         });
-        say({ kind: 'question', id: `q2-${current.id}`, gap: current, text: again.because });
+        say({ kind: 'question', id: `q2-${current.id}`, gap: current, text: question });
         setPrompt(question);
         return;
       }
