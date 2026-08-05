@@ -570,9 +570,16 @@ describe('skill groups as the compressible part of the page', () => {
     expect(out.skills.filter((s) => s.include).length).toBe(5);
   });
 
-  it('does not touch skills without a posting to judge relevance', () => {
+  it('still trims skills without a posting, just in the profile’s own order', () => {
+    // There is nothing to be relevant to, but not cutting skills at all means
+    // taking the difference out of someone's employment history instead.
     const { plan: out } = fitToTarget(p, plan(), 1);
-    expect(out.skills.filter((s) => s.include).length).toBe(5);
+    const kept = out.skills.filter((s) => s.include);
+
+    expect(kept.length).toBeLessThan(5);
+    expect(kept.length).toBeGreaterThanOrEqual(2);
+    // Trailing groups go first, so the earlier ones survive.
+    expect(kept.map((s) => s.id)).toContain('skl_lang');
   });
 });
 
@@ -732,5 +739,67 @@ describe('filling the page rather than merely fitting it', () => {
     expect(once.fits).toBe(true);
     expect(twice.dropped).toEqual([]);
     expect(twice.added).toEqual([]);
+  });
+});
+
+describe('a plan that does not cover the profile', () => {
+  /**
+   * A real run returned a plan describing one role — no projects, no skills,
+   * two roles unmentioned. `buildDocument` treats an entry the plan is silent
+   * about as kept, so the resume rendered every one of them in full: 49
+   * bullets across four pages, against a one-page target, and the trim could
+   * not touch any of it because none of it was in the plan.
+   *
+   * Silence is not a drop, and it is not a decision either. Filling the gaps in
+   * with what the renderer would do anyway makes the whole document trimmable
+   * without changing what it says.
+   */
+  const partial = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: [
+        {
+          id: profile.work[0]!.id,
+          include: true,
+          order: 0,
+          bullets: profile.work[0]!.bullets.map((b, j) => ({ bulletId: b.id, include: j < 2, order: j })),
+        },
+      ],
+      projects: [],
+      skills: [],
+    });
+
+  it('brings the unmentioned entries under the plan', () => {
+    const { plan } = fitToTarget(profile, partial(), 1);
+
+    expect(plan.work).toHaveLength(profile.work.length);
+    expect(plan.projects).toHaveLength(profile.projects.length);
+    expect(plan.skills).toHaveLength(profile.skills.length);
+  });
+
+  it('fits the page, which it could not before', () => {
+    expect(fitToTarget(profile, partial(), 1).fits).toBe(true);
+  });
+
+  it('leaves what the plan did say exactly as it was', () => {
+    const { plan } = fitToTarget(profile, partial(), 1);
+    const first = plan.work.find((w) => w.id === profile.work[0]!.id)!;
+
+    expect(first.include).toBe(true);
+    // The model chose these two; the trim may add or remove around them, but
+    // nothing switches a stated decision to its opposite.
+    expect(first.bullets.find((b) => b.bulletId === profile.work[0]!.bullets[0]!.id)!.include).toBe(true);
+  });
+
+  it('does not resurrect something the plan explicitly dropped', () => {
+    const explicit = tailorPlanSchema.parse({
+      ...partial(),
+      projects: profile.projects.map((p, i) => ({
+        id: p.id, include: false, order: i,
+        bullets: p.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
+      })),
+    });
+    const { plan } = fitToTarget(profile, explicit, 1);
+    expect(plan.projects.every((p) => !p.include)).toBe(true);
   });
 });

@@ -233,6 +233,73 @@ function nextCut(
 }
 
 /**
+ * Fills in what the plan did not mention, so all of it can be trimmed.
+ *
+ * A real run returned a plan describing one role: no projects, no skills, two
+ * roles unmentioned. `buildDocument` treats an entry the plan is silent about
+ * as kept, so the resume rendered every one of them in full — forty-nine
+ * bullets over four pages against a one-page target — and none of it could be
+ * trimmed, because none of it was in the plan.
+ *
+ * Silence is not a drop, and it is not a decision either. What the model *did*
+ * say is left untouched; the gaps are filled with what the renderer would have
+ * done anyway, which changes nothing about the document and makes all of it
+ * reachable.
+ */
+function materialise(plan: TailorPlan, profile: Profile): TailorPlan {
+  const fill = (
+    planned: TailorPlan['work'],
+    sources: Array<{ id: string; bullets: Array<{ id: string }> }>,
+  ): TailorPlan['work'] => {
+    const byId = new Map(planned.map((e) => [e.id, e]));
+    return sources.map((src, i) => {
+      const existing = byId.get(src.id);
+      if (!existing) {
+        return {
+          id: src.id,
+          include: true,
+          order: planned.length + i,
+          bullets: src.bullets.map((b, j) => ({
+            bulletId: b.id,
+            include: true,
+            order: j,
+            text: '',
+            textSource: 'canonical' as const,
+            rationale: '',
+          })),
+        };
+      }
+      // An entry the plan covered but whose bullets it did not list. The
+      // renderer drops those, so listing them as excluded says the same thing.
+      const seen = new Set(existing.bullets.map((b) => b.bulletId));
+      const missing = src.bullets
+        .filter((b) => !seen.has(b.id))
+        .map((b, j) => ({
+          bulletId: b.id,
+          include: false,
+          order: existing.bullets.length + j,
+          text: '',
+          textSource: 'canonical' as const,
+          rationale: '',
+        }));
+      return { ...existing, bullets: [...existing.bullets, ...missing] };
+    });
+  };
+
+  const skillsById = new Map(plan.skills.map((g) => [g.id, g]));
+  return {
+    ...plan,
+    work: fill(plan.work, profile.work),
+    projects: fill(plan.projects, profile.projects),
+    education: fill(plan.education, profile.education),
+    skills: profile.skills.map((g, i) => {
+      const existing = skillsById.get(g.id);
+      return existing ?? { id: g.id, include: true, order: plan.skills.length + i, keywords: g.keywords };
+    }),
+  };
+}
+
+/**
  * Trims a plan until the document it produces fits the page target.
  *
  * Pure: takes a plan, returns a new one. The caller decides whether to use it,
@@ -251,7 +318,7 @@ export function fitToTarget(
 
   // Structured clone would drop nothing here, but the plan is plain data and
   // callers should not find their input mutated underneath them.
-  let next: TailorPlan = JSON.parse(JSON.stringify(plan));
+  let next: TailorPlan = materialise(JSON.parse(JSON.stringify(plan)), profile);
   const dropped: string[] = [];
   const droppedEntries: string[] = [];
   const ranking = jdText?.trim() ? projectsByRelevance(plan, profile, jdText) : null;
@@ -342,11 +409,19 @@ export function fitToTarget(
   // naming nothing the posting had asked for — and the project the posting *had*
   // asked for was sacrificed to keep them. A group nobody reads is the cheapest
   // thing on a resume to lose.
-  if (ranking) {
-    const jdLexicon = buildLexicon(jdText!);
+  {
+    // With a posting, least relevant first. Without one there is nothing to be
+    // relevant to, so the profile's own order stands and the trailing groups
+    // go first — which is still better than not cutting skills at all and
+    // taking the difference out of someone's employment history.
+    const jdLexicon = ranking ? buildLexicon(jdText!) : null;
+    const order = jdLexicon
+      ? (g: { keywords: string[] }) => relevanceTo(jdLexicon, '', g.keywords.join(' '))
+      : (_g: unknown, i: number) => -i;
+
     const scored = next.skills
       .filter((g) => g.include)
-      .map((g) => ({ g, score: relevanceTo(jdLexicon, '', g.keywords.join(' ')) }))
+      .map((g, i) => ({ g, score: order(g, i) }))
       .sort((a, b) => a.score - b.score);
 
     for (const { g } of scored) {
@@ -359,7 +434,12 @@ export function fitToTarget(
   // Bounded by the number of bullets, and every iteration switches one off, so
   // this terminates. The guard is against a bug in `nextCut`, not against the
   // data.
-  const limit = plan.work.concat(plan.projects).reduce((n, e) => n + e.bullets.length, 0) + 1;
+  //
+  // Counted on `next`, not `plan`. Taken from the plan as given, a partial one
+  // covering a single role bounded the loop at thirteen — so the trim stopped
+  // with two roles and six projects untouched and reported a document it had
+  // not finished shrinking.
+  const limit = next.work.concat(next.projects).reduce((n, e) => n + e.bullets.length, 0) + 1;
 
   for (let i = 0; i < limit && overflows(); i++) {
     const cut = nextCut(next, profile, ranking);
