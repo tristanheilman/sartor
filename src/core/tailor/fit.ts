@@ -65,18 +65,19 @@ const DEFAULT_METRICS: PageMetrics = {
 };
 
 /**
- * Points held back from the page, because the estimate is still an estimate.
+ * Points held back from the page.
  *
- * `estimateHeight` uses the template's own leading and gaps, so what remains
- * unmodelled is character width — the fonts are not measured. A line's worth
- * of slack covers a wrapped line landing differently than counted.
+ * One margin, used for both cutting and filling. Two — a conservative one for
+ * the trim and a generous one for the fill — gave the pass hysteresis: the trim
+ * cut to the lower line, the fill rose to the upper one, and running it again
+ * cut and refilled the same bullet forever.
  *
- * This was ten *lines* while the estimate counted lines and modelled no
- * spacing at all, and it cost a whole projects section: roles cut to a bullet
- * each, skills cut to two groups, and still no room for the library the
- * posting had asked for.
+ * Small, because `estimateHeight` now works from the template's own leading and
+ * gaps and reads about three percent *high* against a rendered page. That
+ * pessimism is the real safety margin; this is the allowance for character
+ * width, which is the one thing still approximated.
  */
-const SAFETY_POINTS = 16;
+const SAFETY_POINTS = 4;
 
 export interface FitResult {
   plan: TailorPlan;
@@ -87,6 +88,8 @@ export interface FitResult {
   reinstated: string | null;
   /** Bullet ids switched off to make it fit, in the order they were dropped. */
   dropped: string[];
+  /** Bullet ids switched back on to use the room that was left over. */
+  added: string[];
   /** Project entry ids switched off entirely. */
   droppedEntries: string[];
   /** Whether it fits now. False means it is as small as this will make it. */
@@ -330,8 +333,9 @@ export function fitToTarget(
   // this trimmed twenty bullets and reported no improvement at all.
   // `buildChanges` marks everything accepted, which is the state the user
   // reaches with "Accept all".
-  const overflows = () =>
-    estimateHeight(buildDocument(profile, next, buildChanges(profile, next)), metrics) > budget;
+  const heightNow = () =>
+    estimateHeight(buildDocument(profile, next, buildChanges(profile, next)), metrics);
+  const overflows = () => heightNow() > budget;
 
   // Skills before the protected project. Roles down to a bullet each still left
   // the page overflowing while six skill groups took eleven lines, two of them
@@ -382,11 +386,48 @@ export function fitToTarget(
     ? (next.projects.find((e) => e.id === reinstated)?.include ?? false)
     : false;
 
+  // Fitting a page and using a page are not the same thing. The trim only ever
+  // removed, so an over-cautious plan — or a cut that overshot — left one
+  // bullet per role and a fifth of the page blank, which reads as though there
+  // was nothing to say.
+  //
+  // Growing back is the same kind of change in the other direction: bullets are
+  // switched on, they are the person's own, they are the model's next choices
+  // rather than arbitrary ones, and the review screen shows every one.
+  const added: string[] = [];
+  for (let i = 0; i < limit; i++) {
+    // The entry with the least to show goes first, so the page fills evenly
+    // instead of stacking everything onto the newest role. Roles before
+    // projects: employment is what a reader weighs.
+    const candidates = [...next.work, ...next.projects]
+      .filter((e) => e.include && e.bullets.some((b) => !b.include))
+      .sort((a, b) => keptBullets(a).length - keptBullets(b).length);
+
+    const entry = candidates[0];
+    if (!entry) break;
+
+    const nextBullet = [...entry.bullets]
+      .filter((b) => !b.include)
+      .sort((a, b) => a.order - b.order)[0];
+    if (!nextBullet) break;
+
+    nextBullet.include = true;
+    if (overflows()) {
+      // Put it back and stop: anything further would only overflow too.
+      nextBullet.include = false;
+      break;
+    }
+    added.push(nextBullet.bulletId);
+  }
+
   return {
     plan: next,
     reinstated: stillThere ? reinstated : null,
     dropped,
+    added,
     droppedEntries,
-    fits: !overflows(),
+    // Against the page itself, not the trim budget — growth deliberately fills
+    // past that, so measuring against it would report a full page as a failure.
+    fits: heightNow() <= pageHeight(metrics) * pageTarget,
   };
 }

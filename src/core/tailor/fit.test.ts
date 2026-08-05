@@ -102,11 +102,12 @@ describe('trimming a plan to the page target', () => {
       })),
       skills: profile.skills.map((sk, i) => ({ id: sk.id, include: true, order: i, keywords: sk.keywords })),
     });
-    const { plan, dropped, fits } = fitToTarget(profile, small, 1);
+    const { dropped, fits } = fitToTarget(profile, small, 1);
 
     expect(fits).toBe(true);
+    // Nothing is *cut* from a plan that fits. Bullets may be added back — a
+    // page with room to spare should use it — which is asserted separately.
     expect(dropped).toEqual([]);
-    expect(plan).toEqual(small);
   });
 
   it('does not mutate the plan it was given', () => {
@@ -645,5 +646,91 @@ describe('a role the model kept but emptied', () => {
 
     expect(plan.work[1]!.include).toBe(false);
     expect(plan.work[1]!.bullets.every((b) => !b.include)).toBe(true);
+  });
+});
+
+describe('filling the page rather than merely fitting it', () => {
+  /**
+   * The trim only ever removed. It cut until the document fitted and stopped,
+   * so a budget the model undershot — or a cut that overshot — left a resume
+   * with one bullet per role and a fifth of the page blank. Fitting a page and
+   * using a page are not the same thing, and a sparse resume reads as though
+   * there was nothing to say.
+   *
+   * Growing back is the symmetric operation, and it is the same kind of change:
+   * bullets are switched on rather than off, they are the person's own, and the
+   * review screen shows every one.
+   */
+  const sparse = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: profile.work.map((w, i) => ({
+        id: w.id,
+        include: true,
+        order: i,
+        // One bullet each, as an over-cautious plan returns.
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j === 0, order: j })),
+      })),
+      projects: profile.projects.map((p, i) => ({
+        id: p.id, include: false, order: i,
+        bullets: p.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
+      })),
+      skills: profile.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  const kept = (plan: TailorPlan) =>
+    plan.work.filter((w) => w.include).reduce((n, w) => n + w.bullets.filter((b) => b.include).length, 0);
+
+  it('adds bullets back when the page has room', () => {
+    const before = kept(sparse());
+    const { plan, added } = fitToTarget(profile, sparse(), 1);
+
+    expect(kept(plan)).toBeGreaterThan(before);
+    expect(added.length).toBeGreaterThan(0);
+  });
+
+  it('still fits afterwards', () => {
+    expect(fitToTarget(profile, sparse(), 1).fits).toBe(true);
+  });
+
+  it('fills most of the page', () => {
+    const { plan } = fitToTarget(profile, sparse(), 1);
+    const CLASSIC = {
+      baseSize: 10, lineHeight: 1.4, pageMargin: 42,
+      sectionGap: 12, entryGap: 9, bulletGap: 3, headingRule: true,
+    };
+    const used = estimateHeight(buildDocument(profile, plan, buildChanges(profile, plan)), CLASSIC);
+    expect(used).toBeGreaterThan(pageHeight(CLASSIC) * 0.85);
+  });
+
+  it('spreads them rather than stacking one entry', () => {
+    // Six bullets on the newest role and one on everything else is not a
+    // fuller resume, it is a lopsided one.
+    const { plan } = fitToTarget(profile, sparse(), 1);
+    const counts = plan.work.filter((w) => w.include).map((w) => w.bullets.filter((b) => b.include).length);
+
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(2);
+  });
+
+  it('takes the model’s next choice, not an arbitrary one', () => {
+    const { plan } = fitToTarget(profile, sparse(), 1);
+    for (const w of plan.work) {
+      const on = w.bullets.filter((b) => b.include).map((b) => b.order).sort((a, b) => a - b);
+      // A contiguous run from the top of the model's ranking.
+      expect(on).toEqual(on.map((_, i) => i));
+    }
+  });
+
+  it('converges rather than oscillating', () => {
+    // Trimming stops at the conservative line and filling stops at the
+    // generous one, so an over-full plan may get one bullet back on the way
+    // out. What must hold is that the result does not exceed the page, and
+    // that running it again changes nothing.
+    const once = fitToTarget(profile, keepAll(), 1);
+    const twice = fitToTarget(profile, once.plan, 1);
+
+    expect(once.fits).toBe(true);
+    expect(twice.dropped).toEqual([]);
+    expect(twice.added).toEqual([]);
   });
 });
