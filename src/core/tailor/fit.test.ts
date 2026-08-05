@@ -450,15 +450,37 @@ describe('a project the model dropped that the posting asked for', () => {
     expect(plan.projects.every((x) => !x.include)).toBe(true);
   });
 
-  it('leaves the model alone when it kept a project already', () => {
-    const kept = tailorPlanSchema.parse({
+  it('puts the better one back even when a weaker project was kept', () => {
+    // The real failure: the model kept `Revento` and dropped
+    // `react-native-island`, so the projects section existed and the best match
+    // was never considered. A section containing *a* project is not the same as
+    // one containing the right project.
+    const keptWrong = tailorPlanSchema.parse({
       ...noProjects(),
       projects: p.projects.map((pr, i) => ({
-        id: pr.id, include: i === 1, order: i,
-        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: i === 1 && j === 0, order: j })),
+        id: pr.id, include: pr.id === 'prj_recipes', order: i,
+        bullets: pr.bullets.map((b, j) => ({
+          bulletId: b.id, include: pr.id === 'prj_recipes' && j === 0, order: j,
+        })),
       })),
     });
-    expect(fitToTarget(p, kept, 1, undefined, jd).reinstated).toBeNull();
+    const { plan, reinstated } = fitToTarget(p, keptWrong, 1, undefined, jd);
+
+    expect(reinstated).toBe('prj_island');
+    expect(plan.projects.find((x) => x.id === 'prj_island')!.include).toBe(true);
+  });
+
+  it('leaves the model alone when it already kept the best one', () => {
+    const keptBest = tailorPlanSchema.parse({
+      ...noProjects(),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: pr.id === 'prj_island', order: i,
+        bullets: pr.bullets.map((b, j) => ({
+          bulletId: b.id, include: pr.id === 'prj_island' && j === 0, order: j,
+        })),
+      })),
+    });
+    expect(fitToTarget(p, keptBest, 1, undefined, jd).reinstated).toBeNull();
   });
 
   it('does not put one back when there is no room', () => {

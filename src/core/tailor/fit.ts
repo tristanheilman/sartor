@@ -262,8 +262,14 @@ export function fitToTarget(
   // So one may be put back: the best match, only if it is a real match, and
   // only if the page turns out to hold it. The trim runs afterwards and will
   // take it out again if it does not fit, so this cannot push the resume over.
+  //
+  // The condition is "the best match is not in", not "nothing is in". The model
+  // kept `Revento` and dropped `react-native-island`, so a projects section
+  // existed and the better match was never considered — and a section
+  // containing *a* project is not the same as one containing the right one. The
+  // weaker entry then ranks lowest and the trim takes it first.
   let reinstated: string | null = null;
-  if (ranking && next.projects.every((e) => !e.include)) {
+  if (ranking && !next.projects.find((e) => e.id === ranking[ranking.length - 1])?.include) {
     const best = ranking[ranking.length - 1];
     const entry = best ? next.projects.find((e) => e.id === best) : undefined;
     const source = best ? profile.projects.find((pr) => pr.id === best) : undefined;
