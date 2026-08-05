@@ -300,6 +300,24 @@ export function fitToTarget(
     }
   }
 
+  // A kept role, on the other hand, has to say something. CIMx rendered as a
+  // job title, an employer and a date range with nothing under it, because the
+  // model included the entry and excluded every one of its bullets — and the
+  // trim will not take a role's last bullet, so nothing put one back.
+  //
+  // Keeping the heading and restoring a line are not in tension: the timeline
+  // stays intact and the entry stops reading as padding. The bullet is the one
+  // the model ranked first, and the trim runs afterwards, so the space is paid
+  // for somewhere it matters less.
+  //
+  // Only for a role the plan *kept*. Excluding an entry is a decision;
+  // emptying one is an oversight.
+  for (const entry of next.work) {
+    if (!entry.include || entry.bullets.some((b) => b.include)) continue;
+    const first = [...entry.bullets].sort((a, b) => a.order - b.order)[0];
+    if (first) first.include = true;
+  }
+
   // Changes, not an empty array. `buildDocument` only honours a drop once the
   // corresponding change is accepted, so measuring against `[]` renders the
   // document as though nothing had been cut — which is how the first version of

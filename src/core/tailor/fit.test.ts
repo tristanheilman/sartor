@@ -552,3 +552,76 @@ describe('skill groups as the compressible part of the page', () => {
     expect(out.skills.filter((s) => s.include).length).toBe(5);
   });
 });
+
+describe('a role the model kept but emptied', () => {
+  /**
+   * CIMx rendered as a job title, an employer and a date range, with nothing
+   * under it — the model included the entry and excluded every bullet. Hollow
+   * projects were already dropped; roles were deliberately left alone, because
+   * removing one opens a gap in a timeline.
+   *
+   * Both halves of that were right and the conclusion was wrong. The role
+   * should stay *and* say something: a heading with no content under it reads
+   * as padding, and the profile has bullets for it — the model simply chose
+   * none of them.
+   */
+  const emptiedRole = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: profile.work.map((w, i) => ({
+        id: w.id,
+        include: true,
+        order: i,
+        // The oldest role emptied, exactly as the model returned it.
+        bullets: w.bullets.map((b, j) => ({
+          bulletId: b.id,
+          include: i === 0 ? j < 2 : false,
+          order: j,
+        })),
+      })),
+      projects: profile.projects.map((p, i) => ({
+        id: p.id, include: false, order: i,
+        bullets: p.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
+      })),
+      skills: profile.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  it('gives every kept role something to say', () => {
+    const { plan } = fitToTarget(profile, emptiedRole(), 1);
+    for (const w of plan.work.filter((x) => x.include)) {
+      expect(w.bullets.filter((b) => b.include).length, w.id).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('takes the bullet the model ranked first', () => {
+    const { plan } = fitToTarget(profile, emptiedRole(), 1);
+    const restored = plan.work[1]!;
+    const kept = restored.bullets.filter((b) => b.include).sort((a, b) => a.order - b.order);
+
+    expect(kept[0]!.order).toBe(0);
+  });
+
+  it('still keeps the role, rather than dropping it to save the space', () => {
+    const { plan } = fitToTarget(profile, emptiedRole(), 1);
+    expect(plan.work.every((w) => w.include)).toBe(true);
+  });
+
+  it('still fits, having paid for it somewhere else', () => {
+    expect(fitToTarget(profile, emptiedRole(), 1).fits).toBe(true);
+  });
+
+  it('leaves a role the model deliberately dropped alone', () => {
+    // Excluding the entry is a decision. Emptying it is an oversight.
+    const droppedRole = tailorPlanSchema.parse({
+      ...emptiedRole(),
+      work: profile.work.map((w, i) => ({
+        id: w.id, include: i === 0, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: i === 0 && j < 2, order: j })),
+      })),
+    });
+    const { plan } = fitToTarget(profile, droppedRole, 1);
+
+    expect(plan.work[1]!.include).toBe(false);
+    expect(plan.work[1]!.bullets.every((b) => !b.include)).toBe(true);
+  });
+});
