@@ -166,12 +166,19 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
     const groups = s.skills ?? [];
     if (groups.length) {
       const text = groups.map((g) => `${g.name}: ${g.keywords.join(', ')}`).join('   ·   ');
+      // The bold labels are wider than the same characters in the body font, so
+      // the paragraph is wider than measuring it wholly in body font suggests.
+      // That extra belongs to the *width*, not to the column — subtracting it
+      // from the column narrowed the line by every label at once and inflated
+      // the count, which is how restoring a third group appeared to *free*
+      // space.
       const boldExtra = groups.reduce(
         (n, g) =>
           n + widthOf(`${g.name}: `, heading, t.baseSize) - widthOf(`${g.name}: `, body, t.baseSize),
         0,
       );
-      height += wrappedLines(text, body, t.baseSize, column - boldExtra) * line + 2;
+      const total = widthOf(text, body, t.baseSize) + boldExtra;
+      height += Math.max(1, Math.ceil(total / column)) * line + 2;
     }
 
     for (const e of s.entries ?? []) {
