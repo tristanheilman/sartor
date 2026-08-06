@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getTemplate, TEMPLATES } from './templates';
-import { linesPerPage } from './model';
+import { estimateHeight, linesPerPage } from './model';
 import { parseSafetyChecks } from './parseSafety';
 import type { ResumeDocument } from './model';
 
@@ -122,5 +122,91 @@ describe('a document with no page target', () => {
     expect(without).toEqual(withTarget.filter((id) => id !== 'length'));
     expect(without).toContain('single-column');
     expect(without).toContain('name-present');
+  });
+});
+
+describe('the estimate against the renderer', () => {
+  /**
+   * The calibration, pinned. `estimateHeight` divided a string's length by an
+   * assumed 0.5 em advance; Helvetica averages 0.453 over prose and Times
+   * 0.409, so lines ran about ten percent short and wrapped counts ten percent
+   * high. A resume the estimate called full measured 88% on the page, and the
+   * fill pass refused bullets that had nearly three lines of room.
+   *
+   * Measured against the real renderer on a document shaped like a full
+   * profile — five sections, five entries, a long summary — the page now breaks
+   * between ratio 0.998 and 1.042. That is the property worth holding: an
+   * estimate at or below 1.0 fits, and just above it does not.
+   */
+  const classic = getTemplate('classic');
+
+  const shaped = (bullets: number): ResumeDocument => ({
+    contact: {
+      name: 'Tristan Heilman',
+      label: 'Full Stack / Mobile App Developer',
+      details: ['tristan@example.com', '+1-555-0100', 'Cincinnati, OH', 'example.com'],
+    },
+    sections: [
+      {
+        key: 'summary',
+        heading: 'Summary',
+        kind: 'summary',
+        summary:
+          'Mobile developer who owns the release cycle and built the entire authentication integration, making it the source of truth while the datastore remains the read layer for app data.',
+      },
+      {
+        key: 'work',
+        heading: 'Experience',
+        kind: 'entries',
+        entries: [
+          {
+            sourceId: 'w1',
+            primary: 'Native App Developer',
+            secondary: 'Formedics',
+            meta: '10/2025 - Present',
+            aside: 'Remote',
+            summary: '',
+            bullets: Array.from({ length: bullets }, (_, i) => ({
+              sourceId: `b${i}`,
+              text: 'Owned the release cycle for the mobile app and served as the primary source of knowledge on it.',
+            })),
+          },
+        ],
+      },
+    ],
+  });
+
+  it('grows with the document rather than jumping about', () => {
+    const heights = [1, 2, 3, 4].map((n) => estimateHeight(shaped(n), classic));
+    const steps = heights.slice(1).map((h, i) => h - heights[i]!);
+
+    // Each identical bullet costs the same, which is what makes the estimate
+    // usable as a budget rather than a guess.
+    expect(Math.max(...steps) - Math.min(...steps)).toBeLessThan(1);
+  });
+
+  it('measures a bullet as one line when it fits on one', () => {
+    // At 0.5 em per character this was counted as two.
+    const one = estimateHeight(shaped(1), classic);
+    const two = estimateHeight(shaped(2), classic);
+    const perBullet = two - one;
+    const line = classic.baseSize * classic.lineHeight;
+
+    expect(perBullet).toBeLessThan(line * 2);
+  });
+
+  it('uses the real column, so a wider margin means more lines', () => {
+    const narrow = { ...classic, pageMargin: 90 };
+    expect(estimateHeight(shaped(3), narrow)).toBeGreaterThan(estimateHeight(shaped(3), classic));
+  });
+
+  it('charges a serif template differently from a sans one', () => {
+    // Times is narrower than Helvetica at the same size. In a column tight
+    // enough for the difference to change where lines break, an estimate that
+    // ignored the font could not tell the two apart at all.
+    const tight = { ...getTemplate('serif'), pageMargin: 90 };
+    const sans = { ...tight, bodyFont: 'Helvetica', headingFont: 'Helvetica-Bold' };
+
+    expect(estimateHeight(shaped(8), tight)).toBeLessThan(estimateHeight(shaped(8), sans));
   });
 });

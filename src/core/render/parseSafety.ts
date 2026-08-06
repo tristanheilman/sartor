@@ -19,6 +19,8 @@ const DENSEST: PageMetrics = {
   entryGap: 6,
   bulletGap: 2,
   headingRule: false,
+  bodyFont: 'Helvetica',
+  headingFont: 'Helvetica-Bold',
 };
 
 /**

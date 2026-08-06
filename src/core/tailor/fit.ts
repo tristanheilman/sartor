@@ -62,6 +62,8 @@ const DEFAULT_METRICS: PageMetrics = {
   entryGap: 9,
   bulletGap: 3,
   headingRule: true,
+  bodyFont: 'Helvetica',
+  headingFont: 'Helvetica-Bold',
 };
 
 /**

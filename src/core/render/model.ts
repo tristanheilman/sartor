@@ -1,3 +1,4 @@
+import { widthOf, wrappedLines } from './metrics';
 import type { SectionKey } from '../schema';
 import type { ResumeSlice } from '../tailor/coverage';
 
@@ -129,32 +130,55 @@ export function documentToText(doc: ResumeDocument): string {
  */
 export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
   const line = t.baseSize * t.lineHeight;
-  // Width available for text, over the average advance of the body font at
-  // this size. 0.5 em is close for Helvetica and Times at resume sizes.
-  const perLine = Math.max(20, Math.floor((612 - t.pageMargin * 2) / (t.baseSize * 0.5)));
-  const wrapped = (text: string) => Math.max(1, Math.ceil(text.length / perLine));
+  // US Letter, less both margins. The renderer wraps to exactly this.
+  const column = 612 - t.pageMargin * 2;
 
-  // Name, headline, contact — three lines, the first at nearly twice the size.
-  let height = line * 1.2 * 1.9 + line * 1.3 + line + 4 + 4;
+  const body = t.bodyFont ?? 'Helvetica';
+  const heading = t.headingFont ?? 'Helvetica-Bold';
+
+  const wrapped = (text: string, font = body, size = t.baseSize) =>
+    wrappedLines(text, font, size, column);
+
+  // The bullet glyph and its gutter are not available to the text.
+  const bulletColumn = column - 10;
+
+  // Name, headline, contact. The name renders at 1.9x body size with its own
+  // leading; the contact line wraps like anything else.
+  const nameSize = t.baseSize * 1.9;
+  let height = nameSize * 1.2 + 4;
+  if (doc.contact.label) height += t.baseSize * 1.05 * 1.3 + 4;
+  if (doc.contact.details.length) {
+    height +=
+      wrappedLines(doc.contact.details.join(' · '), body, t.baseSize * 0.95, column) *
+      (t.baseSize * 0.95 * t.lineHeight);
+  }
 
   for (const s of doc.sections) {
     height += t.sectionGap;
-    height += line + 4 + (t.headingRule ? 2 : 0); // heading, margin, rule
+    height += t.baseSize * 1.05 * t.lineHeight + 4 + (t.headingRule ? 2 : 0);
 
     if (s.summary) height += wrapped(s.summary) * line;
 
     for (const g of s.skills ?? []) {
-      height += wrapped(`${g.name}: ${g.keywords.join(', ')}`) * line + 2;
+      // The label is bold and the keywords are not, so the line holds slightly
+      // less than an all-regular one. Measuring the whole string in the body
+      // font and charging the label's extra width covers it.
+      const text = `${g.name}: ${g.keywords.join(', ')}`;
+      const boldExtra = widthOf(`${g.name}: `, heading, t.baseSize) - widthOf(`${g.name}: `, body, t.baseSize);
+      height += wrappedLines(text, body, t.baseSize, column - boldExtra) * line + 2;
     }
 
     for (const e of s.entries ?? []) {
       height += t.entryGap;
-      height += line * 2 + 2; // title row and employer row
+      // Title and dates share a row; employer and location share the next.
+      height += line * 2 + 2;
       if (e.summary) height += wrapped(e.summary) * line + 2;
-      for (const b of e.bullets) height += wrapped(b.text) * line + t.bulletGap;
+      for (const b of e.bullets) {
+        height += wrappedLines(b.text, body, t.baseSize, bulletColumn) * line + t.bulletGap;
+      }
     }
 
-    for (const _ of s.items ?? []) height += line + 2;
+    for (const i of s.items ?? []) height += wrapped(i.text) * line + 2;
   }
 
   return height;
@@ -174,6 +198,9 @@ export interface PageMetrics {
   entryGap: number;
   bulletGap: number;
   headingRule: boolean;
+  /** Core PDF font names. Default to Helvetica when a caller omits them. */
+  bodyFont?: string;
+  headingFont?: string;
 }
 
 /** Rough length estimate, used only to warn about overflow before rendering. */
