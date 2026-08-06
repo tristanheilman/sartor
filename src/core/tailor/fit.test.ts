@@ -847,3 +847,89 @@ describe('giving every role enough to look like a job', () => {
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
   });
 });
+
+describe('filling with what actually fits', () => {
+  /**
+   * The fill loop stopped at the first bullet that would not fit. The entry
+   * with the fewest bullets goes first, so one long bullet at the front of the
+   * queue ended the pass — and a real export finished with forty-one points of
+   * slack, room for a shorter line that was never tried.
+   *
+   * "Does the next candidate fit" is the wrong question. "Does anything left
+   * fit" is the right one.
+   */
+  const longAndShort: Profile = profileSchema.parse({
+    ...profile,
+    // A summary long enough that only a line or two of slack remains.
+    basics: { ...profile.basics, summary: 'Mobile developer who owns more than the app. '.repeat(30) },
+    projects: [],
+    work: [
+      {
+        id: 'wrk_new',
+        name: 'Formedics',
+        position: 'Native App Developer',
+        startDate: '10/2025',
+        bullets: [
+          { id: 'n0', text: 'Owned the release cycle end to end.' },
+          // Three lines, and first in the queue when this entry has fewest.
+          { id: 'n1', text: 'A deliberately long line about the work that cannot fit into the small remaining space. '.repeat(6) },
+          { id: 'n2', text: 'Shipped it.' },
+        ],
+      },
+      {
+        id: 'wrk_old',
+        name: 'Wridz',
+        position: 'Lead Mobile Developer',
+        startDate: '05/2022',
+        endDate: '09/2025',
+        bullets: [
+          { id: 'o0', text: 'Cut deployment times by fifteen minutes.' },
+          { id: 'o1', text: 'Refactored geolocation.' },
+          { id: 'o2', text: 'Integrated Stripe.' },
+        ],
+      },
+    ],
+  });
+
+  const seeded = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: longAndShort.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j === 0, order: j })),
+      })),
+      projects: [],
+      skills: longAndShort.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  it('keeps going past a bullet that does not fit', () => {
+    const { added } = fitToTarget(longAndShort, seeded(), 1);
+    // The long one is skipped; the short ones still get in.
+    expect(added.length).toBeGreaterThan(1);
+  });
+
+  it('skips the one that would overflow rather than stopping', () => {
+    const { plan } = fitToTarget(longAndShort, seeded(), 1);
+    const on = (id: string) =>
+      plan.work.flatMap((w) => w.bullets).find((b) => b.bulletId === id)!.include;
+
+    expect(on('n2')).toBe(true);
+    expect(on('o1')).toBe(true);
+  });
+
+  it('still does not overflow the page', () => {
+    expect(fitToTarget(longAndShort, seeded(), 1).fits).toBe(true);
+  });
+
+  it('terminates when nothing left fits', () => {
+    // Everything already on: there is nothing to add and it must not spin.
+    const full = tailorPlanSchema.parse({
+      ...seeded(),
+      work: longAndShort.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+    });
+    expect(fitToTarget(longAndShort, full, 1).added).toEqual([]);
+  });
+});

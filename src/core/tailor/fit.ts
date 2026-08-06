@@ -477,6 +477,9 @@ export function fitToTarget(
   // switched on, they are the person's own, they are the model's next choices
   // rather than arbitrary ones, and the review screen shows every one.
   const added: string[] = [];
+  // Bullets tried and found too long for the space that was left. Remembered so
+  // the loop does not offer them again and stall.
+  const tooBig = new Set<string>();
   for (let i = 0; i < limit; i++) {
     // The entry with the least to show goes first, so the page fills evenly
     // instead of stacking everything onto the newest role. Roles before
@@ -489,24 +492,33 @@ export function fitToTarget(
     const rank = (e: PlannedEntry) => keptBullets(e).length;
     const isRole = new Set(next.work.map((e) => e.id));
     const candidates = [...next.work, ...next.projects]
-      .filter((e) => e.include && e.bullets.some((b) => !b.include))
+      .filter((e) => e.include && e.bullets.some((b) => !b.include && !tooBig.has(b.bulletId)))
       .sort((a, b) => rank(a) - rank(b) || Number(isRole.has(b.id)) - Number(isRole.has(a.id)));
 
-    const entry = candidates[0];
-    if (!entry) break;
+    // "Does the next candidate fit" is the wrong question; "does anything left
+    // fit" is the right one. Stopping at the first bullet too big for the
+    // remaining space abandoned shorter ones behind it — a real export finished
+    // with forty-one points of slack and a one-line bullet never tried, because
+    // the entry at the front of the queue happened to offer a three-line one.
+    let placed = false;
+    for (const entry of candidates) {
+      const nextBullet = [...entry.bullets]
+        .filter((b) => !b.include && !tooBig.has(b.bulletId))
+        .sort((a, b) => a.order - b.order)[0];
+      if (!nextBullet) continue;
 
-    const nextBullet = [...entry.bullets]
-      .filter((b) => !b.include)
-      .sort((a, b) => a.order - b.order)[0];
-    if (!nextBullet) break;
-
-    nextBullet.include = true;
-    if (overflows()) {
-      // Put it back and stop: anything further would only overflow too.
-      nextBullet.include = false;
+      nextBullet.include = true;
+      if (overflows()) {
+        nextBullet.include = false;
+        // Remember it, so the next pass does not try it again and stall.
+        tooBig.add(nextBullet.bulletId);
+        continue;
+      }
+      added.push(nextBullet.bulletId);
+      placed = true;
       break;
     }
-    added.push(nextBullet.bulletId);
+    if (!placed) break;
   }
 
   return {
