@@ -81,6 +81,9 @@ architects automates collaborates coordinates creates debugs deploys documents e
 introduces launches maintains migrates monitors publishes refactors releases runs secures standardizes
 streamlines tracks trains validates wires
 
+strongest largest fastest highest lowest biggest deepest broadest latest earliest greatest simplest cleanest
+safest newest oldest closest widest busiest hardest
+
 additional additionally broad closely comfortable complex consistent consistently continuous continuously
 current currently daily deep deeply demonstrated direct directly effective effectively efficient efficiently
 experienced extensive extensively familiar frequent frequently fully heavily highly independently initial
@@ -131,6 +134,10 @@ export const GENERIC_TERMS = new Set(
  * Deliberately not extended to -s forms. Kubernetes, Redis and Rails all end in
  * s, and exempting that shape would mask exactly the fabrications the guard
  * exists to catch. Those stay on the explicit list.
+ *
+ * Nor to -est, for the same reason and more sharply: Jest, Nest, Quest and
+ * Crest are all real, and Jest is in this very project's own skills section.
+ * Superlatives are listed one by one above instead.
  */
 function looksLikePastTense(norm: string): boolean {
   return norm.length >= 5 && norm.endsWith('ed') && /^[a-z]+$/.test(norm);

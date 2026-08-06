@@ -239,3 +239,40 @@ describe('regular past-tense verbs, without listing every one', () => {
     expect(violations.map((v) => v.token)).not.toContain('Exposed');
   });
 });
+
+describe('superlatives, which cannot be generalised', () => {
+  /**
+   * Fourth false positive of the family, and the first that will not yield to
+   * a rule. "Strongest" opened a rephrased line and blocked an export.
+   *
+   * The -ed generalisation is safe because nothing in this industry is named
+   * after a past participle. -est is not: Jest, Nest, Quest and Crest are all
+   * real, and exempting the ending would mask exactly the fabrication the
+   * guard exists to catch. So superlatives are listed one by one, deliberately.
+   */
+  const superlatives = [
+    'strongest', 'largest', 'fastest', 'highest', 'lowest', 'biggest', 'deepest',
+    'broadest', 'latest', 'earliest', 'greatest', 'simplest', 'cleanest', 'safest',
+    'newest', 'oldest', 'closest', 'widest', 'busiest', 'hardest',
+  ];
+
+  it.each(superlatives)('treats "%s" as ordinary English', (word) => {
+    expect(isCommonSentenceOpener(word)).toBe(true);
+  });
+
+  it('leaves the products that end in -est alone', () => {
+    for (const w of ['jest', 'nest', 'quest', 'crest', 'zest']) {
+      expect(isCommonSentenceOpener(w), w).toBe(false);
+    }
+  });
+
+  it('does not flag the line that started this', () => {
+    const lexicon = buildLexicon('Owned the release cycle and was the team’s main source of knowledge.');
+    const { violations } = checkText(
+      'Strongest contributor on release engineering across the team.',
+      lexicon,
+      't',
+    );
+    expect(violations.map((v) => v.token)).not.toContain('Strongest');
+  });
+});
