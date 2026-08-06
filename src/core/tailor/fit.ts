@@ -92,6 +92,8 @@ export interface FitResult {
   dropped: string[];
   /** Bullet ids switched back on to use the room that was left over. */
   added: string[];
+  /** Skill group ids the posting asked for that the model had dropped. */
+  restoredSkills: string[];
   /** Project entry ids switched off entirely. */
   droppedEntries: string[];
   /** Whether it fits now. False means it is as small as this will make it. */
@@ -476,6 +478,35 @@ export function fitToTarget(
   // Growing back is the same kind of change in the other direction: bullets are
   // switched on, they are the person's own, they are the model's next choices
   // rather than arbitrary ones, and the review screen shows every one.
+  // Skill groups the model dropped that the posting asked for.
+  //
+  // A plan came back keeping two groups of five, dropping the ones holding GCP,
+  // Jest, Detox, Appium and iOS/Android — every one named in the posting —
+  // while forty-one points of the page sat empty. Now that skills flow as one
+  // paragraph a group often costs part of a line rather than a whole one, and a
+  // group the posting asked for is worth more than the space it would leave.
+  //
+  // Before bullets, because a keyword the posting named earns its line more
+  // surely than a fourth bullet on a job that already has three.
+  const restoredSkills: string[] = [];
+  if (ranking) {
+    const jdLexicon = buildLexicon(jdText!);
+    const dropped = next.skills
+      .filter((g) => !g.include)
+      .map((g) => ({ g, score: relevanceTo(jdLexicon, '', g.keywords.join(' ')) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    for (const { g } of dropped) {
+      g.include = true;
+      if (overflows()) {
+        g.include = false;
+        continue;
+      }
+      restoredSkills.push(g.id);
+    }
+  }
+
   const added: string[] = [];
   // Bullets tried and found too long for the space that was left. Remembered so
   // the loop does not offer them again and stall.
@@ -526,6 +557,7 @@ export function fitToTarget(
     reinstated: stillThere ? reinstated : null,
     dropped,
     added,
+    restoredSkills,
     droppedEntries,
     // Against the page itself, not the trim budget — growth deliberately fills
     // past that, so measuring against it would report a full page as a failure.

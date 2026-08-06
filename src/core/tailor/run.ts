@@ -93,6 +93,7 @@ export interface TailorOutcome {
   fit: {
     dropped: string[];
     added: string[];
+    restoredSkills: string[];
     droppedEntries: string[];
     fits: boolean;
     /** A project the posting asked for that the model had dropped, put back. */
@@ -155,6 +156,7 @@ export async function runTailor(
     fit: {
       dropped: fitted.dropped,
       added: fitted.added,
+      restoredSkills: fitted.restoredSkills,
       droppedEntries: fitted.droppedEntries,
       fits: fitted.fits,
       reinstated: fitted.reinstated,

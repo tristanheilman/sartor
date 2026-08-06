@@ -940,3 +940,76 @@ describe('filling with what actually fits', () => {
     expect(fitToTarget(longAndShort, full, 1).added).toEqual([]);
   });
 });
+
+describe('putting back skill groups the page has room for', () => {
+  /**
+   * The model returned a plan keeping two skill groups of five, dropping the
+   * ones holding GCP, Jest, Detox, Appium and iOS/Android — every one of them
+   * named in the posting — while forty-one points of the page sat empty.
+   *
+   * Skills flow as one paragraph now, so a group often costs part of a line
+   * rather than a whole one. A group the posting asked for is worth more than
+   * the white space it would have left.
+   */
+  const jd = 'React Native, Swift, Kotlin. Jest, Detox and Appium. Docker and GCP.';
+
+  const p: Profile = profileSchema.parse({
+    ...profile,
+    projects: [],
+    work: [profile.work[0]],
+    skills: [
+      { id: 'k_lang', name: 'Languages', keywords: ['React Native', 'Swift', 'Kotlin'] },
+      { id: 'k_test', name: 'Testing', keywords: ['Jest', 'Detox', 'Appium'] },
+      { id: 'k_cloud', name: 'Cloud', keywords: ['GCP', 'Docker'] },
+      { id: 'k_miscellany', name: 'Other', keywords: ['Origami', 'Beekeeping'] },
+    ],
+  });
+
+  const modelDropped = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j < 2, order: j })),
+      })),
+      projects: [],
+      skills: p.skills.map((s, i) => ({ id: s.id, include: i === 0, order: i, keywords: s.keywords })),
+    });
+
+  it('restores a group the posting asked for', () => {
+    const { plan } = fitToTarget(p, modelDropped(), 1, undefined, jd);
+    const on = (id: string) => plan.skills.find((s) => s.id === id)!.include;
+
+    expect(on('k_test')).toBe(true);
+    expect(on('k_cloud')).toBe(true);
+  });
+
+  it('reports what it put back', () => {
+    const { restoredSkills } = fitToTarget(p, modelDropped(), 1, undefined, jd);
+    expect(restoredSkills.length).toBeGreaterThan(0);
+  });
+
+  it('prefers the relevant group over an irrelevant one', () => {
+    const { restoredSkills } = fitToTarget(p, modelDropped(), 1, undefined, jd);
+    expect(restoredSkills.indexOf('k_miscellany')).toBe(-1);
+  });
+
+  it('still fits the page', () => {
+    expect(fitToTarget(p, modelDropped(), 1, undefined, jd).fits).toBe(true);
+  });
+
+  it('restores nothing without a posting to judge relevance', () => {
+    // Nothing to be relevant to; the model's selection stands.
+    expect(fitToTarget(p, modelDropped(), 1).restoredSkills).toEqual([]);
+  });
+
+  it('does not undo a cut it made itself', () => {
+    // A crowded profile where the trim had to drop groups must not immediately
+    // put them back and oscillate.
+    const crowded = profileSchema.parse({ ...p, basics: { ...p.basics, summary: 'x '.repeat(1600) } });
+    const once = fitToTarget(crowded, modelDropped(), 1, undefined, jd);
+    const twice = fitToTarget(crowded, once.plan, 1, undefined, jd);
+
+    expect(twice.restoredSkills).toEqual([]);
+  });
+});
