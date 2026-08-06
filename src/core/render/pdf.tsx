@@ -92,6 +92,7 @@ function makeStyles(t: Template) {
     bulletRow: { flexDirection: 'row', marginBottom: t.bulletGap, paddingRight: 4 },
     bulletGlyph: { width: 10 },
     bulletText: { flex: 1 },
+    headerCentered: { textAlign: 'center' },
     skillRow: { marginBottom: 2 },
     skillName: { fontFamily: t.headingFont },
     // Enough contrast to separate groups without reading as punctuation
@@ -221,7 +222,7 @@ export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId
       producer="Sartor"
     >
       <Page size="LETTER" style={s.page}>
-        <View>
+        <View style={t.centerHeader ? s.headerCentered : undefined}>
           <Text style={s.name}>{doc.contact.name}</Text>
           {doc.contact.label ? <Text style={s.label}>{doc.contact.label}</Text> : null}
           {doc.contact.details.length > 0 ? (

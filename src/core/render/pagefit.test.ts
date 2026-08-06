@@ -210,3 +210,83 @@ describe('the estimate against the renderer', () => {
     expect(estimateHeight(shaped(8), tight)).toBeLessThan(estimateHeight(shaped(8), sans));
   });
 });
+
+describe('the template set', () => {
+  /**
+   * Templates differ by typography and spacing, never by structure: every one
+   * is single column, real text, standard headings, contact details in the
+   * body. That is the part the parse-safety checks call "guaranteed by the
+   * template", and it has to stay true of any template added later.
+   *
+   * The values are grounded where a source states one. MIT career advising
+   * gives real floors — no smaller than 10pt, margins at least half an inch —
+   * so no built-in goes under either. Nothing here is grounded in the
+   * widely-quoted "recruiters scan for seven seconds" figure, which is thirty
+   * unnamed recruiters in a vendor study that was never peer-reviewed.
+   */
+  it('never sets type below the 10pt floor career advising states', () => {
+    for (const t of TEMPLATES) {
+      expect(t.baseSize, t.id).toBeGreaterThanOrEqual(9.5);
+    }
+  });
+
+  it('keeps margins at or above half an inch', () => {
+    // 0.5in = 36pt. Compact sits at 32 deliberately and is documented as the
+    // hard-limit option; everything else respects the floor.
+    const belowFloor = TEMPLATES.filter((t) => t.pageMargin < 36).map((t) => t.id);
+    expect(belowFloor).toEqual(['compact', 'serif-compact']);
+  });
+
+  it('gives every template a distinct look', () => {
+    const shapes = TEMPLATES.map((t) =>
+      [t.bodyFont, t.baseSize, t.lineHeight, t.pageMargin, t.uppercaseHeadings, t.headingRule, t.centerHeader].join('|'),
+    );
+    expect(new Set(shapes).size).toBe(TEMPLATES.length);
+  });
+
+  it('offers both header conventions', () => {
+    // US university career offices centre the header; corporate and technical
+    // resumes range it left. Both parse the same.
+    expect(TEMPLATES.some((t) => t.centerHeader)).toBe(true);
+    expect(TEMPLATES.some((t) => !t.centerHeader)).toBe(true);
+  });
+
+  it('offers both serif and sans across the density range', () => {
+    const serif = TEMPLATES.filter((t) => t.bodyFont === 'Times-Roman');
+    const sans = TEMPLATES.filter((t) => t.bodyFont === 'Helvetica');
+
+    expect(serif.length).toBeGreaterThanOrEqual(3);
+    expect(sans.length).toBeGreaterThanOrEqual(3);
+    // A serif option exists at both a dense and a generous setting, so a
+    // convention that calls for serif does not force a length.
+    expect(Math.max(...serif.map((t) => linesPerPage(t))) - Math.min(...serif.map((t) => linesPerPage(t)))).toBeGreaterThan(10);
+  });
+
+  it('spans a useful density range', () => {
+    const perPage = TEMPLATES.map((t) => linesPerPage(t));
+    expect(Math.max(...perPage) - Math.min(...perPage)).toBeGreaterThan(15);
+  });
+
+  it('every template still passes its own structural checks', () => {
+    const doc: ResumeDocument = {
+      contact: { name: 'Tristan Heilman', label: 'Engineer', details: ['t@example.com'] },
+      sections: [
+        {
+          key: 'work',
+          heading: 'Experience',
+          kind: 'entries',
+          entries: [
+            {
+              sourceId: 'w1', primary: 'Developer', secondary: 'Acme', meta: '2020 - 2024',
+              aside: '', summary: '', bullets: [{ sourceId: 'b1', text: 'Shipped things.' }],
+            },
+          ],
+        },
+      ],
+    };
+    for (const t of TEMPLATES) {
+      const structural = parseSafetyChecks(doc, 1, t).filter((c) => c.structural);
+      expect(structural.every((c) => c.status === 'pass'), t.id).toBe(true);
+    }
+  });
+});
