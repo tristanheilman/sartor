@@ -159,12 +159,18 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
 
     if (s.summary) height += wrapped(s.summary) * line;
 
-    for (const g of s.skills ?? []) {
-      // The label is bold and the keywords are not, so the line holds slightly
-      // less than an all-regular one. Measuring the whole string in the body
-      // font and charging the label's extra width covers it.
-      const text = `${g.name}: ${g.keywords.join(', ')}`;
-      const boldExtra = widthOf(`${g.name}: `, heading, t.baseSize) - widthOf(`${g.name}: `, body, t.baseSize);
+    // Skills flow as one paragraph, so they are measured as one. Charging each
+    // group its own line — as the renderer used to lay them out — over-counted
+    // by whatever was left of each group's last line, and the trim then dropped
+    // whole groups to buy back space the layout was wasting.
+    const groups = s.skills ?? [];
+    if (groups.length) {
+      const text = groups.map((g) => `${g.name}: ${g.keywords.join(', ')}`).join('   ·   ');
+      const boldExtra = groups.reduce(
+        (n, g) =>
+          n + widthOf(`${g.name}: `, heading, t.baseSize) - widthOf(`${g.name}: `, body, t.baseSize),
+        0,
+      );
       height += wrappedLines(text, body, t.baseSize, column - boldExtra) * line + 2;
     }
 

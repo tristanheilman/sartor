@@ -94,6 +94,9 @@ function makeStyles(t: Template) {
     bulletText: { flex: 1 },
     skillRow: { marginBottom: 2 },
     skillName: { fontFamily: t.headingFont },
+    // Enough contrast to separate groups without reading as punctuation
+    // inside a list that already uses commas.
+    skillSeparator: { color: '#777777' },
     listItem: { marginBottom: 2 },
   });
 }
@@ -108,6 +111,9 @@ function makeStyles(t: Template) {
  * section moved to a page of its own — eighty characters alone on page two,
  * while a quarter of page one sat empty.
  */
+/** Between skill groups when they run together on one line. */
+const SKILL_SEPARATOR = '   ·   ';
+
 const MIN_ROOM_AFTER_HEADING = 30;
 
 /**
@@ -126,27 +132,29 @@ function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
   if (section.kind === 'summary') return <Text>{section.summary}</Text>;
 
   if (section.kind === 'skills') {
+    const groups = section.skills ?? [];
     return (
-      <>
-        {section.skills?.map((g) => (
-          // One paragraph, not two columns. As a flex row the keywords formed
-          // their own column, so every wrapped line hung at wherever that
-          // column happened to start — a different indent for each group,
-          // because the labels are different lengths. "Mobile & Web
-          // Development" pushed its continuation a third of the way across the
-          // page while "Tools & DevOps" barely moved, and the section read as
-          // ragged and half-centred.
-          //
-          // Nested Text keeps the label bold and lets the whole thing wrap back
-          // to the left margin like the prose it is. It also puts the group and
-          // its keywords in one text run, which is friendlier to extraction
-          // than two adjacent boxes.
-          <Text key={g.sourceId} style={s.skillRow}>
+      // One flowing paragraph, not a line per group.
+      //
+      // A group per line wastes whatever is left of the last line of each. On a
+      // real resume "Languages & Frameworks" wrapped so that "NodeJS, CSS" sat
+      // alone on a line, and "Tools & DevOps" ended a third of the way across —
+      // two thirds of two lines, gone. Worse, the trim was dropping whole
+      // groups to buy back space the layout was wasting, so a posting asking
+      // for Docker, GCP, Jest, Detox and Appium got a resume that had cut the
+      // sections naming them.
+      //
+      // Flowed, the text fills every line it starts, and the labels stay bold
+      // so the section is still scannable rather than a wall of nouns.
+      <Text style={s.skillRow}>
+        {groups.map((g, i) => (
+          <Text key={g.sourceId}>
+            {i > 0 ? <Text style={s.skillSeparator}>{SKILL_SEPARATOR}</Text> : null}
             <Text style={s.skillName}>{g.name}: </Text>
             {g.keywords.join(', ')}
           </Text>
         ))}
-      </>
+      </Text>
     );
   }
 

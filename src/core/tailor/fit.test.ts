@@ -840,11 +840,18 @@ describe('giving every role enough to look like a job', () => {
     if (max > 2) expect(min).toBeGreaterThanOrEqual(2);
   });
 
-  it('does not leave one role on a single bullet while another has three', () => {
+  it('gives every role at least two when the profile has them', () => {
+    // The property that matters on the page: no job reads as though nothing
+    // happened there. An exact spread cannot be required — a role whose next
+    // bullet is three lines long may be passed over when only one line is left,
+    // and that is the fill pass working, not failing.
     const { plan } = fitToTarget(profile, sparse(), 1);
-    const counts = plan.work.filter((w) => w.include).map((w) => w.bullets.filter((b) => b.include).length);
 
-    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+    for (const w of plan.work.filter((x) => x.include)) {
+      const available = profile.work.find((x) => x.id === w.id)!.bullets.length;
+      const kept = w.bullets.filter((b) => b.include).length;
+      expect(kept, w.id).toBeGreaterThanOrEqual(Math.min(2, available));
+    }
   });
 });
 
