@@ -228,6 +228,28 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
     : `The profile has ${inventory}, which fits within ${pageTarget} page(s) — roughly ${budget} fit alongside the summary, skills and headings. Include what is relevant; you do not need to cut aggressively.`;
 }
 
+/**
+ * How long the summary may be, and what it is for.
+ *
+ * A tailored resume came back with a six-line summary narrating the Auth0
+ * migration, a 2.8-million-user anonymization, the Jest suite and the Fastlane
+ * pipelines — with those same facts cut from the bullets underneath to make
+ * room for it.
+ *
+ * That is backwards twice over. A bullet is scannable and sits under the job
+ * where the work happened; prose at the top is neither, and the reader has to
+ * work out which employer each clause belongs to. And the summary cost about a
+ * hundred and sixteen points — four bullets — to say what the bullets were
+ * being cut to fit.
+ *
+ * On two pages there is room for both, so the rule relaxes.
+ */
+function summaryHint(pageTarget: 1 | 2): string {
+  return pageTarget === 1
+    ? 'At most two sentences. It says what kind of engineer this is and what they are for — it is not a place to store accomplishments. Anything about a specific job belongs in a bullet under that role, where a reader can see who it was for; do not repeat in the summary what a bullet already says, because on one page that space is bullets you had to cut.'
+    : 'Three or four sentences. Frame the career; leave specific achievements to the bullets under the roles they belong to rather than repeating them here.';
+}
+
 export function buildTailorUserPrompt(
   profile: Profile,
   jd: JobDescription,
@@ -248,6 +270,7 @@ ${JSON.stringify(profileForModel(profile), null, 1)}
 
 # CONSTRAINTS
 - Target length: ${constraints.pageTarget} page(s). ${budgetHint(profile, constraints.pageTarget)}
+- Summary: ${summaryHint(constraints.pageTarget)}
 - Tone: ${toneLine}
 ${constraints.seniority ? `- Target seniority: ${constraints.seniority}. Do not claim seniority the profile does not support; adjust emphasis only.\n` : ''}
 # TASK

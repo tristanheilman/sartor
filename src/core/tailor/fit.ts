@@ -481,9 +481,16 @@ export function fitToTarget(
     // The entry with the least to show goes first, so the page fills evenly
     // instead of stacking everything onto the newest role. Roles before
     // projects: employment is what a reader weighs.
+    // Fewest first, and roles before projects at the same count. A role left on
+    // one bullet beside another with three reads as though nothing happened
+    // there — worse than no bullets at all, because it looks like that was the
+    // best there was. CIMx shipped with a single ten-word line for exactly this
+    // reason: the tie broke toward the newest role and the room ran out.
+    const rank = (e: PlannedEntry) => keptBullets(e).length;
+    const isRole = new Set(next.work.map((e) => e.id));
     const candidates = [...next.work, ...next.projects]
       .filter((e) => e.include && e.bullets.some((b) => !b.include))
-      .sort((a, b) => keptBullets(a).length - keptBullets(b).length);
+      .sort((a, b) => rank(a) - rank(b) || Number(isRole.has(b.id)) - Number(isRole.has(a.id)));
 
     const entry = candidates[0];
     if (!entry) break;

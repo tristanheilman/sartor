@@ -803,3 +803,47 @@ describe('a plan that does not cover the profile', () => {
     expect(plan.projects.every((p) => !p.include)).toBe(true);
   });
 });
+
+describe('giving every role enough to look like a job', () => {
+  /**
+   * CIMx rendered with a single ten-word bullet. "Built and maintained
+   * automated test suites using Jest and Selenium." under two years of
+   * employment reads as though nothing happened there — worse, in a reader's
+   * eyes, than a role with no bullets at all, because it looks like that was
+   * the best there was.
+   *
+   * The fill pass already went to the entry with the fewest bullets first, but
+   * ties broke toward whichever came first, so the newest role took a second
+   * bullet while the oldest still had one.
+   */
+  const sparse = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: profile.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j === 0, order: j })),
+      })),
+      projects: profile.projects.map((p, i) => ({
+        id: p.id, include: false, order: i,
+        bullets: p.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
+      })),
+      skills: profile.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  it('brings every role to two before giving any a third', () => {
+    const { plan } = fitToTarget(profile, sparse(), 1);
+    const counts = plan.work.filter((w) => w.include).map((w) => w.bullets.filter((b) => b.include).length);
+
+    // Either everything reached two, or nothing got past two while one lagged.
+    const min = Math.min(...counts);
+    const max = Math.max(...counts);
+    if (max > 2) expect(min).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does not leave one role on a single bullet while another has three', () => {
+    const { plan } = fitToTarget(profile, sparse(), 1);
+    const counts = plan.work.filter((w) => w.include).map((w) => w.bullets.filter((b) => b.include).length);
+
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+  });
+});

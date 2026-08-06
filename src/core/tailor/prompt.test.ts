@@ -225,3 +225,47 @@ describe('what has to give when a page is genuinely full', () => {
     );
   });
 });
+
+describe('what the summary is for', () => {
+  /**
+   * A tailored resume came back with a six-line summary narrating the Auth0
+   * migration, a 2.8-million-user anonymization, the Jest suite and the
+   * Fastlane pipelines — and those same facts cut from the bullets underneath
+   * to make room for it.
+   *
+   * That is backwards twice over. A bullet is scannable and sits under the job
+   * where the work happened; prose at the top is neither, and the reader has to
+   * guess which employer each clause belongs to. And the summary cost about a
+   * hundred and sixteen points — four bullets — to say what the bullets were
+   * being cut to fit.
+   */
+  const p = (): Profile =>
+    profileSchema.parse({
+      id: 'prf_1',
+      createdAt: 'now',
+      updatedAt: 'now',
+      basics: { name: 'Tristan Heilman', summary: 'Mobile developer.' },
+      work: [{ id: 'wrk_1', name: 'Formedics', position: 'Dev', startDate: '10/2025', bullets: bullets(12, 'w') }],
+      projects: Array.from({ length: 4 }, (_, i) => ({ id: `p${i}`, name: `p-${i}`, bullets: bullets(3, `pb${i}`) })),
+    });
+
+  const onePage = () => buildTailorUserPrompt(p(), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 1 });
+
+  it('asks for a short summary when the target is one page', () => {
+    expect(onePage()).toMatch(/two sentences|2 sentences|at most two/i);
+  });
+
+  it('tells it not to repeat what the bullets already say', () => {
+    expect(onePage()).toMatch(/repeat|duplicat|already/i);
+  });
+
+  it('says where a fact belongs', () => {
+    // The point of the fix: a fact about a job goes under the job.
+    expect(onePage()).toMatch(/bullet under|belongs under|under the role|under that role/i);
+  });
+
+  it('is more relaxed about length on two pages', () => {
+    const two = buildTailorUserPrompt(p(), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 2 });
+    expect(two).not.toBe(onePage());
+  });
+});
