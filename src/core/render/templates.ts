@@ -46,6 +46,15 @@ export const templateSchema = z.object({
   bulletGap: z.number().min(0).max(20),
   uppercaseHeadings: z.boolean(),
   headingRule: z.boolean(),
+  /**
+   * Centre the name, title and contact line.
+   *
+   * A real fork in convention rather than decoration: US university career
+   * offices — Harvard's among them — centre the header, while most corporate
+   * and technical resumes range it left. Both parse identically; the contact
+   * details are body text either way, never a page header.
+   */
+  centerHeader: z.boolean().default(false),
   /** A margin under ~24pt risks being clipped by physical printers. */
   pageMargin: z.number().min(24).max(90),
 });
@@ -70,6 +79,7 @@ export const TEMPLATES: Template[] = [
     bulletGap: 3,
     uppercaseHeadings: true,
     headingRule: true,
+    centerHeader: false,
     pageMargin: 42,
   },
   {
@@ -86,6 +96,7 @@ export const TEMPLATES: Template[] = [
     bulletGap: 2,
     uppercaseHeadings: true,
     headingRule: false,
+    centerHeader: false,
     pageMargin: 32,
   },
   {
@@ -102,6 +113,7 @@ export const TEMPLATES: Template[] = [
     bulletGap: 3,
     uppercaseHeadings: false,
     headingRule: true,
+    centerHeader: false,
     pageMargin: 46,
   },
   {
@@ -118,6 +130,7 @@ export const TEMPLATES: Template[] = [
     bulletGap: 4,
     uppercaseHeadings: true,
     headingRule: true,
+    centerHeader: false,
     pageMargin: 60,
   },
   {
@@ -134,7 +147,62 @@ export const TEMPLATES: Template[] = [
     bulletGap: 2,
     uppercaseHeadings: true,
     headingRule: false,
+    centerHeader: false,
     pageMargin: 34,
+  },
+  {
+    id: 'harvard',
+    label: 'University',
+    description:
+      'Serif, centred header, 0.75in margins. The shape US university career offices teach.',
+    bodyFont: 'Times-Roman',
+    headingFont: 'Times-Bold',
+    docxFont: 'Times New Roman',
+    baseSize: 10.5,
+    lineHeight: 1.32,
+    sectionGap: 10,
+    entryGap: 8,
+    bulletGap: 2,
+    uppercaseHeadings: true,
+    headingRule: true,
+    centerHeader: true,
+    pageMargin: 54,
+  },
+  {
+    id: 'capd',
+    label: 'Half Inch',
+    description:
+      'Sans-serif at 10pt with half-inch margins — the floors MIT career advising states, and no less.',
+    bodyFont: 'Helvetica',
+    headingFont: 'Helvetica-Bold',
+    docxFont: 'Arial',
+    baseSize: 10,
+    lineHeight: 1.34,
+    sectionGap: 10,
+    entryGap: 7,
+    bulletGap: 3,
+    uppercaseHeadings: true,
+    headingRule: false,
+    centerHeader: false,
+    pageMargin: 36,
+  },
+  {
+    id: 'executive',
+    label: 'Executive',
+    description:
+      'Serif at 11pt, centred header, wide margins. For a short senior resume that should not look padded.',
+    bodyFont: 'Times-Roman',
+    headingFont: 'Times-Bold',
+    docxFont: 'Georgia',
+    baseSize: 11,
+    lineHeight: 1.44,
+    sectionGap: 14,
+    entryGap: 11,
+    bulletGap: 4,
+    uppercaseHeadings: true,
+    headingRule: true,
+    centerHeader: true,
+    pageMargin: 64,
   },
   {
     id: 'plain',
@@ -150,6 +218,7 @@ export const TEMPLATES: Template[] = [
     bulletGap: 3,
     uppercaseHeadings: false,
     headingRule: false,
+    centerHeader: false,
     pageMargin: 44,
   },
 ];

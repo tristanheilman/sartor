@@ -48,17 +48,21 @@ export function ExportPanel({
   onDeleteTemplate(id: string): void;
   /** Called once per download, with the template actually used. */
   onExported(formats: string[], template: Template): void;
-  pageTarget: 1 | 2;
+  /** `null` for the master profile, which has no length to miss. */
+  pageTarget: 1 | 2 | null;
   fileBase: string;
 }) {
   const [busy, setBusy] = useState<Format | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Template | null>(null);
-  const checks = parseSafetyChecks(doc, pageTarget);
-
   // Resolved to the object, not left as an id: a user's template is not in the
   // built-in table, so the renderers could not look it up by name.
   const template = templates.find((t) => t.id === templateId) ?? getTemplate(templateId);
+
+  // The template decides how much fits on a page, so the page-fit check has to
+  // see it — otherwise its own advice ("switch to Compact") never changes the
+  // answer.
+  const checks = parseSafetyChecks(doc, pageTarget, template);
 
   async function download(kind: Format) {
     setBusy(kind);

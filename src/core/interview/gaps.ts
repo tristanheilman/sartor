@@ -1,4 +1,5 @@
 import type { Profile } from '../schema';
+import { keywordHead } from '../skills';
 import { buildCoverage } from '../tailor/coverage';
 import { buildLexicon, isGrounded } from '../tailor/lexicon';
 import { isOngoing, toMonths } from '../dates';
@@ -62,7 +63,8 @@ function unbackedSkills(profile: Profile, emphasised: Set<string>): Gap[] {
     for (const keyword of group.keywords) {
       // Compound entries like "Firebase (Authentication, Firestore)" are really
       // several keywords; the head is the one worth asking about.
-      const head = keyword.split(/[(/,]/)[0]?.trim() ?? keyword;
+      const head = keywordHead(keyword);
+      if (!head) continue;
       if (head.length < 2 || isGrounded(norm(head), evidence)) continue;
 
       gaps.push({
@@ -263,12 +265,25 @@ export interface FindGapsOptions {
   jdText?: string;
   /** Hard cap. The game is worth playing only if it ends. */
   limit?: number;
+  /**
+   * Gap ids already dealt with — answered, skipped, waved away.
+   *
+   * These have to be removed *before* the cap, or the cap silently becomes a
+   * budget for the whole session rather than a limit on what is on screen.
+   * Filtering afterwards, which is what the panel used to do, means skipping
+   * eight of the top twelve leaves four questions and no way to reach the
+   * thirteenth — so a skill ranked just below the line can never be asked
+   * about, and the interview reports "nothing left to ask" while the profile
+   * still has unevidenced claims on it.
+   */
+  exclude?: Iterable<string>;
   /** Injected so "how long since your last role ended" is testable. */
   now?: Date;
 }
 
 export function findGaps(profile: Profile, opts: FindGapsOptions = {}): Gap[] {
-  const { jdText = '', limit = 12, now = new Date() } = opts;
+  const { jdText = '', limit = 12, now = new Date(), exclude } = opts;
+  const done = new Set(exclude ?? []);
 
   const emphasised = new Set(
     jdText.trim()
@@ -299,7 +314,10 @@ export function findGaps(profile: Profile, opts: FindGapsOptions = {}): Gap[] {
     });
   }
 
-  return gaps.sort((a, b) => b.weight - a.weight || a.id.localeCompare(b.id)).slice(0, limit);
+  return gaps
+    .filter((g) => !done.has(g.id))
+    .sort((a, b) => b.weight - a.weight || a.id.localeCompare(b.id))
+    .slice(0, limit);
 }
 
 /**

@@ -39,21 +39,25 @@ const WORDS = `
 a about above across after again against all almost along already also although always am among an and another any
 anyone are around as at automated back be became because been before began behind being below beside best better
 between beyond both brought build building built but by came can cannot certain clear closely co collaborated
-consolidated coordinated could created cut daily decreased defined delivered deployed described designed developed
+audited benchmarked championed consolidated converted coordinated could created cut daily debugged decreased defined delivered
+deployed described designed developed diagnosed
 did directed do documented does doing done down drove drafted during each earlier early eight either eliminated
-enabled ended engineered enhanced ensured established evaluated even every executed expanded facilitated few
+enabled ended enforced engineered enhanced ensured established evaluated even every executed expanded extended facilitated few
+fixed hardened instrumented isolated
 finally first five followed for former found founded four from further gave generated given got greater grew
-guided had halved has have having headed held helped her here high his how identified if implemented improved in
+guarded guided had halved has have having headed held helped her here high his how identified if implemented improved in
 included increased influenced information initiated instead integrated into introduced investigated is it its just
 kept key launched led less like likely made maintained major managed many mapped may mentored merged met might
-migrated modernized more most moved much must my near nearly negotiated never new next nine no not now of off often
+migrated modernized monitored more most moved much must my near nearly negotiated never new next nine no not now of off often
 on once one only onto operated optimized or orchestrated other our out over overhauled owned partnered performed
-piloted placed planned prepared presented prevented prior produced programmed promoted proposed provided published
+piloted placed planned ported prepared presented prevented prior produced programmed promoted proposed provided published
+prototyped
 put ran rebuilt received recommended reduced refactored released removed reorganized replaced reported researched
-resolved restructured returned reviewed revised rewrote ran saved scaled scoped secured selected served set seven
+refined resolved restored restructured returned reviewed revised rewrote ran saved scaled scoped secured selected served set seven
 several shaped shipped should showed significant simplified since six slashed so solved some sourced spearheaded
 specified sped standardized started streamlined strengthened structured such supervised supported sustained
-taught team ten tested than that the their them then there these they this those three through throughout thus to
+stabilized taught team ten tested than that the their them then there these they this those three through throughout thus to
+tuned uncovered wired wrapped
 together took tracked trained transformed translated tripled turned two under unified until up updated upgraded
 used using validated very via was we were what when where whether which while who why will with within without
 worked would wrote yet
@@ -73,6 +77,12 @@ requires seeks takes uses wants works
 builds delivers designs develops drives ensures enjoys grows guides implements improves integrates leads
 maintains manages mentors operates optimizes owns partners performs plans prepares presents prioritizes provides
 reports researches reviews scales ships solves supports tests understands writes
+architects automates collaborates coordinates creates debugs deploys documents enables establishes extends
+introduces launches maintains migrates monitors publishes refactors releases runs secures standardizes
+streamlines tracks trains validates wires
+
+strongest largest fastest highest lowest biggest deepest broadest latest earliest greatest simplest cleanest
+safest newest oldest closest widest busiest hardest
 
 additional additionally broad closely comfortable complex consistent consistently continuous continuously
 current currently daily deep deeply demonstrated direct directly effective effectively efficient efficiently
@@ -108,10 +118,36 @@ export const GENERIC_TERMS = new Set(
     .split(/\s+/),
 );
 
+/**
+ * Regular past-tense verbs, without having to list every one.
+ *
+ * Three separate exports were blocked by this list being one word short —
+ * "Guarded", then "Publishes", then "Exposed" — and each fix was to add the
+ * word that had just failed. A hand-maintained vocabulary of English loses that
+ * race indefinitely.
+ *
+ * A word ending in -ed is the case worth generalising. Rephrasings open with
+ * them constantly, and virtually nothing in this industry is named after a past
+ * participle: every trap this file warns about — go, rust, swift, dart, ruby,
+ * react, spark, kafka — is a noun or a bare verb.
+ *
+ * Deliberately not extended to -s forms. Kubernetes, Redis and Rails all end in
+ * s, and exempting that shape would mask exactly the fabrications the guard
+ * exists to catch. Those stay on the explicit list.
+ *
+ * Nor to -est, for the same reason and more sharply: Jest, Nest, Quest and
+ * Crest are all real, and Jest is in this very project's own skills section.
+ * Superlatives are listed one by one above instead.
+ */
+function looksLikePastTense(norm: string): boolean {
+  return norm.length >= 5 && norm.endsWith('ed') && /^[a-z]+$/.test(norm);
+}
+
 export function isCommonSentenceOpener(norm: string): boolean {
   return (
     SENTENCE_START_ALLOWLIST.has(norm) ||
     CALENDAR_WORDS.has(norm) ||
-    GENERIC_TERMS.has(norm)
+    GENERIC_TERMS.has(norm) ||
+    looksLikePastTense(norm)
   );
 }

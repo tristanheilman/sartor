@@ -87,7 +87,12 @@ export function quickReplies(gap: Gap): QuickReply[] {
         // The lane that did not exist. An unevidenced keyword is the weakest
         // line on a resume, and "I am learning it" produced nothing at all —
         // the claim simply stayed. Taking it off is a real, honest outcome.
-        reply('learning', 'Only learning it', 'drop-skill', { immediate: true }),
+        //
+        // Labelled for the reason people actually give. "Only learning it" is
+        // one way to have no story behind a skill and not the common one;
+        // "I used it briefly years ago and could not tell you what for" is,
+        // and it had no button.
+        reply('learning', "I don't really use it", 'drop-skill', { immediate: true }),
         reply('keep', 'Leave it, no story to tell', 'none', { immediate: true }),
       ];
 
@@ -305,4 +310,186 @@ export function bestOwner(profile: Profile, answer: string): OwnerGuess | null {
 
   // One or two incidental words in common is noise, not a signal.
   return best && best.confidence >= 0.2 ? best : null;
+}
+
+/**
+ * Which question is on screen.
+ *
+ * A question with a follow-up pending must stay put, and the obvious way to do
+ * that — hold its id and look it up again — fails in the one case that matters.
+ * Answering a question usually *fills the gap it came from*: describe a project
+ * with two lines and it now has six, so `thin-project` no longer fires for it
+ * and the id resolves to nothing. The lookup then falls through to whatever gap
+ * is now first, and the follow-up is asked under someone else's heading.
+ *
+ * Holding the gap itself keeps the question stable through exactly that, which
+ * is the normal outcome of answering rather than an edge case. The pin is
+ * cleared when the answer settles, so a stale gap cannot outlive its question.
+ */
+export function currentQuestion(pinned: Gap | null, openGaps: Gap[]): Gap | null {
+  return pinned ?? openGaps[0] ?? null;
+}
+
+/**
+ * The follow-up to ask when the model did not supply one.
+ *
+ * `needsFollowUp` can decide an answer warrants asking again in a case where
+ * there is nothing to ask *with*: the model returned no bullets and no
+ * question, so the panel had a decision and no way to act on it, and silently
+ * moved on. Asked about Azure DevOps, someone replied "I used it at Wridz for a
+ * very short period of time, the work and commits were in a private company
+ * repo" — twenty-three words, plainly an answer, and the interview said nothing
+ * and advanced. The skill stayed on the resume with nothing behind it.
+ *
+ * These are deliberately about the subject rather than the reply. A generic
+ * "can you tell me more?" is banned from the model's follow-ups because it puts
+ * the work back on the person; a fallback that reached for it would undo the
+ * rule it is standing in for.
+ */
+export function followUpQuestion(gap: Gap, modelQuestion: string): string {
+  // The model saw the answer and this did not, so its question is better
+  // whenever there is one.
+  const supplied = modelQuestion.trim();
+  if (supplied) return supplied;
+
+  const subject = gap.subject.trim() || 'that';
+
+  switch (gap.kind) {
+    case 'unbacked-skill':
+    case 'missing-requirement':
+      return `What did you build or ship with ${subject}? Even a small thing is worth more than the keyword on its own.`;
+
+    case 'thin-project':
+      return `Which parts of ${subject} did you write yourself, and what does it do that something off the shelf does not?`;
+
+    case 'more-projects':
+      return 'Which ones, and what does each do? A name and a sentence is enough.';
+
+    case 'thin-role':
+      return `What did a normal week at ${subject} involve — what were you actually responsible for?`;
+
+    case 'recent-work':
+      return 'Where are you now, and what are you doing there?';
+
+    case 'undated-role':
+      return `When did ${subject} start and end? Month and year is enough.`;
+
+    case 'no-summary':
+      return 'What kind of work do you want to be doing next, and what should someone reading this know first?';
+  }
+}
+
+/**
+ * The replies to show, given whether a follow-up is already pending.
+ *
+ * A follow-up wants a typed answer, so the panel hid the taps while one was on
+ * screen. That also hid the only way to say there is nothing here — and a
+ * follow-up is asked precisely when the first answer produced nothing, so the
+ * escape hatch disappeared exactly where it was most likely to be needed.
+ * Asked a second time what they had used Azure DevOps for, the honest reply was
+ * "I guess I didn't really use it", and there was no button for that.
+ *
+ * The replies that survive are the ones that resolve with no model call: they
+ * settle the question outright, which is the whole point of still being there.
+ * The rest only set the prompt and focus the textarea, and the person is
+ * already in the textarea.
+ */
+export function repliesFor(gap: Gap, followUpPending: boolean): QuickReply[] {
+  const all = quickReplies(gap);
+  return followUpPending ? all.filter((r) => r.immediate) : all;
+}
+
+/* ------------------------------------------------------------------ *
+ * Where a bullet lands, and how sure we are
+ * ------------------------------------------------------------------ */
+
+/**
+ * Below this, a placement is a guess worth checking rather than a conclusion.
+ *
+ * `bestOwner` already refuses to return anything under 0.2, so the band between
+ * that and this is the interesting one: enough overlap to prefer a role, not
+ * enough to put it on someone's resume without asking.
+ */
+export const CONFIDENT_OWNER = 0.45;
+
+export interface Placement {
+  ownerId: string;
+  /** 0–1. Zero means nothing in the answer pointed anywhere. */
+  confidence: number;
+  /** Why this entry, in a sentence, for the confirmation question. */
+  reason: string;
+  /** False when this should be confirmed before it settles. */
+  certain: boolean;
+}
+
+/**
+ * Which entry a bullet belongs to, and whether that was worked out or guessed.
+ *
+ * Three signals already existed and only one of them was ever read. The model
+ * marks a bullet `uncertain` when it had to choose between readings, and that
+ * does trigger a follow-up. `bestOwner` computes a confidence *and* a reason —
+ * the reason's own comment says it is "for the confirmation step" — and the
+ * caller took the id and dropped both. So a bullet routed on a fifth of the
+ * answer's words looked exactly like one routed on evidence, and when neither
+ * matched, the newest role won by position alone.
+ *
+ * That last case is the one that puts wrong things on a resume. "I have used
+ * Firebase Cloud Messaging" names no employer, and silently filing it under the
+ * current job asserts something about where the work happened that the answer
+ * never said.
+ *
+ * Precedence is unchanged — what the model said, then what the question was
+ * about, then what the answer resembles, then position. What is new is that the
+ * last of those admits to being a guess.
+ */
+export function placeBullet(
+  modelOwnerId: string,
+  gap: Gap,
+  guess: OwnerGuess | null,
+  firstRoleId: string,
+): Placement {
+  const chosen = modelOwnerId.trim();
+  if (chosen) {
+    // The model read the answer and named a role. Its own doubt is carried
+    // separately, by the `uncertain` flag.
+    return { ownerId: chosen, confidence: 0.9, reason: 'The answer named this role.', certain: true };
+  }
+
+  if (gap.ownerId) {
+    return {
+      ownerId: gap.ownerId,
+      confidence: 1,
+      reason: `The question was about ${gap.ownerLabel}.`,
+      certain: true,
+    };
+  }
+
+  if (guess) {
+    return {
+      ownerId: guess.ownerId,
+      confidence: guess.confidence,
+      reason: guess.reason,
+      certain: guess.confidence >= CONFIDENT_OWNER,
+    };
+  }
+
+  return {
+    ownerId: firstRoleId,
+    confidence: 0,
+    reason: 'Nothing in the answer pointed to a role, so this is the most recent one.',
+    // An empty profile has nowhere to put anything, and there is no point
+    // asking someone to confirm a placement that was never made.
+    certain: !firstRoleId,
+  };
+}
+
+/**
+ * The question to ask when a bullet was placed on a guess.
+ *
+ * Deliberately not "is that right?". A yes/no question makes "no" a dead end —
+ * the person then has to volunteer the correction unprompted, and the reply has
+ * to carry it in one go, because there is only ever one follow-up per question.
+ */
+export function confirmPlacement(roleLabel: string): string {
+  return `I have put that under ${roleLabel} — is that where it belongs, or was it somewhere else?`;
 }

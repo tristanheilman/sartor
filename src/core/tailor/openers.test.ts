@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { checkText } from './guard';
 import { buildLexicon } from './lexicon';
-import { SENTENCE_START_ALLOWLIST } from './stopwords';
+import { SENTENCE_START_ALLOWLIST, isCommonSentenceOpener } from './stopwords';
 
 /**
  * The sentence-opener allowlist, pushed from both sides.
@@ -104,5 +104,175 @@ describe('the list itself', () => {
     // nobody intended to exempt — which is how "Firebase" nearly got on it.
     const malformed = [...SENTENCE_START_ALLOWLIST].filter((w) => !/^[a-z-]+$/.test(w));
     expect(malformed).toEqual([]);
+  });
+});
+
+describe('past-tense verbs a rephrasing actually opens with', () => {
+  /**
+   * Found by exporting. A bullet came back as "Guarded against functional
+   * regressions by writing Jest tests", and the guard flagged "Guarded" as a
+   * possible product name — blocking export over an ordinary English verb, one
+   * letter away from "guided", which was already on the list.
+   *
+   * The block is not recoverable in the UI either: accepting the change leaves
+   * it blocked, so the only way out is to reject the rephrasing entirely. A
+   * false positive here does not merely warn, it discards work.
+   */
+  const openers = [
+    'guarded', 'audited', 'benchmarked', 'championed', 'converted', 'debugged',
+    'diagnosed', 'enforced', 'extended', 'fixed', 'hardened', 'instrumented',
+    'isolated', 'monitored', 'ported', 'prototyped', 'refined', 'restored',
+    'stabilized', 'tuned', 'uncovered', 'wired', 'wrapped',
+  ];
+
+  it.each(openers)('treats "%s" as ordinary English at the start of a line', (word) => {
+    expect(isCommonSentenceOpener(word)).toBe(true);
+  });
+
+  it('does not flag the bullet that started this', () => {
+    const lexicon = buildLexicon('Wrote Jest tests to guard against functional regressions.');
+    const { violations } = checkText(
+      'Guarded against functional regressions by writing Jest tests.',
+      lexicon,
+      't',
+    );
+    expect(violations.map((v) => v.token)).not.toContain('Guarded');
+  });
+
+  it('adds nothing that is also a technology', () => {
+    // Same trap as `go` and `swift`. "Rust" and "Dart" are past-tense-shaped
+    // to nobody, but "ported" sits next to "Port" and "wired" next to "Wire" —
+    // check the whole added set against the guard's own trap list.
+    const traps = ['go', 'rust', 'swift', 'dart', 'ruby', 'elm', 'nim', 'crystal', 'julia'];
+    expect(openers.filter((w) => traps.includes(w))).toEqual([]);
+  });
+});
+
+describe('third-person verbs a summary opens lines with', () => {
+  /**
+   * The second false positive in as many export runs, and the same shape as the
+   * first. A rewritten summary opened "Publishes open-source React Native
+   * libraries", and "Publishes" was flagged as a possible product name —
+   * although "published" was already on the list. The past-tense block had been
+   * maintained and the third-person one had not.
+   */
+  const openers = [
+    'publishes', 'architects', 'automates', 'collaborates', 'coordinates', 'creates',
+    'debugs', 'deploys', 'documents', 'enables', 'establishes', 'extends', 'introduces',
+    'launches', 'migrates', 'monitors', 'refactors', 'releases', 'runs', 'secures',
+    'standardizes', 'streamlines', 'tracks', 'trains', 'validates', 'wires',
+  ];
+
+  it.each(openers)('treats "%s" as ordinary English at the start of a line', (word) => {
+    expect(isCommonSentenceOpener(word)).toBe(true);
+  });
+
+  it('does not flag the summary that started this', () => {
+    const lexicon = buildLexicon('I publish open-source React Native libraries.');
+    const { violations } = checkText(
+      'Publishes open-source React Native libraries that bridge native features into JavaScript.',
+      lexicon,
+      't',
+    );
+    expect(violations.map((v) => v.token)).not.toContain('Publishes');
+  });
+
+  it('keeps the past-tense and third-person forms in step', () => {
+    // The gap that caused this: "published" was allowed and "publishes" was
+    // not. Where both forms are ordinary English, both belong.
+    for (const [past, third] of [
+      ['published', 'publishes'],
+      ['deployed', 'deploys'],
+      ['migrated', 'migrates'],
+      ['monitored', 'monitors'],
+    ]) {
+      expect(isCommonSentenceOpener(past!), past).toBe(true);
+      expect(isCommonSentenceOpener(third!), third).toBe(true);
+    }
+  });
+});
+
+describe('regular past-tense verbs, without listing every one', () => {
+  /**
+   * Third of its kind: "Guarded" blocked an export, then "Publishes", then
+   * "Exposed". Each was added to the list and the next run found another. A
+   * hand-maintained vocabulary of English will always be one word short.
+   *
+   * Words ending in -ed are the reliable case. A rephrasing opens with them
+   * constantly, and almost nothing is named after one — every product this
+   * file already warns about is a noun or a bare verb, never a past participle.
+   * Third-person -s forms stay on the list, because Kubernetes, Redis and Rails
+   * all end in s and the risk there is real.
+   */
+  const openers = ['exposed', 'surfaced', 'unblocked', 'shepherded', 'recalibrated', 'decommissioned'];
+
+  it.each(openers)('accepts "%s" without it being listed', (word) => {
+    expect(SENTENCE_START_ALLOWLIST.has(word)).toBe(false);
+    expect(isCommonSentenceOpener(word)).toBe(true);
+  });
+
+  it('does not extend the same courtesy to -s forms', () => {
+    // Kubernetes, Redis, Rails. A product ending in -s is ordinary.
+    for (const w of ['kubernetes', 'redis', 'rails']) {
+      expect(isCommonSentenceOpener(w), w).toBe(false);
+    }
+  });
+
+  it('leaves every technology trap exactly where it was', () => {
+    const traps = ['go','rust','swift','dart','ruby','julia','crystal','elm','nim','react','angular','ember','meteor','spark','storm','kafka','hadoop'];
+    expect(traps.filter((t) => isCommonSentenceOpener(t))).toEqual([]);
+  });
+
+  it('still needs a real word, not any string ending in ed', () => {
+    // Too short to be a verb anyone writes a bullet with.
+    expect(isCommonSentenceOpener('ed')).toBe(false);
+    expect(isCommonSentenceOpener('bed')).toBe(false);
+  });
+
+  it('does not flag the bullet that started this', () => {
+    const lexicon = buildLexicon('Built a library that exposes iOS Live Activities.');
+    const { violations } = checkText(
+      'Exposed iOS Live Activities and Android notifications through an open-source library.',
+      lexicon,
+      't',
+    );
+    expect(violations.map((v) => v.token)).not.toContain('Exposed');
+  });
+});
+
+describe('superlatives, which cannot be generalised', () => {
+  /**
+   * Fourth false positive of the family, and the first that will not yield to
+   * a rule. "Strongest" opened a rephrased line and blocked an export.
+   *
+   * The -ed generalisation is safe because nothing in this industry is named
+   * after a past participle. -est is not: Jest, Nest, Quest and Crest are all
+   * real, and exempting the ending would mask exactly the fabrication the
+   * guard exists to catch. So superlatives are listed one by one, deliberately.
+   */
+  const superlatives = [
+    'strongest', 'largest', 'fastest', 'highest', 'lowest', 'biggest', 'deepest',
+    'broadest', 'latest', 'earliest', 'greatest', 'simplest', 'cleanest', 'safest',
+    'newest', 'oldest', 'closest', 'widest', 'busiest', 'hardest',
+  ];
+
+  it.each(superlatives)('treats "%s" as ordinary English', (word) => {
+    expect(isCommonSentenceOpener(word)).toBe(true);
+  });
+
+  it('leaves the products that end in -est alone', () => {
+    for (const w of ['jest', 'nest', 'quest', 'crest', 'zest']) {
+      expect(isCommonSentenceOpener(w), w).toBe(false);
+    }
+  });
+
+  it('does not flag the line that started this', () => {
+    const lexicon = buildLexicon('Owned the release cycle and was the team’s main source of knowledge.');
+    const { violations } = checkText(
+      'Strongest contributor on release engineering across the team.',
+      lexicon,
+      't',
+    );
+    expect(violations.map((v) => v.token)).not.toContain('Strongest');
   });
 });

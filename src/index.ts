@@ -46,6 +46,12 @@ export {
 
 export { ids, newId } from './core/ids';
 
+/**
+ * Reading a comma-separated skills line without shredding the bracketed
+ * groups people write inside it.
+ */
+export { splitKeywords, keywordHead } from './core/skills';
+
 /* -- The fabrication guard ------------------------------------------------ */
 /**
  * Nothing in the guard is resume-specific. `buildLexicon` accepts any
@@ -122,6 +128,12 @@ export {
 } from './core/tailor/apply';
 
 export { runTailor, validatePlan, type RunOptions, type TailorOutcome } from './core/tailor/run';
+
+/**
+ * Trimming a plan to the page it was asked to fit. Deterministic, because the
+ * model is not reliable about length and this is arithmetic.
+ */
+export { fitToTarget, type FitResult } from './core/tailor/fit';
 
 /* -- Job descriptions ----------------------------------------------------- */
 export {
@@ -233,6 +245,13 @@ export {
   quickReplies,
   applyQuickReply,
   bestOwner,
+  currentQuestion,
+  followUpQuestion,
+  repliesFor,
+  placeBullet,
+  confirmPlacement,
+  CONFIDENT_OWNER,
+  type Placement,
   lanesFor,
   progress,
   type LaneKind,
