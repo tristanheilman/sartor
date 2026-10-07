@@ -329,6 +329,85 @@ describe('which project survives the cut', () => {
   });
 });
 
+describe('between projects that both answer the posting', () => {
+  /**
+   * Vocabulary decides whether a project is on topic, not which of two
+   * on-topic projects the page is spent on.
+   *
+   * A posting asked for "published open-source React Native libraries that
+   * bridge native iOS and Android APIs", and for AWS, PostgreSQL and Firebase.
+   * The model put both libraries first and a full-stack app third. The trim
+   * ranked by shared vocabulary instead, and the full-stack app — whose
+   * bullets are a list of AWS service names — outscored both libraries, so the
+   * one-page resume kept it as a one-line stub and cut the libraries the
+   * posting had singled out. Overlap cannot tell "names the posting's tools"
+   * from "is the thing the posting asked for"; the model can, and here it had.
+   */
+  const jd = `Senior Mobile Engineer (React Native). Ideally you have published open-source
+     React Native libraries that bridge native iOS and Android APIs. Backend: APIs,
+     PostgreSQL, AWS, Firebase.`;
+
+  const p: Profile = profileSchema.parse({
+    ...profile,
+    projects: [
+      { id: 'prj_capture', name: 'react-native-object-capture', bullets: [
+        { id: 'c0', text: "Published a React Native library bridging Apple's Object Capture into JavaScript, enabling LiDAR scanning of real objects." },
+        { id: 'c1', text: 'Maintain the library as an open-source package for other developers.' },
+      ] },
+      { id: 'prj_fullstack', name: 'Revento', bullets: [
+        { id: 'f0', text: 'Developed a full stack mobile application using Firebase and React Native.' },
+        { id: 'f1', text: 'Moved the backend to AWS: EC2, RDS (PostgreSQL), Cognito and CloudWatch.' },
+      ] },
+    ],
+  });
+
+  // The model's order: the library first. Every role bullet kept, so the page
+  // overflows and something has to give.
+  const plan = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: true, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      skills: p.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  it('keeps the project the model ranked first when the page holds only one', () => {
+    const { plan: fitted, droppedEntries } = fitToTarget(p, plan(), 1, undefined, jd);
+
+    expect(droppedEntries).toContain('prj_fullstack');
+    expect(fitted.projects.find((x) => x.id === 'prj_capture')!.include).toBe(true);
+  });
+
+  it('still cuts an off-topic project before an on-topic one the model ranked lower', () => {
+    const withGolf: Profile = profileSchema.parse({
+      ...p,
+      projects: [
+        { id: 'prj_golf', name: 'diy-swing-analysis', bullets: [
+          { id: 'g0', text: 'Built a golf swing analysis desktop app using pose estimation and OpenCV.' },
+          { id: 'g1', text: 'Detected swing phase boundaries from the wrist trajectory across frames.' },
+        ] },
+        ...p.projects,
+      ],
+    });
+    const golfFirst = tailorPlanSchema.parse({
+      ...plan(),
+      projects: withGolf.projects.map((pr, i) => ({
+        id: pr.id, include: true, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+    });
+    const { droppedEntries } = fitToTarget(withGolf, golfFirst, 1, undefined, jd);
+
+    expect(droppedEntries[0]).toBe('prj_golf');
+  });
+});
+
 describe('entries left with nothing under them', () => {
   /**
    * A real run returned a plan with `Revento` included and every one of its

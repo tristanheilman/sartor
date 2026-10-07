@@ -30,13 +30,15 @@ import type { TailorPlan, PlannedEntry } from './plan';
  * The model ranked the content; this respects that ranking and only ever
  * removes from the end of it. Within that, the order of sacrifice is:
  *
- *   1. Project bullets, from the project the posting cares about *least*.
+ *   1. Project bullets: off-topic projects first, then the on-topic ones in
+ *      reverse of the model's order.
  *   2. Whole projects, once one is down to a single bullet — a heading and one
  *      line costs three lines to say almost nothing.
  *   3. Role bullets, from the oldest role with the most, working up.
  *
- * The most relevant project is held back until every other project is gone, so
- * a page spent on projects is spent on the one the posting asked about. The
+ * The model's first on-topic project is held back until every other project
+ * is gone, so a page spent on projects is spent on the one the posting asked
+ * about. The
  * first version of this ranked by size instead, and produced a resume with no
  * projects at all for a posting whose nice-to-haves were "published
  * open-source React Native libraries" — while the summary still said the
@@ -128,21 +130,55 @@ function relevanceTo(jdLexicon: Set<string>, name: string, bulletText: string): 
   return hits / terms.size;
 }
 
-/** Project ids, least relevant first. Ties keep the profile's own order. */
+/**
+ * Project ids in the order the trim gives them up, least wanted first.
+ *
+ * Vocabulary decides whether a project is on topic at all; it does not decide
+ * between two that are. Off-topic projects — below the same bar reinstatement
+ * uses — go first, least relevant first. The rest go in reverse of the
+ * model's own order, so its first choice is the one held back.
+ *
+ * Ranking everything by overlap got that second part wrong. A posting asked
+ * for published React Native libraries that bridge native APIs, and also named
+ * AWS, PostgreSQL and Firebase. The model put both libraries first; a
+ * full-stack app whose bullets list AWS services outscored them on shared
+ * words, so the one-page resume kept the app as a one-line stub and cut the
+ * libraries the posting had singled out. Overlap cannot tell "names the
+ * posting's tools" from "is the thing the posting asked for". The model can.
+ */
 function projectsByRelevance(plan: TailorPlan, profile: Profile, jdText: string): string[] {
   const jdLexicon = buildLexicon(jdText);
   const byId = new Map(profile.projects.map((p) => [p.id, p]));
 
-  return plan.projects
-    .map((e, i) => {
-      const source = byId.get(e.id);
-      const score = source
-        ? relevanceTo(jdLexicon, source.name, source.bullets.map((b) => b.text).join(' '))
-        : 0;
-      return { id: e.id, score, i };
-    })
-    .sort((a, b) => a.score - b.score || a.i - b.i)
-    .map((x) => x.id);
+  const scored = plan.projects.map((e, i) => {
+    const source = byId.get(e.id);
+    const score = source
+      ? relevanceTo(jdLexicon, source.name, source.bullets.map((b) => b.text).join(' '))
+      : 0;
+    return { id: e.id, score, order: e.order, i };
+  });
+
+  const offTopic = scored
+    .filter((x) => x.score < REINSTATE_THRESHOLD)
+    .sort((a, b) => a.score - b.score || a.i - b.i);
+  const onTopic = scored
+    .filter((x) => x.score >= REINSTATE_THRESHOLD)
+    .sort((a, b) => b.order - a.order || b.i - a.i);
+
+  return [...offTopic, ...onTopic].map((x) => x.id);
+}
+
+/** The on-topic project the posting matches best, or null when none clears the bar. */
+function bestMatch(plan: TailorPlan, profile: Profile, jdText: string): string | null {
+  const jdLexicon = buildLexicon(jdText);
+  let best: { id: string; score: number } | null = null;
+  for (const e of plan.projects) {
+    const source = profile.projects.find((p) => p.id === e.id);
+    if (!source) continue;
+    const score = relevanceTo(jdLexicon, source.name, source.bullets.map((b) => b.text).join(' '));
+    if (score >= REINSTATE_THRESHOLD && (!best || score > best.score)) best = { id: e.id, score };
+  }
+  return best?.id ?? null;
 }
 
 /**
@@ -345,26 +381,20 @@ export function fitToTarget(
   // containing *a* project is not the same as one containing the right one. The
   // weaker entry then ranks lowest and the trim takes it first.
   let reinstated: string | null = null;
-  if (ranking && !next.projects.find((e) => e.id === ranking[ranking.length - 1])?.include) {
-    const best = ranking[ranking.length - 1];
-    const entry = best ? next.projects.find((e) => e.id === best) : undefined;
-    const source = best ? profile.projects.find((pr) => pr.id === best) : undefined;
-
-    if (entry && source) {
-      const score = relevanceTo(
-        buildLexicon(jdText!),
-        source.name,
-        source.bullets.map((b) => b.text).join(' '),
-      );
-      if (score >= REINSTATE_THRESHOLD) {
-        entry.include = true;
-        // Its own best lines, in the order the model gave them.
-        for (const b of [...entry.bullets].sort((a, c) => a.order - c.order).slice(0, PROTECTED_PROJECT_BULLETS)) {
-          b.include = true;
-        }
-        reinstated = entry.id;
-      }
+  const best = ranking ? bestMatch(plan, profile, jdText!) : null;
+  const bestEntry = best ? next.projects.find((e) => e.id === best) : undefined;
+  if (ranking && bestEntry && !bestEntry.include) {
+    bestEntry.include = true;
+    // Its own best lines, in the order the model gave them.
+    for (const b of [...bestEntry.bullets].sort((a, c) => a.order - c.order).slice(0, PROTECTED_PROJECT_BULLETS)) {
+      b.include = true;
     }
+    reinstated = bestEntry.id;
+    // The model dropped it, so its own order would make it the first thing
+    // the trim takes back. It was put back because the posting asked for it;
+    // it is held back as long as any project is.
+    ranking.splice(ranking.indexOf(bestEntry.id), 1);
+    ranking.push(bestEntry.id);
   }
 
   // A project the plan kept but emptied is a heading, a date range and nothing
