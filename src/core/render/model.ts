@@ -147,15 +147,29 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
   const nameSize = t.baseSize * 1.9;
   let height = nameSize * 1.2 + 4;
   if (doc.contact.label) height += t.baseSize * 1.05 * 1.3 + 4;
+  // The page sets `lineHeight`, and @react-pdf resolves it to points before
+  // passing it down: every text that does not set its own gets the body's
+  // leading, whatever its size. So the contact line and the headings are
+  // charged `line`, not their own size times the ratio — which read half a
+  // point high per heading, enough on the tightest templates to call the
+  // last bullet of a full page an overflow.
   if (doc.contact.details.length) {
     height +=
-      wrappedLines(doc.contact.details.join(' · '), body, t.baseSize * 0.95, column) *
-      (t.baseSize * 0.95 * t.lineHeight);
+      wrappedLines(doc.contact.details.join(' · '), body, t.baseSize * 0.95, column) * line +
+      t.sectionGap;
   }
 
+  // Each margin is charged where the renderer puts it: below the contact line,
+  // and below every section — the last one included. Charging a gap *above*
+  // each section instead came to the same total only when there was a contact
+  // line and the last margin did not matter, and it does: the renderer counts
+  // it when the document ends in something that cannot break, such as an
+  // education entry with nothing under it. On Roomy those sixteen points were
+  // the difference between one page and two: a resume the estimate put at 98%
+  // moved its education section onto a page of its own.
   for (const s of doc.sections) {
-    height += t.sectionGap;
-    height += t.baseSize * 1.05 * t.lineHeight + 4 + (t.headingRule ? 2 : 0);
+    // Leading, the gap beneath, and where there is a rule its padding and width.
+    height += line + 4 + (t.headingRule ? 2 + 0.75 : 0);
 
     if (s.summary) height += wrapped(s.summary) * line;
 
@@ -183,8 +197,12 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
 
     for (const e of s.entries ?? []) {
       height += t.entryGap;
-      // Title and dates share a row; employer and location share the next.
-      height += line * 2 + 2;
+      // Title and dates share a row; employer and location share the next —
+      // when there is one. A project has neither, the renderer prints no row
+      // for it, and charging one anyway cost every project sixteen points the
+      // page never spent: three of them were most of two bullets the fill pass
+      // refused for want of room.
+      height += e.secondary || e.aside ? line * 2 + 2 : line;
       if (e.summary) height += wrapped(e.summary) * line + 2;
       for (const b of e.bullets) {
         height += wrappedLines(b.text, body, t.baseSize, bulletColumn) * line + t.bulletGap;
@@ -192,6 +210,8 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
     }
 
     for (const i of s.items ?? []) height += wrapped(i.text) * line + 2;
+
+    height += t.sectionGap;
   }
 
   return height;

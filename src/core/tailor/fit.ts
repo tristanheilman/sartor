@@ -74,10 +74,12 @@ const DEFAULT_METRICS: PageMetrics = {
  * cut to the lower line, the fill rose to the upper one, and running it again
  * cut and refilled the same bullet forever.
  *
- * Small, because `estimateHeight` now works from the template's own leading and
- * gaps and reads about three percent *high* against a rendered page. That
- * pessimism is the real safety margin; this is the allowance for character
- * width, which is the one thing still approximated.
+ * Small, because `estimateHeight` works from the template's own leading, gaps
+ * and font widths, and breaks the page where the renderer does on every
+ * built-in template — `pagefit.test.ts` renders it to check.
+ * It used to read a few percent high, and that pessimism was quietly doing
+ * this constant's job while costing a bullet or two of every page; this is
+ * now the whole allowance.
  */
 const SAFETY_POINTS = 4;
 

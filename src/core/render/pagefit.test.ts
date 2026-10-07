@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { getTemplate, TEMPLATES } from './templates';
-import { estimateHeight, linesPerPage } from './model';
+import { estimateHeight, linesPerPage, pageHeight } from './model';
+import { renderPdfBlob } from './pdf';
 import { parseSafetyChecks } from './parseSafety';
 import type { ResumeDocument } from './model';
 
@@ -133,10 +134,8 @@ describe('the estimate against the renderer', () => {
    * high. A resume the estimate called full measured 88% on the page, and the
    * fill pass refused bullets that had nearly three lines of room.
    *
-   * Measured against the real renderer on a document shaped like a full
-   * profile — five sections, five entries, a long summary — the page now breaks
-   * between ratio 0.998 and 1.042. That is the property worth holding: an
-   * estimate at or below 1.0 fits, and just above it does not.
+   * Where the page actually breaks is held against the renderer itself in
+   * the next block.
    */
   const classic = getTemplate('classic');
 
@@ -209,6 +208,127 @@ describe('the estimate against the renderer', () => {
 
     expect(estimateHeight(shaped(8), tight)).toBeLessThan(estimateHeight(shaped(8), sans));
   });
+});
+
+describe('the estimate breaks the page where the renderer does', () => {
+  /**
+   * The fit pass trims and fills against `estimateHeight`, so the estimate's
+   * idea of where a page ends *is* the page target. Two ways it was wrong,
+   * both found on a real one-page resume:
+   *
+   *   - It charged every entry an employer-and-location row. A project has
+   *     neither, so the renderer prints no such row, and each project cost
+   *     sixteen points the page never spent. Three projects were most of two
+   *     bullets the fill pass refused for want of room.
+   *   - It left out the last section's bottom margin. The renderer counts it
+   *     when the document ends in something that cannot break — an education
+   *     entry with nothing under it — so on Roomy a resume the estimate put at
+   *     98% moved its whole education section onto a second page.
+   *
+   * So this grows a document shaped like a real one a bullet at a time on
+   * every template, finds the first bullet the renderer will not fit on one
+   * page, and holds the estimate to the same answer: everything before that
+   * bullet measures as fitting, and that bullet does not.
+   */
+  const pagesIn = async (doc: ResumeDocument, templateId: string) => {
+    const bytes = new TextDecoder('latin1').decode(
+      await (await renderPdfBlob(doc, templateId)).arrayBuffer(),
+    );
+    // The page tree's count. Cheaper than parsing the file back with pdf.js,
+    // and the renderer writes exactly one tree.
+    return Number(/\/Count (\d+)/.exec(bytes)?.[1]);
+  };
+
+  const shaped = (bullets: number, endsWith: 'education' | 'projects'): ResumeDocument => {
+    const projects = {
+      key: 'projects' as const,
+      heading: 'Projects',
+      kind: 'entries' as const,
+      // No employer and no location: a project's second row is empty.
+      entries: ['react-native-island', 'react-native-object-capture', 'Revento'].map((name, i) => ({
+        sourceId: `p${i}`,
+        primary: name,
+        secondary: '',
+        meta: '10/2019 - Present',
+        aside: '',
+        summary: '',
+        bullets: [{ sourceId: `pb${i}`, text: 'Published an open-source React Native library that bridges native iOS and Android APIs.' }],
+      })),
+    };
+    const education = {
+      key: 'education' as const,
+      heading: 'Education',
+      kind: 'entries' as const,
+      entries: [
+        {
+          sourceId: 'e1', primary: 'Bachelor of Science, Computer Science', secondary: 'University of Cincinnati',
+          meta: '05/2021', aside: '', summary: '', bullets: [],
+        },
+      ],
+    };
+    return {
+      contact: {
+        name: 'Tristan Heilman',
+        label: 'Full Stack / Mobile App Developer',
+        details: ['tristan@example.com', '+1-555-0100', 'Cincinnati, OH', 'example.com', 'linkedin.com/in/example', 'github.com/example'],
+      },
+      sections: [
+        {
+          key: 'summary', heading: 'Summary', kind: 'summary',
+          summary: 'Mobile engineer who owns React Native apps end to end: releases, authentication and native integration. Also works the backend side.',
+        },
+        {
+          key: 'skills', heading: 'Skills', kind: 'skills',
+          skills: [
+            { sourceId: 's1', name: 'Languages', keywords: ['TypeScript', 'Swift', 'Kotlin', 'SQL'] },
+            { sourceId: 's2', name: 'Cloud', keywords: ['Firebase', 'AWS Lambda', 'Cognito', 'RDS'] },
+          ],
+        },
+        {
+          key: 'work', heading: 'Experience', kind: 'entries',
+          entries: [
+            {
+              sourceId: 'w1', primary: 'Lead Mobile App Developer', secondary: 'Wridz LLC', meta: '05/2022 - 09/2025',
+              aside: 'Cincinnati, OH', summary: '',
+              // Alternating one- and two-line bullets, as a real role has.
+              bullets: Array.from({ length: bullets }, (_, i) => ({
+                sourceId: `b${i}`,
+                text: i % 2
+                  ? 'Supported a user base of 20k+ iOS and Android users.'
+                  : 'Refactored driver tracking geolocation logic by optimizing GPS polling and background task handling, reducing battery drain.',
+              })),
+            },
+          ],
+        },
+        ...(endsWith === 'education' ? [projects, education] : [education, projects]),
+      ],
+    };
+  };
+
+  /** The fewest role bullets that push the document onto a second page. */
+  const firstSpill = async (templateId: string, endsWith: 'education' | 'projects') => {
+    let lo = 0;
+    let hi = 60;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if ((await pagesIn(shaped(mid, endsWith), templateId)) > 1) hi = mid;
+      else lo = mid + 1;
+    }
+    return lo;
+  };
+
+  for (const endsWith of ['education', 'projects'] as const) {
+    it.each(TEMPLATES.map((t) => t.id))(`%s, ending in ${endsWith}`, async (id) => {
+      const t = getTemplate(id);
+      const n = await firstSpill(id, endsWith);
+      const page = pageHeight(t);
+
+      // Never calls an overflowing document a fit — that is a second page.
+      expect(estimateHeight(shaped(n, endsWith), t), 'spilling document').toBeGreaterThan(page);
+      // Never calls a fitting document an overflow — that is a page left short.
+      expect(estimateHeight(shaped(n - 1, endsWith), t), 'last fitting document').toBeLessThanOrEqual(page);
+    });
+  }
 });
 
 describe('the template set', () => {
