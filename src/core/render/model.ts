@@ -152,8 +152,8 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
   // Name, headline, contact. The name renders at 1.9x body size with its own
   // leading; the contact line wraps like anything else.
   const nameSize = t.baseSize * 1.9;
-  let height = nameSize * 1.2 + 4;
-  if (doc.contact.label) height += t.baseSize * 1.05 * 1.3 + 4;
+  let header = nameSize * 1.2 + 4;
+  if (doc.contact.label) header += t.baseSize * 1.05 * 1.3 + 4;
   // The page sets `lineHeight`, and @react-pdf resolves it to points before
   // passing it down: every text that does not set its own gets the body's
   // leading, whatever its size. So the contact line and the headings are
@@ -161,31 +161,40 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
   // point high per heading, enough on the tightest templates to call the
   // last bullet of a full page an overflow.
   if (doc.contact.details.length) {
-    height +=
+    header +=
       wrappedLines(doc.contact.details.join(' · '), body, t.baseSize * 0.95, textColumn) * line +
       t.sectionGap;
   }
 
-  // Each margin is charged where the renderer puts it: below the contact line,
-  // and below every section — the last one included. Charging a gap *above*
-  // each section instead came to the same total only when there was a contact
-  // line and the last margin did not matter, and it does: the renderer counts
-  // it when the document ends in something that cannot break, such as an
-  // education entry with nothing under it. On Roomy those sixteen points were
-  // the difference between one page and two: a resume the estimate put at 98%
-  // moved its education section onto a page of its own.
-  for (const s of doc.sections) {
-    // Leading, the gap beneath, and where there is a rule its padding and width.
-    height += line + 4 + (t.headingRule ? 2 + 0.75 : 0);
+  // The document as the renderer lays it out: a run of blocks that a page may
+  // fall between but never inside, each carrying the space below it. See
+  // `sectionBlocks` in `pdf.tsx`, which this mirrors block for block.
+  //
+  // Each margin is charged where the renderer puts it — below the contact
+  // line, below each entry's last block, below each section's — the last one
+  // included. Charging a gap *above* each section instead came to the same
+  // total only when there was a contact line and the last margin did not
+  // matter, and it does: the renderer counts it. On Roomy those sixteen points
+  // were the difference between one page and two: a resume the estimate put at
+  // 98% moved its education section onto a page of its own.
+  const blocks: number[] = [header];
+  // Leading, the gap beneath, and where there is a rule its padding and width.
+  const headingHeight = line + 4 + (t.headingRule ? 2 + 0.75 : 0);
 
-    if (s.summary) height += wrapped(s.summary) * line;
+  for (const s of doc.sections) {
+    const first = blocks.length;
+    // The heading travels with whatever follows it, so it is charged to the
+    // section's first block rather than standing alone.
+    let lead = headingHeight;
+
+    if (s.kind === 'summary' && s.summary) lead += wrapped(s.summary) * line;
 
     // Skills flow as one paragraph, so they are measured as one. Charging each
     // group its own line — as the renderer used to lay them out — over-counted
     // by whatever was left of each group's last line, and the trim then dropped
     // whole groups to buy back space the layout was wasting.
     const groups = s.skills ?? [];
-    if (groups.length) {
+    if (s.kind === 'skills' && groups.length) {
       // Set as the renderer sets it: bold labels, the keywords, and a spaced
       // separator between groups, broken as one paragraph.
       const runs = groups.flatMap((g, i) => [
@@ -193,29 +202,56 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
         { text: `${g.name}: `, font: heading },
         { text: g.keywords.join(', '), font: body },
       ]);
-      height += wrappedRunLines(runs, t.baseSize, textColumn) * line + 2;
+      lead += wrappedRunLines(runs, t.baseSize, textColumn) * line + 2;
     }
 
-    for (const e of s.entries ?? []) {
-      height += t.entryGap;
-      // Title and dates share a row; employer and location share the next —
-      // when there is one. A project has neither, the renderer prints no row
-      // for it, and charging one anyway cost every project sixteen points the
-      // page never spent: three of them were most of two bullets the fill pass
-      // refused for want of room.
-      height += e.secondary || e.aside ? line * 2 + 2 : line;
-      if (e.summary) height += wrapped(e.summary) * line + 2;
-      for (const b of e.bullets) {
-        height += wrappedLines(b.text, body, t.baseSize, bulletColumn) * line + t.bulletGap;
-      }
+    if (s.kind === 'list') {
+      (s.items ?? []).forEach((i, n) => {
+        const item = wrapped(i.text) * line + 2;
+        if (n === 0) lead += item;
+        else blocks.push(item);
+      });
+      if (blocks.length === first) blocks.push(lead);
+      else blocks.splice(first, 0, lead);
+    } else if (s.kind === 'entries' && s.entries?.length) {
+      s.entries.forEach((e, n) => {
+        // Title and dates share a row; employer and location share the next —
+        // when there is one. A project has neither, the renderer prints no row
+        // for it, and charging one anyway cost every project sixteen points the
+        // page never spent: three of them were most of two bullets the fill
+        // pass refused for want of room.
+        let title = (n === 0 ? lead : 0) + (e.secondary || e.aside ? line * 2 + 2 : line);
+        if (e.summary) title += wrapped(e.summary) * line + 2;
+
+        const bullets = e.bullets.map(
+          (b) => wrappedLines(b.text, body, t.baseSize, bulletColumn) * line + t.bulletGap,
+        );
+        // The title keeps its first bullet with it.
+        blocks.push(title + (bullets[0] ?? 0), ...bullets.slice(1));
+        blocks[blocks.length - 1]! += t.entryGap;
+      });
+    } else {
+      blocks.push(lead);
     }
 
-    for (const i of s.items ?? []) height += wrapped(i.text) * line + 2;
-
-    height += t.sectionGap;
+    blocks[blocks.length - 1]! += t.sectionGap;
   }
 
-  return height;
+  // Laid out a page at a time. A block that does not fit in what is left of a
+  // page goes whole to the next, and the space it leaves behind is spent: on a
+  // two-page target, measuring the flow as though it were one long column
+  // called a document two pages that rendered as three.
+  const page = pageHeight(t);
+  let before = 0;
+  let used = 0;
+  for (const h of blocks) {
+    if (used > 0 && used + h > page) {
+      before += page;
+      used = 0;
+    }
+    used += h;
+  }
+  return before + used;
 }
 
 /** Usable height of one page, in points. */
