@@ -173,7 +173,14 @@ if (args.profile) {
     const ingested = parse.rawToProfile(result.json, label);
     profile = ingested;
     write('02-profile.json', profile);
-    record({ id: '02', name: 'structure into a profile', status: 'ran', outputs: ['02-ingest.request.json', '02-ingest.response.json', '02-profile.json'], note: `${result.usage.inputTokens} in / ${result.usage.outputTokens} out` });
+    // Bullets the model read as one fact said twice, with both wordings, so a
+    // reader can judge each flag without cross-referencing ids.
+    const duplicates = parse.duplicatesIn(result.json, profile).map((d) => {
+      const entry = [...profile.work, ...profile.projects, ...profile.education].find((e) => e.id === d.entryId);
+      return { ...d, texts: d.bulletIds.map((id) => entry?.bullets.find((b) => b.id === id)?.text ?? '') };
+    });
+    write('02-duplicates.json', duplicates);
+    record({ id: '02', name: 'structure into a profile', status: 'ran', outputs: ['02-ingest.request.json', '02-ingest.response.json', '02-profile.json', '02-duplicates.json'], note: `${result.usage.inputTokens} in / ${result.usage.outputTokens} out, ${duplicates.length} suspected repeat(s)` });
   }
 }
 

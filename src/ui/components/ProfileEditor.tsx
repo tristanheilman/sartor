@@ -9,6 +9,7 @@ import {
   type SkillGroup,
   type Work,
 } from '../../index';
+import { keepOneWording, type DuplicateBullets } from '../../parse';
 
 /**
  * The master profile editor.
@@ -23,9 +24,11 @@ interface Props {
   onChange(next: Profile): void;
   /** Shown after an import, before the profile is saved for the first time. */
   warnings?: string[];
+  /** Bullets the import read as one fact said twice, for the person to settle. */
+  duplicates?: DuplicateBullets[];
 }
 
-export function ProfileEditor({ profile, onChange, warnings = [] }: Props) {
+export function ProfileEditor({ profile, onChange, warnings = [], duplicates = [] }: Props) {
   const set = <K extends keyof Profile>(key: K, value: Profile[K]) =>
     onChange({ ...profile, [key]: value });
 
@@ -54,6 +57,8 @@ export function ProfileEditor({ profile, onChange, warnings = [] }: Props) {
           </ul>
         </div>
       )}
+
+      <DuplicatePairs profile={profile} pairs={duplicates} onChange={onChange} />
 
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-stone-500">
         <span>{profile.work.length} roles</span>
@@ -343,6 +348,81 @@ function EntryList<T extends HasBullets>({
       <button type="button" className="btn-secondary" onClick={() => onChange([...entries, create()])}>
         {addLabel}
       </button>
+    </div>
+  );
+}
+
+/**
+ * Pairs of bullets the import read as the same fact said twice.
+ *
+ * Left alone, both stay in the profile as separate lines, and tailoring can
+ * pick both — or the weaker of the two. Choosing a wording keeps that one as
+ * the bullet and the other as its alternate wording, word for word: nothing
+ * is rewritten, and either can still be used. "They're different" keeps both
+ * as they are.
+ *
+ * A pair disappears once it is settled, dismissed, or either bullet has been
+ * deleted or edited away in the form below.
+ */
+function DuplicatePairs({
+  profile,
+  pairs,
+  onChange,
+}: {
+  profile: Profile;
+  pairs: DuplicateBullets[];
+  onChange(next: Profile): void;
+}) {
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const textOf = new Map(
+    [...profile.work, ...profile.projects, ...profile.education]
+      .flatMap((e) => e.bullets)
+      .map((b) => [b.id, b.text] as const),
+  );
+  const open = pairs.filter(
+    (p) => !dismissed.has(p.bulletIds.join()) && p.bulletIds.every((id) => textOf.has(id)),
+  );
+  if (!open.length) return null;
+
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+      <h3 className="text-sm font-semibold text-amber-900">
+        {open.length === 1 ? 'This looks like' : 'These look like'} the same fact said twice
+      </h3>
+      <p className="mt-1 text-xs text-amber-800">
+        Pick the wording to keep as the bullet. The other is kept as an alternate wording of it,
+        unchanged, so nothing is lost — it just cannot appear as a second line.
+      </p>
+      <ul className="mt-3 space-y-3">
+        {open.map((pair) => {
+          const [a, b] = pair.bulletIds;
+          return (
+            <li key={pair.bulletIds.join()} className="rounded-md bg-white/70 p-3 text-sm">
+              <div className="text-xs font-medium text-stone-500">{pair.entryName}</div>
+              {[a, b].map((keep) => (
+                <div key={keep} className="mt-2 flex items-start gap-2">
+                  <span className="flex-1 text-stone-800">{textOf.get(keep)}</span>
+                  <button
+                    type="button"
+                    className="btn-secondary shrink-0 text-xs"
+                    onClick={() => onChange(keepOneWording(profile, keep, keep === a ? b : a))}
+                  >
+                    Keep this wording
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn-ghost mt-2 text-xs"
+                onClick={() => setDismissed((d) => new Set(d).add(pair.bulletIds.join()))}
+              >
+                They're different
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
