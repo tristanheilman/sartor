@@ -83,6 +83,12 @@ export interface EvalCase {
    * band of empty page at the foot of the last.
    */
   minFill?: number;
+  /**
+   * Entry id -> the fewest bullets it may print with. For a role a reader
+   * weighs — the current job, the one before it — one bullet reads as though
+   * nothing happened there.
+   */
+  minBullets?: Record<string, number>;
 }
 
 export interface Gate {
@@ -229,6 +235,21 @@ export function scorePlan(testCase: EvalCase, rawPlan: TailorPlan): EvalResult {
       detail: outOfOrder.length
         ? `printed above a more recent role: ${outOfOrder.map((w) => w.name).join(', ')}`
         : `${roles[0]?.name ?? 'no roles'} first`,
+    });
+  }
+
+  // --- Gate: the roles a reader weighs say enough -------------------------
+  if (testCase.minBullets && Object.keys(testCase.minBullets).length) {
+    const printed = new Map(
+      doc.sections.flatMap((sec) => sec.entries ?? []).map((e) => [e.sourceId, e.bullets.length]),
+    );
+    const thin = Object.entries(testCase.minBullets).filter(([id, n]) => (printed.get(id) ?? 0) < n);
+    gates.push({
+      name: 'enough-bullets',
+      passed: thin.length === 0,
+      detail: thin.length
+        ? thin.map(([id, n]) => `${id}: ${printed.get(id) ?? 0} of ${n}`).join(', ')
+        : 'every role named has enough to read',
     });
   }
 

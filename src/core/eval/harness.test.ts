@@ -99,6 +99,7 @@ function loadCase(name: string, dir: string): {
       knownFailures: (labels.knownFailures ?? {}) as Record<string, string>,
       fit: labels.fit === true,
       minFill: typeof labels.minFill === 'number' ? labels.minFill : undefined,
+      minBullets: (labels.minBullets ?? undefined) as Record<string, number> | undefined,
     },
     plans: loadPlans(dir),
     knownFailures: (labels.knownFailures ?? {}) as Record<string, string>,
