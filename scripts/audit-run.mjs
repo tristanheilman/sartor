@@ -55,7 +55,8 @@ for (let i = 2; i < process.argv.length; i += 2) {
 
 if (!args.pdf && !args.profile) {
   console.error(
-    'usage: npm run audit -- --pdf <resume.pdf> [--jd <posting.txt>] [--profile <p.json>] [--plan <plan.json>] [--out <dir>]',
+    'usage: npm run audit -- --pdf <resume.pdf> [--jd <posting.txt>] [--profile <p.json>] [--plan <plan.json>] [--out <dir>]\n' +
+      '       [--keep-wording <keep.json> [--duplicates <02-duplicates.json>]]',
   );
   process.exit(1);
 }
@@ -146,6 +147,8 @@ if (args.pdf) {
 
 // --- 02 ingest (model)
 let profile = null;
+// Suspected repeats: this run's import, or --duplicates from an earlier one.
+let duplicates = args.duplicates ? JSON.parse(readFileSync(resolve(args.duplicates), 'utf8')) : null;
 if (args.profile) {
   profile = lib.profileSchema.parse(JSON.parse(readFileSync(resolve(args.profile), 'utf8')));
   write('02-profile.json', profile);
@@ -173,7 +176,38 @@ if (args.profile) {
     const ingested = parse.rawToProfile(result.json, label);
     profile = ingested;
     write('02-profile.json', profile);
-    record({ id: '02', name: 'structure into a profile', status: 'ran', outputs: ['02-ingest.request.json', '02-ingest.response.json', '02-profile.json'], note: `${result.usage.inputTokens} in / ${result.usage.outputTokens} out` });
+    // Bullets the model read as one fact said twice, with both wordings, so a
+    // reader can judge each flag without cross-referencing ids.
+    duplicates = parse.duplicatesIn(result.json, profile).map((d) => {
+      const entry = [...profile.work, ...profile.projects, ...profile.education].find((e) => e.id === d.entryId);
+      return { ...d, texts: d.bulletIds.map((id) => entry?.bullets.find((b) => b.id === id)?.text ?? '') };
+    });
+    write('02-duplicates.json', duplicates);
+    record({ id: '02', name: 'structure into a profile', status: 'ran', outputs: ['02-ingest.request.json', '02-ingest.response.json', '02-profile.json', '02-duplicates.json'], note: `${result.usage.inputTokens} in / ${result.usage.outputTokens} out, ${duplicates.length} suspected repeat(s)` });
+  }
+}
+
+// --- 02b settle suspected repeats
+//
+// --keep-wording names, by bullet id or by the start of its text, the wording
+// to keep for each flagged pair; the other becomes its variant, word for word.
+// Without it a scripted run keeps both, and tailoring may pick the worse one.
+if (profile && args['keep-wording']) {
+  const keep = JSON.parse(readFileSync(resolve(args['keep-wording']), 'utf8'));
+  if (!duplicates) {
+    record({ id: '02b', name: 'settle suspected repeats', status: 'blocked', outputs: [], note: 'no flagged pairs — pass --duplicates with --profile' });
+  } else {
+    const out = parse.resolveDuplicates(profile, duplicates, keep);
+    profile = out.profile;
+    write('02-profile.json', profile);
+    write('02-duplicates-settled.json', { resolved: out.resolved, unresolved: out.unresolved });
+    record({
+      id: '02b',
+      name: 'settle suspected repeats',
+      status: 'ran',
+      outputs: ['02-profile.json', '02-duplicates-settled.json'],
+      note: `${out.resolved.length} settled, ${out.unresolved.length} left as both`,
+    });
   }
 }
 
