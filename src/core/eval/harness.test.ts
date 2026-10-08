@@ -7,7 +7,9 @@ import { profileSchema } from '../schema';
 import { tailorPlanSchema } from '../tailor/plan';
 import { renderPdfBlob } from '../render/pdf';
 import { extractResumeText } from '../parse/extract';
-import { documentToText } from '../render/model';
+import { documentToText, pageHeight } from '../render/model';
+import { getTemplate } from '../render/templates';
+import * as pdfjs from 'pdfjs-dist';
 import {
   compareToBaseline,
   formatReport,
@@ -34,6 +36,13 @@ import {
 
 const EVALS = join(dirname(fileURLToPath(import.meta.url)), '../../../evals');
 const CASES = join(EVALS, 'cases');
+/**
+ * Cases built from a real resume. `evals/local/` is gitignored — this
+ * repository is public and a real profile carries a name, a phone number and
+ * an employment history — so these run on the machine that has them and
+ * nowhere else.
+ */
+const LOCAL_CASES = join(EVALS, 'local', 'cases');
 
 const pdfWorkerSrc = pathToFileURL(
   createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
@@ -41,6 +50,7 @@ const pdfWorkerSrc = pathToFileURL(
 
 beforeAll(() => {
   globalThis.DOMMatrix ??= class {} as unknown as typeof DOMMatrix;
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 });
 
 /**
@@ -66,13 +76,12 @@ function loadPlans(dir: string): ReturnType<typeof tailorPlanSchema.parse>[] {
   return sources.map((p) => tailorPlanSchema.parse(JSON.parse(readFileSync(p, 'utf8'))));
 }
 
-function loadCase(name: string): {
+function loadCase(name: string, dir: string): {
   testCase: EvalCase;
   plans: ReturnType<typeof tailorPlanSchema.parse>[];
   /** Gate name -> why it is known to fail. See the assertion below. */
   knownFailures: Record<string, string>;
 } {
-  const dir = join(CASES, name);
   const json = (f: string) => JSON.parse(readFileSync(join(dir, f), 'utf8')) as Record<string, unknown>;
   const labels = json('labels.json');
 
@@ -88,16 +97,24 @@ function loadCase(name: string): {
       mustKeepEntries: (labels.mustKeepEntries ?? []) as string[],
       forbidden: labels.forbidden as string[],
       knownFailures: (labels.knownFailures ?? {}) as Record<string, string>,
+      fit: labels.fit === true,
+      minFill: typeof labels.minFill === 'number' ? labels.minFill : undefined,
     },
     plans: loadPlans(dir),
     knownFailures: (labels.knownFailures ?? {}) as Record<string, string>,
   };
 }
 
-const caseNames = readdirSync(CASES, { withFileTypes: true })
-  .filter((e) => e.isDirectory())
-  .map((e) => e.name)
-  .sort();
+const caseDirs = new Map(
+  [CASES, LOCAL_CASES]
+    .filter((root) => existsSync(root))
+    .flatMap((root) =>
+      readdirSync(root, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => [e.name, join(root, e.name)] as const),
+    ),
+);
+const caseNames = [...caseDirs.keys()].sort();
 
 const results: CaseResult[] = [];
 
@@ -107,7 +124,7 @@ describe('gold-standard cases', () => {
   });
 
   describe.each(caseNames)('%s', (name) => {
-    const { testCase, plans, knownFailures } = loadCase(name);
+    const { testCase, plans, knownFailures } = loadCase(name, caseDirs.get(name)!);
     const result = scoreCase(testCase, plans);
     results.push(result);
 
@@ -163,6 +180,41 @@ describe('gold-standard cases', () => {
         `recordings agree on only ${(result.selectionAgreement * 100).toFixed(0)}% of included bullets`,
       ).toBeGreaterThanOrEqual(0.8);
     });
+
+    /**
+     * The page as printed, for cases that say how full it should be.
+     *
+     * Rendered rather than estimated, on every recording, because the
+     * estimate is what the fit pass trims against — checking the fit with its
+     * own measuring stick would agree with it by construction. Fill is where
+     * the last line of text ends, as a fraction of the page inside the
+     * margins: the band of empty paper a reader actually sees.
+     */
+    if (testCase.minFill !== undefined) {
+      it('fills the page it was asked to fill, and no more', async () => {
+        const classic = getTemplate('classic');
+        const short: string[] = [];
+        for (const [i, run] of result.runs.entries()) {
+          const blob = await renderPdfBlob(run.doc, 'classic');
+          const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), verbosity: 0 }).promise;
+          const last = await pdf.getPage(pdf.numPages);
+          let lowest = 792;
+          for (const item of (await last.getTextContent()).items) {
+            if ('str' in item && item.str.trim()) lowest = Math.min(lowest, item.transform[5] as number);
+          }
+          // Baseline to the foot of the line's descenders.
+          const bottom = 792 - lowest + classic.baseSize * 0.25;
+          const fill = (bottom - classic.pageMargin) / pageHeight(classic);
+
+          if (pdf.numPages !== testCase.pageTarget) {
+            short.push(`run ${i + 1}: ${pdf.numPages} pages against a target of ${testCase.pageTarget}`);
+          } else if (fill < testCase.minFill!) {
+            short.push(`run ${i + 1}: last line at ${(fill * 100).toFixed(1)}% of the page`);
+          }
+        }
+        expect(short).toEqual([]);
+      });
+    }
 
     /**
      * The closed loop, and the check no unit test can stand in for: render the
