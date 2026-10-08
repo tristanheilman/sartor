@@ -207,6 +207,19 @@ const PROTECTED_PROJECT_BULLETS = 2;
 const REINSTATE_THRESHOLD = 0.12;
 
 /**
+ * The most bullets one role shows, however much room there is.
+ *
+ * A two-page run gave one role thirteen, the last of them "Managed application
+ * state with React Redux." — something the skills section already says. The
+ * page had room, so nothing was trimmed, and the room went to the bottom of
+ * one role's list. Six says what a job was; beyond that each line is weaker
+ * than the last and the reader stops before reaching it. Soft only in that the
+ * model chooses which six: its highest-ranked. Two-page targets only — see
+ * where it is applied.
+ */
+const ROLE_BULLET_CAP = 6;
+
+/**
  * Skill groups a resume keeps whatever else has to go.
  *
  * A skills section stripped to one line reads as an omission rather than as
@@ -472,6 +485,16 @@ export function fitToTarget(
     if (first) first.include = true;
   }
 
+  // Two pages only. On one, the page is the cap: the trim already weighs a
+  // role's sixth bullet against everything else competing for the space.
+  const roleCap = pageTarget === 2 ? ROLE_BULLET_CAP : Infinity;
+  for (const entry of next.work) {
+    for (const b of keptBullets(entry).slice(roleCap)) {
+      b.include = false;
+      dropped.push(b.bulletId);
+    }
+  }
+
   // Changes, not an empty array. `buildDocument` only honours a drop once the
   // corresponding change is accepted, so measuring against `[]` renders the
   // document as though nothing had been cut — which is how the first version of
@@ -572,6 +595,7 @@ export function fitToTarget(
       const candidates = [...next.work, ...next.projects]
         .filter((e) => e.include && e.bullets.some((b) => !b.include && !tooBig.has(b.bulletId)))
         .filter((e) => roleFloor === undefined || (isRole.has(e.id) && rank(e) < roleFloor))
+        .filter((e) => !isRole.has(e.id) || rank(e) < roleCap)
         .sort((a, b) => rank(a) - rank(b) || Number(isRole.has(b.id)) - Number(isRole.has(a.id)));
 
       // "Does the next candidate fit" is the wrong question; "does anything left

@@ -86,6 +86,12 @@ export interface RunOptions {
 
 export interface TailorOutcome {
   run: TailorRun;
+  /**
+   * The model's own plan, validated but before the fit pass. `run.plan` is
+   * what the fit made of it; reading that as the model's choice made a
+   * trimmed plan look like a model that ignored the request to over-select.
+   */
+  modelPlan: TailorPlan;
   /** Plan elements discarded for pointing at nothing real. Shown to the user. */
   dropped: string[];
   /**
@@ -155,6 +161,7 @@ export async function runTailor(
       changes: buildChanges(profile, fitted.plan),
       notes: plan.notes,
     },
+    modelPlan: plan,
     dropped,
     fit: {
       dropped: fitted.dropped,

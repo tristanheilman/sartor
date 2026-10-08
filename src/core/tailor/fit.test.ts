@@ -551,6 +551,53 @@ describe('a second bullet on every role before a skill group comes back', () => 
   });
 });
 
+describe('a cap on how much one role can say', () => {
+  /**
+   * A two-page run gave Formedics thirteen bullets, the last of them "Managed
+   * application state with React Redux." — a line the skills section already
+   * says. Two pages had room, so nothing was trimmed, and the room went to the
+   * bottom of one role's list rather than to anything better.
+   */
+  const many: Profile = profileSchema.parse({
+    ...profile,
+    work: [
+      { ...profile.work[0], bullets: bullets(14, 'a') },
+      { ...profile.work[1], bullets: bullets(3, 'b') },
+    ],
+    projects: [],
+  });
+  const plan = tailorPlanSchema.parse({
+    summary: { text: '', rationale: '' },
+    work: many.work.map((w, i) => ({
+      id: w.id, include: true, order: i,
+      bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j < 13, order: j })),
+    })),
+    skills: many.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+  });
+  const counts = (pl: TailorPlan) => pl.work.map((w) => w.bullets.filter((b) => b.include).length);
+
+  it('keeps a role to six bullets even when the page has room for more', () => {
+    const { plan: fitted } = fitToTarget(many, plan, 2);
+    expect(counts(fitted)[0]).toBe(6);
+  });
+
+  it('keeps the six the model ranked highest', () => {
+    const { plan: fitted } = fitToTarget(many, plan, 2);
+    const kept = fitted.work[0]!.bullets.filter((b) => b.include).map((b) => b.bulletId);
+    expect(kept).toEqual(['a0', 'a1', 'a2', 'a3', 'a4', 'a5']);
+  });
+
+  it('still fills the other roles', () => {
+    const { plan: fitted } = fitToTarget(many, plan, 2);
+    expect(counts(fitted)[1]).toBe(3);
+  });
+
+  it('reports the bullets it switched off', () => {
+    const { dropped } = fitToTarget(many, plan, 2);
+    expect(dropped).toEqual(expect.arrayContaining(['a6', 'a12']));
+  });
+});
+
 describe('entries left with nothing under them', () => {
   /**
    * A real run returned a plan with `Revento` included and every one of its

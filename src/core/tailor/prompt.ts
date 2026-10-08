@@ -230,9 +230,11 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
       ? `${totalBullets} bullets across experience and projects (${roleBullets} in roles, ${projectBullets} in projects)`
       : `${totalBullets} experience bullets`;
 
-  // Twice what fits, on purpose. Told the page "fits roughly 6", a model kept
-  // seven bullets and set include:false on the two libraries the posting asked
-  // for while ranking them first and second. The fit pass that runs afterwards
+  // Twice what fits, on purpose, and said before the page's own figure so
+  // that is not the number the model anchors on. Told the page "fits roughly
+  // 6" first, a model kept seven bullets and set include:false on the two
+  // libraries the posting asked for while ranking them first and second.
+  // The fit pass that runs afterwards
   // measures the real page and cuts from the end of the model's order, but it
   // only fills from what was included — so a model that stops at the budget
   // leaves the page short, and makes the hard cuts before anything is
@@ -240,7 +242,7 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
   const ask = budget * 2;
 
   return totalBullets > budget
-    ? `The profile has ${inventory} and the target is ${pageTarget} page(s), which fits roughly ${budget} in total. The page will need to cut some of what you choose, but that is done for you: include about ${ask} — more than fits, on purpose — and the plan is trimmed to the page afterwards, in code, always taking from the end of your order. So rank carefully: in each entry put the bullets that matter most for this posting first, and order the entries the same way. Set include:false on what is not relevant to this posting at all; project bullets count against the same budget as role bullets.${pruneProjects} Say why in each rationale.`
+    ? `Include about ${ask} bullets across experience and projects — more than the page holds, on purpose. The plan is trimmed to the page afterwards, in code, always taking from the end of your order, so including too few leaves the page short and including too many costs nothing. The profile has ${inventory}; the ${pageTarget}-page target fits roughly ${budget}, so the page will need to cut some of what you include — that is the trim's job, not yours. So rank carefully: in each entry put the bullets that matter most for this posting first, and order the projects the same way. Roles always print newest first, whatever their order. Set include:false only on what is not relevant to this posting at all.${pruneProjects} Say why in each rationale.`
     : `The profile has ${inventory}, which fits within ${pageTarget} page(s) — roughly ${budget} fit alongside the summary, skills and headings. Include what is relevant; you do not need to cut aggressively.`;
 }
 

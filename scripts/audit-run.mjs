@@ -371,6 +371,9 @@ if (args.plan) {
     const name = repeat === 1 ? '05-plan.json' : `05-plans/${String(i).padStart(2, '0')}.json`;
     if (repeat > 1) mkdirSync(join(OUT, '05-plans'), { recursive: true });
     write(name, outcome.run.plan);
+    // What the model chose, before the fit pass trimmed or filled it. The
+    // plan above is the fitted one, and the two are easy to mistake.
+    write(name.replace(/\.json$/, '.model.json'), outcome.modelPlan);
     recorded.push({ n: i, dropped: outcome.dropped.length, plan: outcome.run.plan });
     if (i === 1) write('05-tailor.response.json', outcome.run);
   }
