@@ -3,6 +3,7 @@ import { buildChanges, buildDocument } from './apply';
 import { estimateHeight, pageHeight, type PageMetrics } from '../render/model';
 import { buildLexicon, tokenize } from './lexicon';
 import { isCommonSentenceOpener } from './stopwords';
+import { byRecency, recentRoles } from '../dates';
 import type { TailorPlan, PlannedEntry } from './plan';
 
 /**
@@ -245,7 +246,8 @@ const MIN_SKILL_GROUPS = 2;
  *   4. Held projects down to one bullet. Never as a stub to be dropped whole:
  *      a heading and one line costs two lines here, and it is the line the
  *      posting asked for.
- *   5. Role bullets down to one.
+ *   5. Role bullets down to one — old roles first, recent ones (the current
+ *      role, and any that ended within three years of it) last.
  *   6. Held projects after all, if nothing else is left to give. A resume that
  *      does not fit is worse than one without a projects section.
  */
@@ -254,6 +256,7 @@ function nextCut(
   profile: Profile,
   ranking: string[] | null,
   requested: Set<string>,
+  recent: Set<string>,
 ): { entry: PlannedEntry; bulletId: string; kind: 'project' | 'held' | 'work' } | null {
   const live = plan.projects.filter((e) => e.include && keptBullets(e).length > 0);
 
@@ -288,9 +291,9 @@ function nextCut(
   // Oldest first: recent work is what a reader weighs, and the oldest role
   // carrying five bullets is the least defensible use of a page.
   const seniority = new Map(profile.work.map((w, i) => [w.id, i]));
-  const roleOver = (n: number) =>
+  const roleOver = (n: number, which: (id: string) => boolean = () => true) =>
     plan.work
-      .filter((e) => e.include && keptBullets(e).length > n)
+      .filter((e) => e.include && which(e.id) && keptBullets(e).length > n)
       .sort((a, b) => {
         const byCount = keptBullets(b).length - keptBullets(a).length;
         return byCount !== 0 ? byCount : (seniority.get(b.id) ?? 0) - (seniority.get(a.id) ?? 0);
@@ -300,6 +303,10 @@ function nextCut(
     (heldOver(PROTECTED_PROJECT_BULLETS) && take(heldOver(PROTECTED_PROJECT_BULLETS)!, 'held')) ||
     (roleOver(PROTECTED_PROJECT_BULLETS) && take(roleOver(PROTECTED_PROJECT_BULLETS)!, 'work')) ||
     (heldOver(1) && take(heldOver(1)!, 'held')) ||
+    // An old role gives up its second line before a recent one does: a
+    // reader weighs the job they are being hired from, not a co-op from six
+    // years ago.
+    (roleOver(1, (id) => !recent.has(id)) && take(roleOver(1, (id) => !recent.has(id))!, 'work')) ||
     (roleOver(1) && take(roleOver(1)!, 'work'));
   if (step) return step;
 
@@ -396,6 +403,10 @@ export function fitToTarget(
   const dropped: string[] = [];
   const droppedEntries: string[] = [];
   const ranking = jdText?.trim() ? projectsByRelevance(plan, profile, jdText) : null;
+  // The current role and any that ended within three years of it. These keep
+  // two bullets ahead of an old role's second and a project's second.
+  const recent = recentRoles(profile.work);
+  const roleOf = (id: string) => profile.work.find((w) => w.id === id)!;
 
   // The ranking can only order what the plan kept. Across runs of one profile
   // against one posting the model sometimes kept `react-native-island` and
@@ -543,7 +554,7 @@ export function fitToTarget(
   const limit = next.work.concat(next.projects).reduce((n, e) => n + e.bullets.length, 0) + 1;
 
   for (let i = 0; i < limit && overflows(); i++) {
-    const cut = nextCut(next, profile, ranking, requested);
+    const cut = nextCut(next, profile, ranking, requested, recent);
     if (!cut) break;
 
     for (const b of cut.entry.bullets) {
@@ -590,36 +601,53 @@ export function fitToTarget(
       // there — worse than no bullets at all, because it looks like that was the
       // best there was. CIMx shipped with a single ten-word line for exactly this
       // reason: the tie broke toward the newest role and the room ran out.
+      //
+      // Among roles level on bullets, recent before old and then newest first.
+      // Breaking that tie by plan order gave a 2019 co-op its second line while
+      // the role the person left last year had one.
       const rank = (e: PlannedEntry) => keptBullets(e).length;
       const isRole = new Set(next.work.map((e) => e.id));
+      const age = (e: PlannedEntry) => (recent.has(e.id) ? 0 : 1);
       const candidates = [...next.work, ...next.projects]
         .filter((e) => e.include && e.bullets.some((b) => !b.include && !tooBig.has(b.bulletId)))
         .filter((e) => roleFloor === undefined || (isRole.has(e.id) && rank(e) < roleFloor))
         .filter((e) => !isRole.has(e.id) || rank(e) < roleCap)
-        .sort((a, b) => rank(a) - rank(b) || Number(isRole.has(b.id)) - Number(isRole.has(a.id)));
+        .sort(
+          (a, b) =>
+            rank(a) - rank(b) ||
+            Number(isRole.has(b.id)) - Number(isRole.has(a.id)) ||
+            age(a) - age(b) ||
+            (isRole.has(a.id) && isRole.has(b.id) ? byRecency(roleOf(a.id), roleOf(b.id)) : 0),
+        );
 
       // "Does the next candidate fit" is the wrong question; "does anything left
       // fit" is the right one. Stopping at the first bullet too big for the
       // remaining space abandoned shorter ones behind it — a real export finished
       // with forty-one points of slack and a one-line bullet never tried, because
       // the entry at the front of the queue happened to offer a three-line one.
+      //
+      // And within an entry, its next bullets in the model's order before the
+      // next entry. A role whose next line is three lines long usually has a
+      // one-line one after it; moving on to another entry instead is how a
+      // recent role was left on one bullet while an old one got two.
       let placed = false;
       for (const entry of candidates) {
-        const nextBullet = [...entry.bullets]
+        const offered = [...entry.bullets]
           .filter((b) => !b.include && !tooBig.has(b.bulletId))
-          .sort((a, b) => a.order - b.order)[0];
-        if (!nextBullet) continue;
-
-        nextBullet.include = true;
-        if (overflows()) {
-          nextBullet.include = false;
-          // Remember it, so the next pass does not try it again and stall.
-          tooBig.add(nextBullet.bulletId);
-          continue;
+          .sort((a, b) => a.order - b.order);
+        for (const bullet of offered) {
+          bullet.include = true;
+          if (overflows()) {
+            bullet.include = false;
+            // Remember it, so the next pass does not try it again and stall.
+            tooBig.add(bullet.bulletId);
+            continue;
+          }
+          added.push(bullet.bulletId);
+          placed = true;
+          break;
         }
-        added.push(nextBullet.bulletId);
-        placed = true;
-        break;
+        if (placed) break;
       }
       if (!placed) break;
     }
@@ -630,6 +658,51 @@ export function fitToTarget(
   // there, and then restored a third skill group into the room that freed —
   // two lines of keywords, and no role got its second line back.
   grow(PROTECTED_PROJECT_BULLETS);
+
+  // A recent role still on one bullet when the page is full, while a project
+  // shows a second line or an old role a second bullet. Filling cannot fix
+  // that — there is no room to fill — so the room is moved: the weaker lines
+  // are switched off one at a time, least wanted first, until the role's own
+  // next bullet fits. If it never fits, everything is put back as it was.
+  // Nothing is rewritten; every line switched either way is a change the
+  // review screen shows.
+  for (const role of next.work.filter((e) => e.include && recent.has(e.id)).sort((a, b) => byRecency(roleOf(a.id), roleOf(b.id)))) {
+    if (keptBullets(role).length >= PROTECTED_PROJECT_BULLETS) continue;
+    const offered = [...role.bullets].filter((b) => !b.include).sort((a, b) => a.order - b.order);
+    if (!offered.length) continue;
+
+    const beyondFirst = (e: PlannedEntry) => keptBullets(e).slice(1).reverse();
+    const projectOrder = (ranking ?? next.projects.map((e) => e.id)).map((id) => next.projects.find((e) => e.id === id)!).filter(Boolean);
+    const donors = [
+      ...projectOrder.filter((e) => e.include && !requested.has(e.id)).flatMap(beyondFirst),
+      ...projectOrder.filter((e) => e.include && requested.has(e.id)).flatMap(beyondFirst),
+      ...next.work
+        .filter((e) => e.include && !recent.has(e.id))
+        .sort((a, b) => byRecency(roleOf(b.id), roleOf(a.id)))
+        .flatMap(beyondFirst),
+    ];
+
+    const given: typeof donors = [];
+    let placed: (typeof offered)[number] | undefined;
+    for (const donor of donors) {
+      donor.include = false;
+      given.push(donor);
+      placed = offered.find((b) => {
+        b.include = true;
+        if (!overflows()) return true;
+        b.include = false;
+        return false;
+      });
+      if (placed) break;
+    }
+
+    if (placed) {
+      added.push(placed.bulletId);
+      dropped.push(...given.map((d) => d.bulletId));
+    } else {
+      for (const d of given) d.include = true;
+    }
+  }
 
   // Skill groups the model dropped that the posting asked for.
   //

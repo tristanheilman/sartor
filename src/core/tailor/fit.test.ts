@@ -598,6 +598,94 @@ describe('a cap on how much one role can say', () => {
   });
 });
 
+describe('recent roles before old ones, and before a project’s second line', () => {
+  /**
+   * A one-page run printed CIMx (a 2019-2020 co-op) with two bullets and Wridz
+   * (three years as lead, ended last year) with one. The refill offered
+   * Wridz's next bullet first, found it a line too long for the room left,
+   * and moved on to CIMx — rather than trying Wridz's next, shorter one.
+   *
+   * Recent roles are the current one and any that ended within three years of
+   * where the career now is. Each keeps two bullets ahead of an old role's
+   * second and ahead of a project's second.
+   */
+  const jd = 'Senior Mobile Engineer (React Native). Published open-source React Native libraries.';
+  const line = (n: number, p: string) => `Did a specific and checkable piece of work at ${p}, number ${n}.`;
+  const long = (p: string) =>
+    `Led a long and involved piece of work at ${p} that took several quarters, touched many systems and teams, and needs three full lines on the page to describe properly and completely.`;
+
+  const at = (summaryWords: number): Profile =>
+    profileSchema.parse({
+      id: 'prf_recent', createdAt: 'now', updatedAt: 'now',
+      basics: { name: 'Tristan Heilman', summary: 'word '.repeat(summaryWords) },
+      work: [
+        { id: 'w_now', name: 'Formedics', position: 'Native App Developer', startDate: '10/2025', endDate: 'Present',
+          bullets: [0, 1, 2, 3].map((n) => ({ id: `n${n}`, text: line(n, 'Formedics') })) },
+        { id: 'w_mid', name: 'Wridz', position: 'Lead Mobile Developer', startDate: '05/2022', endDate: '09/2025',
+          bullets: [{ id: 'm0', text: line(0, 'Wridz') }, { id: 'm1', text: long('Wridz') }, { id: 'm2', text: line(2, 'Wridz') }] },
+        { id: 'w_old', name: 'CIMx', position: 'Junior Developer', startDate: '01/2019', endDate: '06/2020',
+          bullets: [0, 1, 2].map((n) => ({ id: `o${n}`, text: line(n, 'CIMx') })) },
+      ],
+      projects: [
+        { id: 'prj_lib', name: 'react-native-island', bullets: [
+          { id: 'l0', text: 'Published an open-source React Native library exposing iOS Live Activities.' },
+          { id: 'l1', text: 'Maintain the library for other developers building React Native apps.' },
+        ] },
+      ],
+    });
+
+  const planFor = (p: Profile, roleBullets: number): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j < roleBullets, order: j })),
+      })),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: true, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      skills: p.skills.map((g, i) => ({ id: g.id, include: true, order: i, keywords: g.keywords })),
+      requested: ['prj_lib'],
+    });
+
+  const counts = (pl: TailorPlan) => Object.fromEntries(
+    [...pl.work, ...pl.projects].map((e) => [e.id, e.include ? e.bullets.filter((b) => b.include).length : 0]),
+  );
+
+  // From a page with room to spare to one with almost none.
+  const sweep = Array.from({ length: 60 }, (_, i) => 200 + i * 12);
+
+  it('never gives an old role a second bullet before every recent role has two', () => {
+    const wrong = sweep.filter((words) => {
+      const p = at(words);
+      const c = counts(fitToTarget(p, planFor(p, 1), 1, undefined, jd).plan);
+      return c.w_old! >= 2 && (c.w_now! < 2 || c.w_mid! < 2);
+    });
+    expect(wrong).toEqual([]);
+  });
+
+  it('tries a recent role\'s shorter bullet before moving to another entry', () => {
+    // Somewhere in the sweep the room left holds a one-line bullet but not
+    // Wridz's three-line one; Wridz must still get its second line there.
+    const wrong = sweep.filter((words) => {
+      const p = at(words);
+      const c = counts(fitToTarget(p, planFor(p, 1), 1, undefined, jd).plan);
+      return c.w_mid! < 2 && (c.w_old! >= 2 || c.prj_lib! >= 2);
+    });
+    expect(wrong).toEqual([]);
+  });
+
+  it('takes a project to one line, and an old role to one, before a recent role goes below two', () => {
+    const wrong = sweep.filter((words) => {
+      const p = at(words);
+      const c = counts(fitToTarget(p, planFor(p, 4), 1, undefined, jd).plan);
+      return (c.w_now! < 2 || c.w_mid! < 2) && (c.prj_lib! >= 2 || c.w_old! >= 2);
+    });
+    expect(wrong).toEqual([]);
+  });
+});
+
 describe('entries left with nothing under them', () => {
   /**
    * A real run returned a plan with `Revento` included and every one of its

@@ -90,3 +90,44 @@ export function rangesOverlap(
 
   return aStart <= bEnd && bStart <= aEnd;
 }
+
+type Dated = { startDate: string; endDate: string };
+
+/**
+ * Newest first: by when it ended, anything still running above all of them,
+ * then by when it began. Something with no readable dates at all goes last.
+ * A comparator, for sorting work history the way a reader expects it.
+ */
+export function byRecency(a: Dated, b: Dated): number {
+  const undated = (w: Dated) => !w.startDate.trim() && !w.endDate.trim();
+  if (undated(a) || undated(b)) return Number(undated(a)) - Number(undated(b));
+
+  const end = (w: Dated) => (isOngoing(w.endDate) ? Infinity : (toMonths(w.endDate) ?? -Infinity));
+  const start = (w: Dated) => toMonths(w.startDate) ?? -Infinity;
+  if (end(a) !== end(b)) return end(b) > end(a) ? 1 : -1;
+  if (start(a) !== start(b)) return start(b) > start(a) ? 1 : -1;
+  return 0;
+}
+
+/**
+ * Roles near the present of a career: the current one, and any that ended
+ * within `months` of where the career now is. "Now" is the newest date the
+ * history itself carries — the latest end, or the latest start of a role
+ * still running — rather than the clock, so the answer for a profile does not
+ * change with the day it is asked.
+ */
+export function recentRoles<T extends Dated & { id: string }>(roles: T[], months = 36): Set<string> {
+  const marks = roles.flatMap((r) => [toMonths(r.startDate), toMonths(r.endDate)]).filter((m): m is number => m !== null);
+  if (!marks.length) return new Set();
+  const latest = Math.max(...marks);
+  return new Set(
+    roles
+      .filter((r) => {
+        if (!r.startDate.trim() && !r.endDate.trim()) return false;
+        if (isOngoing(r.endDate)) return true;
+        const end = toMonths(r.endDate);
+        return end !== null && latest - end <= months;
+      })
+      .map((r) => r.id),
+  );
+}
