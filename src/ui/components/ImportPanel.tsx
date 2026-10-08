@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ExtractionError, extractResumeText, ingestResume } from '../../parse';
+import { ExtractionError, extractResumeText, ingestResume, type DuplicateBullets } from '../../parse';
 import { emptyProfile, ids, type Profile } from '../../index';
 import { useActiveProvider } from '../store';
 import { LoadingScreen, type LoadingStep } from './LoadingScreen';
@@ -16,7 +16,7 @@ export function ImportPanel({
   onParsed,
   onBlank,
 }: {
-  onParsed(profile: Profile, warnings: string[]): void;
+  onParsed(profile: Profile, warnings: string[], duplicates: DuplicateBullets[]): void;
   onBlank(profile: Profile): void;
 }) {
   const { provider, config, ready } = useActiveProvider();
@@ -35,9 +35,9 @@ export function ImportPanel({
     setError(null);
     setSteps((s) => [...s, { label: 'Turning it into fields', done: false }]);
     try {
-      const { profile, warnings } = await ingestResume(text, provider, config, { label });
+      const { profile, warnings, duplicates } = await ingestResume(text, provider, config, { label });
       setPhase('idle');
-      onParsed(profile, warnings);
+      onParsed(profile, warnings, duplicates);
     } catch (err) {
       setPhase('error');
       setError(err instanceof Error ? err.message : String(err));

@@ -4,6 +4,7 @@ import { ProfileEditor } from './components/ProfileEditor';
 import { Aurora } from './components/Aurora';
 import { SettingsButton } from './components/SettingsButton';
 import { ImportPanel } from './components/ImportPanel';
+import type { DuplicateBullets } from '../parse';
 import { InterviewPanel } from './components/InterviewPanel';
 import { JobPanel } from './components/JobPanel';
 import { ReviewPanel } from './components/ReviewPanel';
@@ -128,6 +129,7 @@ function ProfileStep({ onDone }: { onDone(): void }) {
   const { profile, profiles, upsertProfile, selectProfile, removeProfile, draft, saveDraft } =
     useStore();
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [duplicates, setDuplicates] = useState<DuplicateBullets[]>([]);
   const [saving, setSaving] = useState(false);
   // The interview runs against the draft, before anything is persisted, so a
   // person can see what their answers did and still walk away from all of it.
@@ -139,9 +141,10 @@ function ProfileStep({ onDone }: { onDone(): void }) {
   if (!editing) {
     return (
       <ImportPanel
-        onParsed={(p, w) => {
+        onParsed={(p, w, d) => {
           void saveDraft(p);
           setWarnings(w);
+          setDuplicates(d);
           // Straight into the questions: the gaps are most obvious, and most
           // worth filling, the moment a resume has been read.
           setInterviewing(true);
@@ -149,6 +152,7 @@ function ProfileStep({ onDone }: { onDone(): void }) {
         onBlank={(p) => {
           void saveDraft(p);
           setWarnings([]);
+          setDuplicates([]);
         }}
       />
     );
@@ -225,7 +229,12 @@ function ProfileStep({ onDone }: { onDone(): void }) {
         </span>
       </div>
 
-      <ProfileEditor profile={editing} onChange={(p) => void saveDraft(p)} warnings={warnings} />
+      <ProfileEditor
+        profile={editing}
+        onChange={(p) => void saveDraft(p)}
+        warnings={warnings}
+        duplicates={duplicates}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <button

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { profileSchema, type Profile } from '../schema';
 import { ids } from '../ids';
 import type { LLMProvider, ProviderConfig } from '../provider';
+import type { DuplicateBullets } from './duplicates';
 
 /**
  * Resume text -> structured profile, via one LLM call.
@@ -35,13 +36,26 @@ You are transcribing, not writing. Rules:
 - A single date on an entry is its end date. Write it to \`endDate\` and leave
   \`startDate\` empty rather than repeating the same value in both.
 - If a section is absent from the resume, return an empty array for it.
+- Some resumes say the same thing twice under one role or project, in
+  different words. Transcribe both, unchanged. On the later one, set
+  \`restates\` to the position (1 for the first bullet of that entry) of the
+  earlier bullet it repeats; otherwise set it to 0. Only for the same fact —
+  the same piece of work, the same claim — not for two bullets that merely
+  share a technology or a verb. The person decides what to do about it.
 
 Extraction from PDFs is lossy. If a line looks garbled, transcribe your best
 reading of it rather than dropping it — the user reviews and corrects every
 field before anything is saved.`;
 
-/** Model-facing shape: no IDs, since we mint those ourselves. */
-const rawBulletSchema = z.object({ text: z.string() });
+/**
+ * Model-facing shape: no IDs, since we mint those ourselves.
+ *
+ * `restates` is the 1-based position of an earlier bullet in the same entry
+ * that this one repeats, or 0. Positions rather than IDs because the model
+ * never sees an ID here; checked before use, because the model can point
+ * anywhere.
+ */
+const rawBulletSchema = z.object({ text: z.string(), restates: z.number().int().default(0) });
 
 const rawSchema = z.object({
   basics: z
@@ -138,8 +152,8 @@ const bulletArray = {
   items: {
     type: 'object',
     additionalProperties: false,
-    required: ['text'],
-    properties: { text: { type: 'string' } },
+    required: ['text', 'restates'],
+    properties: { text: { type: 'string' }, restates: { type: 'integer' } },
   },
 } as const;
 
@@ -255,6 +269,49 @@ export interface IngestResult {
   /** Fields the model left blank that usually should not be. Surfaced in the
    * confirmation form so the user knows where to look. */
   warnings: string[];
+  /** Bullets the model read as the same fact said twice. Shown for the person
+   * to settle; the profile above still holds both. */
+  duplicates: DuplicateBullets[];
+}
+
+/**
+ * The pairs the model flagged, as bullet IDs in the profile `rawToProfile`
+ * made from the same response.
+ *
+ * Only a flag that points at an earlier, non-blank bullet of the same entry
+ * counts. Positions are the model's, counted before blank bullets are dropped,
+ * so they are mapped through what survived rather than used as indexes.
+ */
+export function duplicatesIn(raw: z.infer<typeof rawSchema>, profile: Profile): DuplicateBullets[] {
+  const found: DuplicateBullets[] = [];
+  const scan = (
+    rawEntries: Array<{ bullets: Array<{ text: string; restates: number }> }>,
+    entries: Array<{ id: string; bullets: Array<{ id: string }> }>,
+    nameOf: (i: number) => string,
+  ) => {
+    rawEntries.forEach((rawEntry, i) => {
+      const entry = entries[i];
+      if (!entry) return;
+      // Raw position (0-based) -> minted id, for the bullets that were kept.
+      const idAt = new Map<number, string>();
+      let kept = 0;
+      rawEntry.bullets.forEach((b, j) => {
+        if (b.text.trim()) idAt.set(j, entry.bullets[kept++]!.id);
+      });
+      rawEntry.bullets.forEach((b, j) => {
+        const target = b.restates - 1;
+        const self = idAt.get(j);
+        const earlier = idAt.get(target);
+        if (!self || !earlier || target < 0 || target >= j) return;
+        found.push({ entryId: entry.id, entryName: nameOf(i), bulletIds: [earlier, self] });
+      });
+    });
+  };
+
+  scan(raw.work, profile.work, (i) => profile.work[i]!.name || profile.work[i]!.position);
+  scan(raw.projects, profile.projects, (i) => profile.projects[i]!.name);
+  scan(raw.education, profile.education, (i) => profile.education[i]!.institution);
+  return found;
 }
 
 export async function ingestResume(
@@ -268,7 +325,6 @@ export async function ingestResume(
       system: INGEST_SYSTEM_PROMPT,
       user: `Convert this resume into the JSON structure.\n\n---\n${text}\n---`,
       jsonSchema: { name: 'resume_profile', schema: INGEST_JSON_SCHEMA },
-      maxTokens: 16000,
       signal: opts.signal,
       onToken: opts.onToken,
     },
@@ -281,13 +337,13 @@ export async function ingestResume(
       `The model returned a structure we could not read (${structured.issues[0]?.message ?? 'unknown'}). Try again, or paste the text manually.`,
     );
   }
-  return { profile: structured.profile, warnings: structured.warnings };
+  return { profile: structured.profile, warnings: structured.warnings, duplicates: structured.duplicates };
 }
 
 /**
  * A structured resume — JSON in the shape of `INGEST_JSON_SCHEMA`, from a
  * model or from an agent — as a profile, with the same warnings an import
- * shows.
+ * shows and the bullets it flagged as one fact said twice.
  *
  * Separate from `ingestResume` so the structuring can happen anywhere: an
  * agent following `INGEST_SYSTEM_PROMPT` in its own session produces the same
@@ -297,7 +353,7 @@ export function structuredToProfile(
   json: unknown,
   label: string,
 ):
-  | { ok: true; profile: Profile; warnings: string[] }
+  | { ok: true; profile: Profile; warnings: string[]; duplicates: DuplicateBullets[] }
   | { ok: false; issues: Array<{ path: PropertyKey[]; message: string }> } {
   const parsed = rawSchema.safeParse(json);
   if (!parsed.success) return { ok: false, issues: parsed.error.issues };
@@ -316,5 +372,5 @@ export function structuredToProfile(
     if (!w.startDate && !w.endDate) warnings.push(`No dates found for "${w.position || w.name}".`);
   }
 
-  return { ok: true, profile, warnings };
+  return { ok: true, profile, warnings, duplicates: duplicatesIn(parsed.data, profile) };
 }

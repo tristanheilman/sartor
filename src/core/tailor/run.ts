@@ -124,7 +124,6 @@ export async function runTailor(
       system: TAILOR_SYSTEM_PROMPT,
       user: buildTailorUserPrompt(profile, jd, constraints),
       jsonSchema: { name: 'tailor_plan', schema: TAILOR_PLAN_JSON_SCHEMA },
-      maxTokens: 16000,
       signal: opts.signal,
       onToken: opts.onToken,
     },

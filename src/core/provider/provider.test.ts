@@ -239,6 +239,35 @@ describe('anthropic provider', () => {
     ).rejects.toMatchObject({ kind: 'auth' });
   });
 
+  it('gives a long response room when the caller sets no cap', async () => {
+    // A tailoring plan for a full profile is about 7,000 tokens of JSON, and
+    // thinking shares the same cap. At 16,000 one call in three or four was
+    // cut off mid-string and reported as invalid JSON.
+    stubFetch(() => sseResponse(ANTHROPIC_SSE));
+    await anthropicProvider.complete({ system: 's', user: 'u' }, { apiKey: 'sk-ant-test', model: 'claude-opus-5' });
+    expect(captured[0]!.body.max_tokens).toBe(64000);
+  });
+
+  it('says a response was cut off, rather than that it was not JSON', async () => {
+    const truncated = [
+      ...ANTHROPIC_SSE.slice(0, 3),
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({
+        type: 'message_delta',
+        delta: { stop_reason: 'max_tokens', stop_sequence: null },
+        usage: { output_tokens: 64000 },
+      })}\n\n`,
+      `event: message_stop\ndata: ${JSON.stringify({ type: 'message_stop' })}\n\n`,
+    ];
+    stubFetch(() => sseResponse(truncated));
+    await expect(
+      anthropicProvider.complete(
+        { system: 's', user: 'u', jsonSchema: { name: 'x', schema: {} } },
+        { apiKey: 'sk-ant-test', model: 'claude-opus-5' },
+      ),
+    ).rejects.toThrow(/cut off/i);
+  });
+
   it('surfaces a refusal as an error rather than an empty resume', async () => {
     const refusal = [
       ANTHROPIC_SSE[0]!,

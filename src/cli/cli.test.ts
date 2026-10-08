@@ -252,6 +252,28 @@ describe('structuring a resume', () => {
     expect(JSON.parse(readFileSync(join(cwd, 'profile.json'), 'utf8')).work[0].bullets[0].text).toBe('Shipped the billing service.');
   });
 
+  it('reports bullets the structuring flagged as said twice, with both wordings', async () => {
+    const repeated = {
+      ...structured,
+      work: [{
+        ...structured.work[0],
+        bullets: [
+          { text: 'Shipped the billing service.', restates: 0 },
+          { text: 'Built and shipped the billing service to production.', restates: 1 },
+        ],
+      }],
+    };
+    writeFileSync(join(cwd, 'structured.json'), JSON.stringify(repeated));
+    const r = await sartor(['ingest', 'apply', 'structured.json', '--out', 'profile.json']);
+    expect(r.code).toBe(0);
+    expect(r.json.data.repeats).toEqual([
+      expect.objectContaining({ entry: 'Acme', texts: ['Shipped the billing service.', 'Built and shipped the billing service to production.'] }),
+    ]);
+    expect(r.json.warnings.join(' ')).toMatch(/same fact said twice/);
+    // Both stay until the person decides.
+    expect(JSON.parse(readFileSync(join(cwd, 'profile.json'), 'utf8')).work[0].bullets).toHaveLength(2);
+  });
+
   it('says which field is wrong', async () => {
     writeFileSync(join(cwd, 'structured.json'), JSON.stringify({ ...structured, work: 'Acme' }));
     const r = await sartor(['ingest', 'apply', 'structured.json']);

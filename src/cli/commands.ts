@@ -11,6 +11,7 @@ import { buildChanges, buildDocument, blockingChanges, type Change, type TailorR
 import { validatePlan, runTailor } from '../core/tailor/run';
 import { fitToTarget } from '../core/tailor/fit';
 import { INGEST_JSON_SCHEMA, INGEST_SYSTEM_PROMPT, ingestResume, structuredToProfile } from '../core/parse/ingest';
+import type { DuplicateBullets } from '../core/parse/duplicates';
 import { buildCoverage } from '../core/tailor/coverage';
 import { documentToSlices } from '../core/render/model';
 import { parseSafetyChecks } from '../core/render/parseSafety';
@@ -158,6 +159,24 @@ function profileStats(profile: z.infer<typeof profileSchema>) {
   };
 }
 
+/**
+ * Bullets the structuring flagged as one fact said twice, with both wordings,
+ * so the person can choose which to keep. Left alone, tailoring can pick
+ * both — or the weaker one.
+ */
+function repeatsIn(profile: z.infer<typeof profileSchema>, pairs: DuplicateBullets[]) {
+  const text = new Map(
+    [...profile.work, ...profile.projects, ...profile.education].flatMap((e) => e.bullets.map((b) => [b.id, b.text] as const)),
+  );
+  return pairs.map((p) => ({ entry: p.entryName, bulletIds: p.bulletIds, texts: p.bulletIds.map((id) => text.get(id) ?? '') }));
+}
+
+function repeatWarning(repeats: ReturnType<typeof repeatsIn>): string[] {
+  return repeats.length
+    ? [`${repeats.length} pair(s) of bullets look like the same fact said twice (data.repeats). Show the person both wordings and ask which to keep; both stay in the profile until they decide.`]
+    : [];
+}
+
 export async function ingestApplyCommand(ctx: Ctx): Promise<Result> {
   const path = requirePositional(ctx, 0, 'the structured resume', 'sartor ingest apply <structured.json|-> --out profile.json');
   const out = str(ctx.flags.out) ?? 'profile.json';
@@ -174,11 +193,13 @@ export async function ingestApplyCommand(ctx: Ctx): Promise<Result> {
   }
   await writeOut(ctx.io, out, `${JSON.stringify(result.profile, null, 2)}\n`);
   const stats = profileStats(result.profile);
+  const repeats = repeatsIn(result.profile, result.duplicates);
   return {
-    data: { written: out, profile: stats },
+    data: { written: out, profile: stats, repeats },
     text: `Wrote ${out}: ${stats.name || '(no name)'} — ${stats.roles} roles, ${stats.projects} projects, ${stats.bullets} bullets.`,
     warnings: [
       ...result.warnings,
+      ...repeatWarning(repeats),
       'Nothing about a parsed profile is guaranteed correct: read it against the original resume before tailoring from it.',
     ],
     next: [`sartor tailor prompt --profile ${q(out)} --posting posting.txt --pages 1`],
@@ -194,10 +215,11 @@ export async function ingestRunCommand(ctx: Ctx): Promise<Result> {
   const result = await callProvider(() => ingestResume(text, getProvider(id), cfg, { label: str(ctx.flags.label) ?? basename(path, extname(path)) }));
   await writeOut(ctx.io, out, `${JSON.stringify(result.profile, null, 2)}\n`);
   const stats = profileStats(result.profile);
+  const repeats = repeatsIn(result.profile, result.duplicates);
   return {
-    data: { written: out, profile: stats, model: cfg.model },
+    data: { written: out, profile: stats, repeats, model: cfg.model },
     text: `Wrote ${out}: ${stats.name || '(no name)'} — ${stats.roles} roles, ${stats.projects} projects, ${stats.bullets} bullets.`,
-    warnings: [...result.warnings, 'Read the profile against the original resume before tailoring from it.'],
+    warnings: [...result.warnings, ...repeatWarning(repeats), 'Read the profile against the original resume before tailoring from it.'],
     next: [`sartor tailor run --profile ${q(out)} --posting posting.txt --pages 1`],
   };
 }
