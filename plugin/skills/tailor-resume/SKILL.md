@@ -29,12 +29,12 @@ The product's promise to the person is: **nothing invented, nothing silently rew
 1. **Get the task.** Write it to a file and read that — it is long:
 
    ```bash
-   sartor tailor prompt --profile profile.json --posting posting.txt --pages 1 --json > tailor-prompt.json
+   sartor tailor prompt --profile profile.json --posting posting.txt --pages 1 --out tailor-prompt.json
    ```
 
-   The envelope's `data` has `task`, `instructions`, `input` (the profile and posting) and `schema`.
+   The file has `task`, `instructions`, `input` (the profile and posting) and `schema`. Use `--out` rather than a shell redirect: a redirect is not covered by the skill's permission to run `sartor`.
 
-2. **Write the plan** to `plan.json`: JSON matching `data.schema` exactly, following `data.instructions`. In particular:
+2. **Write the plan** to `plan.json`: JSON matching the file's `schema` exactly, following its `instructions`. In particular:
    - Select and order only. Every `bulletId` and entry `id` must come from the profile.
    - Include **more than fits** — about twice what the page holds, ranked best first within each entry, and projects ranked by how well they answer the posting. The fit pass trims from the end of your order, so ranking is what decides what survives.
    - List in `requested` any project the posting explicitly asks for (it wants published libraries, and this is one). Never set `include: false` on those.

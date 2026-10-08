@@ -54,9 +54,9 @@ export const COMMANDS: Command[] = [
   {
     name: 'ingest prompt',
     summary: 'Instructions and schema for structuring a resume (agent workflow)',
-    usage: 'sartor ingest prompt <resume.pdf|docx|txt>',
-    help: 'Prints the instructions, the resume text and the JSON Schema for turning a resume into a structured profile. Do what `task` says: write JSON matching `schema`, transcribing literally, then run `sartor ingest apply` on it.',
-    options: {},
+    usage: 'sartor ingest prompt <resume.pdf|docx|txt> [--out prompt.json]',
+    help: 'Prints the instructions, the resume text and the JSON Schema for turning a resume into a structured profile — or writes them to a file with --out, which needs no shell redirect. Do what `task` says: write JSON matching `schema`, transcribing literally, then run `sartor ingest apply` on it.',
+    options: { ...outOpt },
     run: cmd.ingestPromptCommand,
   },
   {
@@ -78,9 +78,9 @@ export const COMMANDS: Command[] = [
   {
     name: 'tailor prompt',
     summary: 'Instructions and schema for a tailoring plan (agent workflow)',
-    usage: 'sartor tailor prompt --profile profile.json --posting posting.txt [--pages 1|2] [--tone plain|impact|technical] [--seniority text]',
-    help: 'Prints the instructions, the profile and posting, and the JSON Schema for a tailoring plan. The plan selects and orders bullets the profile already has; it never introduces a name, number or technology the profile lacks. Write it as JSON matching `schema`, then run `sartor tailor apply`.',
-    options: { ...profileOpt, ...postingOpt, ...pagesOpt, ...toneOpt },
+    usage: 'sartor tailor prompt --profile profile.json --posting posting.txt [--pages 1|2] [--tone plain|impact|technical] [--seniority text] [--out prompt.json]',
+    help: 'Prints the instructions, the profile and posting, and the JSON Schema for a tailoring plan — or writes them to a file with --out, which needs no shell redirect. The plan selects and orders bullets the profile already has; it never introduces a name, number or technology the profile lacks. Write it as JSON matching `schema`, then run `sartor tailor apply`.',
+    options: { ...profileOpt, ...postingOpt, ...pagesOpt, ...toneOpt, ...outOpt },
     run: cmd.tailorPromptCommand,
   },
   {
@@ -165,9 +165,10 @@ Commands:
 ${COMMANDS.map((c) => `  ${c.name.padEnd(width)}  ${c.summary}`).join('\n')}
 
 Agent workflow (no API key; the calling agent writes the JSON):
-  sartor ingest prompt resume.pdf             → write structured.json
+  sartor ingest prompt resume.pdf --out ingest-prompt.json
+                                              → write structured.json
   sartor ingest apply structured.json --out profile.json
-  sartor tailor prompt --profile profile.json --posting posting.txt --pages 1
+  sartor tailor prompt --profile profile.json --posting posting.txt --pages 1 --out tailor-prompt.json
                                               → write plan.json
   sartor tailor apply --profile profile.json --posting posting.txt --plan plan.json --out run.json
   sartor review run.json                      → show the changes; --reject any that are wrong

@@ -55,13 +55,15 @@ Branch on `error.code`, not on the message.
 
 Any file argument may be `-` to read stdin.
 
+Write a prompt to a file with `--out`, never with a shell redirect (`> file`). The prompt file holds the payload itself — `task`, `instructions`, `input`, `schema` — and stdout reports where it went. A redirect makes the command more than a `sartor` call, so a `Bash(sartor *)` permission does not cover it and the agent is asked to approve it.
+
 | Command | What it does |
 |---|---|
 | `sartor extract <resume>` | Text from a PDF, DOCX or text resume. `--out` writes it to a file. |
-| `sartor ingest prompt <resume>` | Instructions, resume text and schema for structuring a resume. |
+| `sartor ingest prompt <resume> [--out]` | Instructions, resume text and schema for structuring a resume. `--out` writes them to a file. |
 | `sartor ingest apply <structured.json>` | Validates a structured resume and writes `--out profile.json`. |
 | `sartor ingest run <resume>` | Structures a resume with a provider API key. |
-| `sartor tailor prompt --profile --posting [--pages] [--tone] [--seniority]` | Instructions, input and schema for a tailoring plan. |
+| `sartor tailor prompt --profile --posting [--pages] [--tone] [--seniority] [--out]` | Instructions, input and schema for a tailoring plan. `--out` writes them to a file. |
 | `sartor tailor apply --profile --posting --plan [--pages] [--template] [--out run.json]` | Validates the plan, fits it to the page, checks it, writes a run file. |
 | `sartor tailor run --profile --posting [--pages] [--template] [--provider] [--model]` | The same, making the model call with a provider API key. |
 | `sartor review <run.json> [--accept] [--reject] [--acknowledge] [--accept-rest] [--detailed]` | Lists changes by number; records decisions in the run file. |

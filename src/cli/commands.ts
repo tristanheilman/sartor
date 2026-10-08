@@ -129,6 +129,31 @@ export async function extractCommand(ctx: Ctx): Promise<Result> {
   };
 }
 
+/**
+ * A prompt for the calling agent, printed or — with `--out` — written to a
+ * file.
+ *
+ * The file is the payload itself, not an envelope around it. It exists so an
+ * agent can save a long prompt without a shell redirect: to a tool permission,
+ * `sartor ... > file` is more than a sartor command, so a skill's
+ * `Bash(sartor *)` grant did not cover it and Claude Code stopped to ask.
+ */
+async function promptResult(
+  ctx: Ctx,
+  payload: { task: string; instructions: string; input: string; schema: unknown },
+  text: string,
+  next: string[],
+): Promise<Result> {
+  const out = str(ctx.flags.out);
+  if (!out) return { data: payload, text, next };
+  await writeOut(ctx.io, out, `${JSON.stringify(payload, null, 2)}\n`);
+  return {
+    data: { written: out, contains: ['task', 'instructions', 'input', 'schema'] },
+    text: `Wrote the prompt to ${out}. Read it, write the JSON it asks for, then run the next command.`,
+    next,
+  };
+}
+
 export async function ingestPromptCommand(ctx: Ctx): Promise<Result> {
   const path = requirePositional(ctx, 0, 'the resume file', 'sartor ingest prompt <resume.pdf|docx|txt>');
   const { text } = await extract(ctx.io, path);
@@ -136,16 +161,17 @@ export async function ingestPromptCommand(ctx: Ctx): Promise<Result> {
     throw new CliError('empty_resume', `No text came out of ${path}.`, 'If it is a scan, export it again from the program that made it, or paste the text into a .txt file.');
   }
   const input = `Convert this resume into the JSON structure.\n\n---\n${text}\n---`;
-  return {
-    data: {
+  return promptResult(
+    ctx,
+    {
       task: 'Structure the resume below into JSON that matches `schema` exactly, following `instructions`. Write only the JSON to a file, then run the `next` command on it.',
       instructions: INGEST_SYSTEM_PROMPT,
       input,
       schema: INGEST_JSON_SCHEMA,
     },
-    text: `# Instructions\n\n${INGEST_SYSTEM_PROMPT}\n\n# Input\n\n${input}\n\n# Output\n\nJSON matching \`sartor schema structured-resume\`.`,
-    next: ['sartor ingest apply structured.json --out profile.json'],
-  };
+    `# Instructions\n\n${INGEST_SYSTEM_PROMPT}\n\n# Input\n\n${input}\n\n# Output\n\nJSON matching \`sartor schema structured-resume\`.`,
+    ['sartor ingest apply structured.json --out profile.json'],
+  );
 }
 
 function profileStats(profile: z.infer<typeof profileSchema>) {
@@ -243,16 +269,17 @@ export async function tailorPromptCommand(ctx: Ctx): Promise<Result> {
   const input = buildTailorUserPrompt(profile, jd, constraints);
   const p = q(str(ctx.flags.profile)!);
   const j = q(str(ctx.flags.posting)!);
-  return {
-    data: {
+  return promptResult(
+    ctx,
+    {
       task: 'Produce a tailoring plan for the posting below, following `instructions`, as JSON matching `schema` exactly. Write only the JSON to a file, then run the `next` command on it. The plan selects and orders; it never invents.',
       instructions: TAILOR_SYSTEM_PROMPT,
       input,
       schema: TAILOR_PLAN_JSON_SCHEMA,
     },
-    text: `# Instructions\n\n${TAILOR_SYSTEM_PROMPT}\n\n# Input\n\n${input}\n\n# Output\n\nJSON matching \`sartor schema plan\`.`,
-    next: [`sartor tailor apply --profile ${p} --posting ${j} --plan plan.json --pages ${constraints.pageTarget} --out run.json`],
-  };
+    `# Instructions\n\n${TAILOR_SYSTEM_PROMPT}\n\n# Input\n\n${input}\n\n# Output\n\nJSON matching \`sartor schema plan\`.`,
+    [`sartor tailor apply --profile ${p} --posting ${j} --plan plan.json --pages ${constraints.pageTarget} --out run.json`],
+  );
 }
 
 /** The shared tail of `tailor apply` and `tailor run`: the run file, and what it says. */

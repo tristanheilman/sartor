@@ -17,15 +17,15 @@ If `sartor --version` fails, the CLI is not installed. It is not on npm yet; ins
 
 ## Steps
 
-1. **Get the task**, written to a file because it carries the whole resume:
+1. **Get the task**, written to a file because it carries the whole resume, then read that file:
 
    ```bash
-   sartor ingest prompt resume.pdf --json > ingest-prompt.json
+   sartor ingest prompt resume.pdf --out ingest-prompt.json
    ```
 
-   `data` has `task`, `instructions`, `input` (the resume text) and `schema`. If it fails with `extract_failed`, the file may be a scan with no text; ask the person for a PDF exported from their editor, or a `.txt` copy.
+   The file has `task`, `instructions`, `input` (the resume text) and `schema`. Use `--out` rather than a shell redirect: a redirect is not covered by the skill's permission to run `sartor`. If it fails with `extract_failed`, the file may be a scan with no text; ask the person for a PDF exported from their editor, or a `.txt` copy.
 
-2. **Write `structured.json`**: JSON matching `data.schema` exactly, following `data.instructions`:
+2. **Write `structured.json`**: JSON matching the file's `schema` exactly, following its `instructions`:
    - Copy text as literally as you can. Fix only extraction damage, such as a word split across a line.
    - One accomplishment per bullet. Never merge, improve, shorten or summarise a bullet.
    - Never infer a date, number or name the resume does not state. Leave the field `""` instead.
