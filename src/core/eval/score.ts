@@ -2,6 +2,7 @@ import type { Profile } from '../schema';
 import type { TailorPlan } from '../tailor/plan';
 import { validatePlan } from '../tailor/run';
 import { fitToTarget } from '../tailor/fit';
+import { isOngoing, toMonths } from '../dates';
 import { getTemplate } from '../render/templates';
 import { buildChanges, buildDocument } from '../tailor/apply';
 import { checkText, profileLexicon } from '../tailor/guard';
@@ -206,6 +207,30 @@ export function scorePlan(testCase: EvalCase, rawPlan: TailorPlan): EvalResult {
     doc.sections.flatMap((s) => s.entries ?? []).map((e) => e.sourceId),
   );
   const keptEntries = testCase.mustKeepEntries.filter((id) => renderedEntries.has(id));
+
+  // --- Gate: work history reads newest first ------------------------------
+  // Checked against the profile's own dates rather than the code that sorts,
+  // so the gate cannot agree with a bug by sharing it.
+  {
+    const roles = doc.sections
+      .filter((sec) => sec.key === 'work')
+      .flatMap((sec) => sec.entries ?? [])
+      .map((e) => profile.work.find((w) => w.id === e.sourceId)!)
+      .filter(Boolean);
+    const ends = roles.map((w) => (isOngoing(w.endDate) ? Infinity : (toMonths(w.endDate) ?? null)));
+    const outOfOrder = roles.filter((w, i) => {
+      const prev = ends[i - 1];
+      const here = ends[i];
+      return i > 0 && prev != null && here != null && here > prev;
+    });
+    gates.push({
+      name: 'work-newest-first',
+      passed: outOfOrder.length === 0,
+      detail: outOfOrder.length
+        ? `printed above a more recent role: ${outOfOrder.map((w) => w.name).join(', ')}`
+        : `${roles[0]?.name ?? 'no roles'} first`,
+    });
+  }
 
   // --- Gate: the entries a human said must be there are there -------------
   // Only for cases that name some. A posting that asks for published

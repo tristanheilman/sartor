@@ -1,4 +1,5 @@
-import type { Profile, Bullet, SectionKey } from '../schema';
+import type { Profile, Bullet, SectionKey, Work } from '../schema';
+import { isOngoing, toMonths } from '../dates';
 import { SECTION_KEYS } from '../schema';
 import { ids } from '../ids';
 import type { TailorPlan, PlannedBullet } from './plan';
@@ -263,6 +264,21 @@ function formatDateRange(start: string, end: string): string {
  * Resolves profile + plan + review decisions into the final document.
  * Rejected changes simply fall back to the master-profile original.
  */
+/**
+ * Newest role first: by when it ended, a role still running above all of them,
+ * then by when it began. A role with no readable dates at all goes last.
+ */
+function byRecency(a: Work, b: Work): number {
+  const undated = (w: Work) => !w.startDate.trim() && !w.endDate.trim();
+  if (undated(a) || undated(b)) return Number(undated(a)) - Number(undated(b));
+
+  const end = (w: Work) => (isOngoing(w.endDate) ? Infinity : (toMonths(w.endDate) ?? -Infinity));
+  const start = (w: Work) => toMonths(w.startDate) ?? -Infinity;
+  if (end(a) !== end(b)) return end(b) > end(a) ? 1 : -1;
+  if (start(a) !== start(b)) return start(b) > start(a) ? 1 : -1;
+  return 0;
+}
+
 export function buildDocument(profile: Profile, plan: TailorPlan, changes: Change[]): ResumeDocument {
   const accepted = acceptedIndex(changes);
   const isAccepted = (kind: ChangeKind, sourceId: string) => accepted.has(changeId(kind, sourceId));
@@ -303,6 +319,12 @@ export function buildDocument(profile: Profile, plan: TailorPlan, changes: Chang
         return !isAccepted('entry-drop', s.id);
       })
       .sort((a, b) => (orderOf.get(a.id) ?? 999) - (orderOf.get(b.id) ?? 999))
+      // Roles print newest first whatever the plan ranked first. Relevance is
+      // the right order for projects and the wrong one for a career: a run
+      // ranked Wridz above Formedics and printed the older job on top, so the
+      // reader found the current role second. Stable, so roles whose dates
+      // cannot be read keep the plan's order among themselves.
+      .sort((a, b) => (section === 'work' ? byRecency(a as Work, b as Work) : 0))
       .map((s) => {
         const p = planned.find((x) => x.id === s.id);
         const bulletOrder = new Map((p?.bullets ?? []).map((b) => [b.bulletId, b.order]));

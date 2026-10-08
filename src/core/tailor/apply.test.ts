@@ -303,3 +303,60 @@ describe('writeBackVariants', () => {
     expect(writeBackVariants(profile, runWith([]))).toBe(profile);
   });
 });
+
+describe('the order roles print in', () => {
+  /**
+   * Work history reads newest first, whatever the plan ranked first.
+   *
+   * The tailoring prompt asks the model to order entries by relevance, which is
+   * right for projects and wrong for jobs: one run ranked Wridz (05/2022 -
+   * 09/2025) above Formedics (10/2025 - Present), and the resume printed the
+   * older job on top. A reader scanning for the current role finds it second
+   * and wonders what happened.
+   */
+  const career: Profile = profileSchema.parse({
+    ...profile,
+    work: [
+      { id: 'wrk_now', name: 'Formedics', position: 'Native App Developer', startDate: '10/2025', endDate: 'Present', bullets: [{ id: 'n1', text: 'Own the release cycle.' }] },
+      { id: 'wrk_mid', name: 'Wridz LLC', position: 'Lead Mobile App Developer', startDate: '05/2022', endDate: '09/2025', bullets: [{ id: 'm1', text: 'Supported 20k+ users.' }] },
+      { id: 'wrk_old', name: 'CIMx Software', position: 'Junior Software Developer', startDate: '01/2019', endDate: '06/2020', bullets: [{ id: 'o1', text: 'Improved test coverage by 30%.' }] },
+    ],
+    projects: [
+      { id: 'prj_a', name: 'older-project', startDate: '2019', bullets: [{ id: 'pa', text: 'Built a thing.' }] },
+      { id: 'prj_b', name: 'newer-project', startDate: '2025', bullets: [{ id: 'pb', text: 'Built another thing.' }] },
+    ],
+  });
+
+  const ranked = (work: string[], projects: string[]) =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: career.work.map((w) => ({
+        id: w.id, include: true, order: work.indexOf(w.id),
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      projects: career.projects.map((p) => ({
+        id: p.id, include: true, order: projects.indexOf(p.id),
+        bullets: p.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+    });
+
+  const order = (plan: TailorPlan, key: 'work' | 'projects') =>
+    buildDocument(career, plan, buildChanges(career, plan))
+      .sections.find((s) => s.key === key)!
+      .entries!.map((e) => e.sourceId);
+
+  it('prints the current role first even when the plan ranks an older one higher', () => {
+    const plan = ranked(['wrk_mid', 'wrk_now', 'wrk_old'], ['prj_a', 'prj_b']);
+    expect(order(plan, 'work')).toEqual(['wrk_now', 'wrk_mid', 'wrk_old']);
+  });
+
+  it('prints the oldest role last whatever the ranking', () => {
+    const plan = ranked(['wrk_old', 'wrk_mid', 'wrk_now'], ['prj_a', 'prj_b']);
+    expect(order(plan, 'work')).toEqual(['wrk_now', 'wrk_mid', 'wrk_old']);
+  });
+
+  it('leaves projects in the order the plan ranked them', () => {
+    const plan = ranked(['wrk_now', 'wrk_mid', 'wrk_old'], ['prj_a', 'prj_b']);
+    expect(order(plan, 'projects')).toEqual(['prj_a', 'prj_b']);
+  });
+});
