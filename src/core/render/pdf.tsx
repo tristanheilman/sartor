@@ -141,7 +141,7 @@ type Styles = ReturnType<typeof makeStyles>;
  * here alters the look of a page that does not break — and `estimateHeight`
  * measures the same document it did.
  */
-function sectionBlocks(section: DocSection, s: Styles, t: Template) {
+function sectionBlocks(section: DocSection, s: Styles, t: Template, last: boolean) {
   const heading = (
     <Text style={s.heading}>{t.uppercaseHeadings ? section.heading.toUpperCase() : section.heading}</Text>
   );
@@ -241,6 +241,12 @@ function sectionBlocks(section: DocSection, s: Styles, t: Template) {
 
   blocks[blocks.length - 1]!.gap += t.sectionGap;
 
+  // Nothing follows the last block, so the space below it is never seen — but
+  // @react-pdf counts it when deciding whether the block fits. On Classic that
+  // was twenty-one points at the foot of every page: more than a line, held
+  // for a gap before nothing.
+  if (last) blocks[blocks.length - 1]!.gap = 0;
+
   return blocks.map((b) => (
     <View key={`${section.key}:${b.key}`} wrap={false} style={b.gap ? { marginBottom: b.gap } : undefined}>
       {b.body}
@@ -268,7 +274,9 @@ export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId
           ) : null}
         </View>
 
-        {doc.sections.flatMap((section) => sectionBlocks(section, s, t))}
+        {doc.sections.flatMap((section, i) =>
+          sectionBlocks(section, s, t, i === doc.sections.length - 1),
+        )}
       </Page>
     </Document>
   );

@@ -181,6 +181,9 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
   // Leading, the gap beneath, and where there is a rule its padding and width.
   const headingHeight = line + 4 + (t.headingRule ? 2 + 0.75 : 0);
 
+  // The gaps charged to the last block so far, so they can be taken back off
+  // the document's final one.
+  let trailing = 0;
   for (const s of doc.sections) {
     const first = blocks.length;
     // The heading travels with whatever follows it, so it is charged to the
@@ -229,13 +232,19 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
         // The title keeps its first bullet with it.
         blocks.push(title + (bullets[0] ?? 0), ...bullets.slice(1));
         blocks[blocks.length - 1]! += t.entryGap;
+        trailing = t.entryGap;
       });
     } else {
       blocks.push(lead);
     }
 
     blocks[blocks.length - 1]! += t.sectionGap;
+    trailing = (s.kind === 'entries' && s.entries?.length ? trailing : 0) + t.sectionGap;
   }
+
+  // The renderer drops the space below the very last block — nothing follows
+  // it — so it is not charged either.
+  if (doc.sections.length) blocks[blocks.length - 1]! -= trailing;
 
   // Laid out a page at a time. A block that does not fit in what is left of a
   // page goes whole to the next, and the space it leaves behind is spent: on a
