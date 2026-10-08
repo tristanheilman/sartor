@@ -1,4 +1,4 @@
-import { widthOf, wrappedLines } from './metrics';
+import { wrappedLines, wrappedRunLines } from './metrics';
 import type { SectionKey } from '../schema';
 import type { ResumeSlice } from '../tailor/coverage';
 
@@ -136,11 +136,18 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
   const body = t.bodyFont ?? 'Helvetica';
   const heading = t.headingFont ?? 'Helvetica-Bold';
 
-  const wrapped = (text: string, font = body, size = t.baseSize) =>
-    wrappedLines(text, font, size, column);
+  // Widths a little inside what the renderer has, so a paragraph near a break
+  // is counted a line long rather than a line short. Rendering every built-in
+  // template and matching this line breaker to what came out put the
+  // renderer's effective width between 9.6 and 15.1pt inside the column for a
+  // bullet (the marker, its gutter, the row's padding), and no more than 9.8pt
+  // inside it for full-width text. These sit inside every template's figure.
+  // Short is the expensive side to be wrong on: it is a second page.
+  const textColumn = column - 12;
+  const bulletColumn = column - 16;
 
-  // The bullet glyph and its gutter are not available to the text.
-  const bulletColumn = column - 10;
+  const wrapped = (text: string, font = body, size = t.baseSize) =>
+    wrappedLines(text, font, size, textColumn);
 
   // Name, headline, contact. The name renders at 1.9x body size with its own
   // leading; the contact line wraps like anything else.
@@ -155,7 +162,7 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
   // last bullet of a full page an overflow.
   if (doc.contact.details.length) {
     height +=
-      wrappedLines(doc.contact.details.join(' · '), body, t.baseSize * 0.95, column) * line +
+      wrappedLines(doc.contact.details.join(' · '), body, t.baseSize * 0.95, textColumn) * line +
       t.sectionGap;
   }
 
@@ -179,20 +186,14 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
     // whole groups to buy back space the layout was wasting.
     const groups = s.skills ?? [];
     if (groups.length) {
-      const text = groups.map((g) => `${g.name}: ${g.keywords.join(', ')}`).join('   ·   ');
-      // The bold labels are wider than the same characters in the body font, so
-      // the paragraph is wider than measuring it wholly in body font suggests.
-      // That extra belongs to the *width*, not to the column — subtracting it
-      // from the column narrowed the line by every label at once and inflated
-      // the count, which is how restoring a third group appeared to *free*
-      // space.
-      const boldExtra = groups.reduce(
-        (n, g) =>
-          n + widthOf(`${g.name}: `, heading, t.baseSize) - widthOf(`${g.name}: `, body, t.baseSize),
-        0,
-      );
-      const total = widthOf(text, body, t.baseSize) + boldExtra;
-      height += Math.max(1, Math.ceil(total / column)) * line + 2;
+      // Set as the renderer sets it: bold labels, the keywords, and a spaced
+      // separator between groups, broken as one paragraph.
+      const runs = groups.flatMap((g, i) => [
+        ...(i > 0 ? [{ text: '   ·   ', font: body }] : []),
+        { text: `${g.name}: `, font: heading },
+        { text: g.keywords.join(', '), font: body },
+      ]);
+      height += wrappedRunLines(runs, t.baseSize, textColumn) * line + 2;
     }
 
     for (const e of s.entries ?? []) {

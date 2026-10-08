@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { getTemplate, TEMPLATES } from './templates';
 import { estimateHeight, linesPerPage, pageHeight } from './model';
+import { wrappedLines } from './metrics';
 import { renderPdfBlob } from './pdf';
+import * as pdfjs from 'pdfjs-dist';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { beforeAll } from 'vitest';
 import { parseSafetyChecks } from './parseSafety';
 import type { ResumeDocument } from './model';
 
@@ -329,6 +334,90 @@ describe('the estimate breaks the page where the renderer does', () => {
       expect(estimateHeight(shaped(n - 1, endsWith), t), 'last fitting document').toBeLessThanOrEqual(page);
     });
   }
+});
+
+beforeAll(() => {
+  globalThis.DOMMatrix ??= class {} as unknown as typeof DOMMatrix;
+  pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
+    createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+  ).href;
+});
+
+describe('lines counted the way the renderer sets them', () => {
+  /**
+   * The renderer lets spaces shrink by a third of their width and chooses line
+   * breaks across a whole paragraph. Counted the simple way — break when the
+   * next word does not fit at natural spacing — a long bullet on a real
+   * one-page resume counted three lines and printed two. One line of phantom
+   * height per long bullet is how the fill pass came to leave a band of empty
+   * page at the foot of a resume it called full.
+   */
+  const pagesFor = async (bullets: string[], templateId: string) => {
+    const doc: ResumeDocument = {
+      contact: { name: 'A', label: '', details: [] },
+      sections: [
+        {
+          key: 'work', heading: 'Work', kind: 'entries',
+          entries: [{
+            sourceId: 'e', primary: 'Developer', secondary: '', meta: '', aside: '', summary: '',
+            bullets: [...bullets, 'end'].map((text, i) => ({ sourceId: `b${i}`, text })),
+          }],
+        },
+      ],
+    };
+    const blob = await renderPdfBlob(doc, templateId);
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), verbosity: 0 }).promise;
+    const markers: Array<{ page: number; y: number }> = [];
+    for (let n = 1; n <= pdf.numPages; n++) {
+      for (const item of (await (await pdf.getPage(n)).getTextContent()).items) {
+        if ('str' in item && item.str.trim().startsWith('•')) markers.push({ page: n, y: 792 - (item.transform[5] as number) });
+      }
+    }
+    return markers;
+  };
+
+  /** Lines each bullet printed on, from the distance to the next marker. */
+  const printedLines = async (bullets: string[], templateId: string) => {
+    const t = getTemplate(templateId);
+    const markers = await pagesFor(bullets, templateId);
+    return bullets.map((_, i) => {
+      const a = markers[i];
+      const b = markers[i + 1];
+      if (!a || !b || a.page !== b.page) return null;
+      return Math.round((b.y - a.y - t.bulletGap) / (t.baseSize * t.lineHeight));
+    });
+  };
+
+  const bulletColumn = (templateId: string) => 612 - getTemplate(templateId).pageMargin * 2 - 16;
+
+  it('counts a long bullet the two lines it prints on, not three', async () => {
+    const long =
+      'Users pattern now and remains records while built the app sites read sites sites shipped cycle truth of knowledge pattern of shipped while service app operated mobile owned remains remains service and integration making shipped.';
+    const [printed] = await printedLines([long], 'classic');
+
+    expect(printed).toBe(2);
+    expect(wrappedLines(long, 'Helvetica', 10, bulletColumn('classic'))).toBe(2);
+  });
+
+  // Words of resume length in a fixed pseudo-random order, so the lengths
+  // land at many different places relative to a line end.
+  const words = 'built shipped the integration making source of truth while service remains read layer for app data pattern is now being adopted across owned and operated sites mobile release cycle team knowledge backend authentication migration production users records'.split(' ');
+  let seed = 11;
+  const next = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const sample = Array.from({ length: 40 }, () => {
+    const text = Array.from({ length: 8 + Math.floor(next() * 40) }, () => words[Math.floor(next() * words.length)]).join(' ');
+    return `${text[0]!.toUpperCase()}${text.slice(1)}.`;
+  });
+
+  it.each(TEMPLATES.map((t) => t.id))('never counts a bullet a line short on %s', async (id) => {
+    const t = getTemplate(id);
+    const printed = await printedLines(sample, id);
+    const short = sample.filter((text, i) => {
+      const p = printed[i];
+      return p != null && wrappedLines(text, t.bodyFont, t.baseSize, bulletColumn(id)) < p;
+    });
+    expect(short).toEqual([]);
+  });
 });
 
 describe('the template set', () => {

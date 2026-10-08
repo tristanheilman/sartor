@@ -63,9 +63,22 @@ describe('wrapping to a column', () => {
   });
 
   it('gets the count right at the boundary', () => {
-    const w = widthOf(SAMPLE, 'Helvetica', 10);
-    expect(wrappedLines(SAMPLE, 'Helvetica', 10, w + 1)).toBe(1);
-    expect(wrappedLines(SAMPLE, 'Helvetica', 10, w - 1)).toBe(2);
+    // The boundary is where the renderer puts it, not where the text stops
+    // fitting at natural spacing: spaces may shrink by up to a third of their
+    // width before a line has to break. This test used to require a break 1pt
+    // inside natural width, which is the error that left a band of empty page
+    // under a one-page resume.
+    //
+    // Ending on a long word makes one line the renderer's clear choice — the
+    // alternative leaves the first line far too loose — so the case does not
+    // depend on how the paragraph-wide break choice weighs a close call.
+    const text = 'Shipped the release to both stores and owned it end to end internationalisation';
+    const w = widthOf(text, 'Helvetica', 10);
+    const give = ((text.split(' ').length - 1) * widthOf(' ', 'Helvetica', 10)) / 3;
+
+    expect(wrappedLines(text, 'Helvetica', 10, w + 1)).toBe(1);
+    expect(wrappedLines(text, 'Helvetica', 10, w - give / 2)).toBe(1);
+    expect(wrappedLines(text, 'Helvetica', 10, w - give - 1)).toBe(2);
   });
 
   it('gives a word longer than the column one line, not many', () => {
