@@ -60,6 +60,13 @@ export const tailorPlanSchema = z.object({
   skills: z.array(plannedSkillGroupSchema).default([]),
   /** Model's own note on what it could not satisfy from the profile. */
   notes: z.string().default(''),
+  /**
+   * Project IDs the posting explicitly asks for — it wants published
+   * libraries, and this is one. The fit pass keeps these on the page rather
+   * than trimming them as the cheapest thing there. Empty in plans recorded
+   * before the field existed, which then fall back to ranking by vocabulary.
+   */
+  requested: z.array(z.string()).default([]),
 });
 export type TailorPlan = z.infer<typeof tailorPlanSchema>;
 
@@ -84,7 +91,7 @@ export function identityPlan(): TailorPlan {
 export const TAILOR_PLAN_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['summary', 'sectionOrder', 'work', 'projects', 'education', 'skills', 'notes'],
+  required: ['summary', 'sectionOrder', 'work', 'projects', 'education', 'skills', 'notes', 'requested'],
   properties: {
     summary: {
       type: 'object',
@@ -119,6 +126,12 @@ export const TAILOR_PLAN_JSON_SCHEMA = {
           },
         },
       },
+    },
+    requested: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'IDs of projects the posting explicitly asks for: it names that kind of work (for example published open-source libraries) and the project is an instance of it. Not projects that merely share a technology with the posting.',
     },
     notes: {
       type: 'string',

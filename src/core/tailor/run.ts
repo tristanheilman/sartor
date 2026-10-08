@@ -65,6 +65,9 @@ export function validatePlan(
         dropped.push(`Skill group "${s.id}" is not in your profile.`);
         return false;
       }),
+      // Only real projects. A role or an invented id here would make the fit
+      // protect something that is not a project, or nothing at all.
+      requested: [...new Set(plan.requested)].filter((id) => projectIds.has(id)),
     },
     dropped,
   };

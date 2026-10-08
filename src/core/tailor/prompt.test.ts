@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { profileSchema, type Profile } from '../schema';
 import { fromPaste } from '../jd/normalize';
-import { buildTailorUserPrompt, DEFAULT_CONSTRAINTS } from './prompt';
+import { buildTailorUserPrompt, DEFAULT_CONSTRAINTS, TAILOR_SYSTEM_PROMPT } from './prompt';
+import { TAILOR_PLAN_JSON_SCHEMA } from './plan';
 
 /**
  * The length budget, which decided nothing about half the document.
@@ -267,5 +268,47 @@ describe('what the summary is for', () => {
   it('is more relaxed about length on two pages', () => {
     const two = buildTailorUserPrompt(p(), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 2 });
     expect(two).not.toBe(onePage());
+  });
+});
+
+describe('selecting more than fits, on purpose', () => {
+  /**
+   * The model was told a one-page resume "fits roughly 6 in total", and it
+   * obeyed: seven bullets, with the two libraries the posting asked for ranked
+   * first and second and both set to include:false. The fit pass that runs
+   * afterwards can cut but cannot conjure — it only fills from what the model
+   * included, in the model's order — so a model that stops at the budget
+   * leaves the page short and the choice of what to cut made before anything
+   * was measured.
+   *
+   * Length is the fit's job. The model is asked to rank and over-select, and
+   * to name the projects the posting asks for so they survive the cut.
+   */
+  const full = profile(30, 6);
+  const p = (pageTarget: 1 | 2 = 1) => buildTailorUserPrompt(full, jd, { ...DEFAULT_CONSTRAINTS, pageTarget });
+
+  it('asks for about twice what fits', () => {
+    const fits = Number(p().match(/roughly (\d+)/)![1]);
+    const asked = Number(p().match(/include about (\d+)/i)![1]);
+    expect(asked).toBe(fits * 2);
+  });
+
+  it('says the trim happens afterwards, from the end of its ranking', () => {
+    expect(p()).toMatch(/trimmed to the page afterwards/i);
+    expect(p()).toMatch(/end of your order/i);
+  });
+
+  it('forbids excluding a project the posting asks for, and asks it to name them', () => {
+    expect(TAILOR_SYSTEM_PROMPT).toMatch(/never set include:false on a project the posting asks for/i);
+    expect(TAILOR_SYSTEM_PROMPT).toMatch(/"requested"/);
+    expect(TAILOR_PLAN_JSON_SCHEMA.required).toContain('requested');
+  });
+
+  it('asks for more on two pages than on one', () => {
+    // Enough that both targets overflow.
+    const big = profile(90, 6);
+    const asked = (t: 1 | 2) =>
+      Number(buildTailorUserPrompt(big, jd, { ...DEFAULT_CONSTRAINTS, pageTarget: t }).match(/include about (\d+)/i)![1]);
+    expect(asked(2)).toBeGreaterThan(asked(1));
   });
 });
