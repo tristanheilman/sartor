@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Document, Font, Page, Text, View, StyleSheet, pdf } from '@react-pdf/renderer';
 import type { ResumeDocument, DocSection } from './model';
 import { getTemplate, type Template, type TemplateRef } from './templates';
@@ -72,7 +73,6 @@ function makeStyles(t: Template) {
     // Contact details render as ordinary body text, inline, at the top of the
     // page — deliberately not in a PDF header, which extractors often skip.
     contact: { fontSize: t.baseSize * 0.95, color: '#333333', marginBottom: t.sectionGap },
-    section: { marginBottom: t.sectionGap },
     heading: {
       fontFamily: t.headingFont,
       fontSize: t.baseSize * 1.05,
@@ -82,7 +82,6 @@ function makeStyles(t: Template) {
       borderBottomWidth: t.headingRule ? 0.75 : 0,
       borderBottomColor: '#999999',
     },
-    entry: { marginBottom: t.entryGap },
     entryTopRow: { flexDirection: 'row', justifyContent: 'space-between' },
     entryPrimary: { fontFamily: t.headingFont, fontSize: t.baseSize * 1.02 },
     entryMeta: { fontSize: t.baseSize * 0.95, color: '#444444' },
@@ -102,90 +101,124 @@ function makeStyles(t: Template) {
   });
 }
 
-/**
- * Points of room a section heading needs beneath it before it will sit on a
- * page — about the two lines of an entry header.
- *
- * Was 48, and applied to the entry header as well, which compounded: the
- * heading demanded 48pt, then the header inside it demanded another 48. An
- * education entry has no bullets, so that space could never exist and the whole
- * section moved to a page of its own — eighty characters alone on page two,
- * while a quarter of page one sat empty.
- */
 /** Between skill groups when they run together on one line. */
 const SKILL_SEPARATOR = '   ·   ';
 
-const MIN_ROOM_AFTER_HEADING = 30;
-
-/**
- * Room an entry header needs before it will sit on a page.
- *
- * One line: enough that a job title is not the last thing on a page with its
- * first bullet overleaf. Only asked for when there is a bullet to follow —
- * demanding space after an entry that has nothing after it is how education
- * ended up on its own page.
- */
-const MIN_ROOM_AFTER_ENTRY_HEADER = 18;
-
 type Styles = ReturnType<typeof makeStyles>;
 
-function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
-  if (section.kind === 'summary') return <Text>{section.summary}</Text>;
+/**
+ * Where a page may break, and where it may not.
+ *
+ * The page is a flat run of blocks, each of which @react-pdf may move to the
+ * next page but never split:
+ *
+ *   - a section heading, with whatever follows it — the summary, the skills,
+ *     the first list item, or the first entry's title and first bullet;
+ *   - an entry's title rows, with its first bullet;
+ *   - every other bullet, marker and text together.
+ *
+ * It was a section containing entries containing bullets, with `minPresence
+ * Ahead` to keep headings off the foot of a page. Three things went wrong with
+ * that, all of them @react-pdf's behaviour rather than ours:
+ *
+ *   - A bullet's marker and its text were split independently. The one-line
+ *     marker fitted, the text was moved whole by @react-pdf's orphan rule, and
+ *     a page ended on "•" with the bullet's words overleaf.
+ *   - `minPresenceAhead` is only honoured on an element with an earlier
+ *     sibling in its own container, and a heading is always the first child
+ *     of its section. Neither guard ever ran, and a role's title sat at the
+ *     foot of a page with every bullet under it on the next.
+ *   - An element whose content fits but whose bottom margin does not is moved
+ *     whole. A role with eleven bullets went to page two over less than a
+ *     point of margin, leaving half of page one empty and a two-page target
+ *     at three pages.
+ *
+ * Blocks make the first two impossible by construction, and shrink the third
+ * to one block — a bullet or a title, never a whole role or section.
+ *
+ * The spacing is unchanged. An entry's and a section's bottom margins move
+ * onto their last block, where they sum exactly as they did before, so nothing
+ * here alters the look of a page that does not break — and `estimateHeight`
+ * measures the same document it did.
+ */
+function sectionBlocks(section: DocSection, s: Styles, t: Template, last: boolean) {
+  const heading = (
+    <Text style={s.heading}>{t.uppercaseHeadings ? section.heading.toUpperCase() : section.heading}</Text>
+  );
 
-  if (section.kind === 'skills') {
+  // Each block, and how much space it leaves below itself.
+  const blocks: Array<{ key: string; gap: number; body: ReactNode }> = [];
+
+  if (section.kind === 'summary') {
+    blocks.push({ key: 'summary', gap: 0, body: <>{heading}<Text>{section.summary}</Text></> });
+  } else if (section.kind === 'skills') {
     const groups = section.skills ?? [];
-    return (
-      // One flowing paragraph, not a line per group.
-      //
-      // A group per line wastes whatever is left of the last line of each. On a
-      // real resume "Languages & Frameworks" wrapped so that "NodeJS, CSS" sat
-      // alone on a line, and "Tools & DevOps" ended a third of the way across —
-      // two thirds of two lines, gone. Worse, the trim was dropping whole
-      // groups to buy back space the layout was wasting, so a posting asking
-      // for Docker, GCP, Jest, Detox and Appium got a resume that had cut the
-      // sections naming them.
-      //
-      // Flowed, the text fills every line it starts, and the labels stay bold
-      // so the section is still scannable rather than a wall of nouns.
-      <Text style={s.skillRow}>
-        {groups.map((g, i) => (
-          <Text key={g.sourceId}>
-            {i > 0 ? <Text style={s.skillSeparator}>{SKILL_SEPARATOR}</Text> : null}
-            <Text style={s.skillName}>{g.name}: </Text>
-            {g.keywords.join(', ')}
-          </Text>
-        ))}
-      </Text>
-    );
-  }
+    blocks.push({
+      key: 'skills',
+      gap: 0,
+      body: (
+        <>
+          {heading}
+          {/* One flowing paragraph, not a line per group.
 
-  if (section.kind === 'list') {
-    return (
-      <>
-        {section.items?.map((i) => (
-          <Text key={i.sourceId} style={s.listItem}>
-            {i.text}
-          </Text>
-        ))}
-      </>
-    );
-  }
+              A group per line wastes whatever is left of the last line of
+              each. On a real resume "Languages & Frameworks" wrapped so that
+              "NodeJS, CSS" sat alone on a line, and "Tools & DevOps" ended a
+              third of the way across — two thirds of two lines, gone. Worse,
+              the trim was dropping whole groups to buy back space the layout
+              was wasting, so a posting asking for Docker, GCP, Jest, Detox
+              and Appium got a resume that had cut the sections naming them.
 
-  return (
-    <>
-      {section.entries?.map((e) => (
-        // Not `wrap={false}`. A role with fifteen bullets cannot fit in a
-        // part-used page, so refusing to split moved the entire entry to the
-        // next one — stranding the section heading above a third of a page of
-        // white space. Entries may break; the header rows below may not.
-        <View key={e.sourceId} style={s.entry}>
-          {/* Job title, employer and dates stay together, and take a bullet
-              with them — a role heading alone at the foot of a page reads as
-              though the job had nothing in it. */}
-          <View
-            wrap={false}
-            minPresenceAhead={e.bullets.length ? MIN_ROOM_AFTER_ENTRY_HEADER : 0}
-          >
+              Flowed, the text fills every line it starts, and the labels stay
+              bold so the section is still scannable rather than a wall of
+              nouns. */}
+          <Text style={s.skillRow}>
+            {groups.map((g, i) => (
+              <Text key={g.sourceId}>
+                {i > 0 ? <Text style={s.skillSeparator}>{SKILL_SEPARATOR}</Text> : null}
+                <Text style={s.skillName}>{g.name}: </Text>
+                {g.keywords.join(', ')}
+              </Text>
+            ))}
+          </Text>
+        </>
+      ),
+    });
+  } else if (section.kind === 'list') {
+    const items = section.items ?? [];
+    if (!items.length) blocks.push({ key: 'heading', gap: 0, body: heading });
+    items.forEach((i, n) =>
+      blocks.push({
+        key: i.sourceId,
+        gap: 0,
+        body: (
+          <>
+            {n === 0 ? heading : null}
+            <Text style={s.listItem}>{i.text}</Text>
+          </>
+        ),
+      }),
+    );
+  } else {
+    const entries = section.entries ?? [];
+    if (!entries.length) blocks.push({ key: 'heading', gap: 0, body: heading });
+    entries.forEach((e, n) => {
+      const bullet = (b: (typeof e.bullets)[number]) => (
+        <View style={s.bulletRow}>
+          <Text style={s.bulletGlyph}>•</Text>
+          <Text style={s.bulletText}>{b.text}</Text>
+        </View>
+      );
+      const [first, ...rest] = e.bullets;
+
+      // Title, employer and dates, with the first bullet: a role heading
+      // alone at the foot of a page reads as though the job had nothing in it.
+      blocks.push({
+        key: e.sourceId,
+        gap: 0,
+        body: (
+          <>
+            {n === 0 ? heading : null}
             <View style={s.entryTopRow}>
               <Text style={s.entryPrimary}>{e.primary}</Text>
               {e.meta ? <Text style={s.entryMeta}>{e.meta}</Text> : null}
@@ -196,18 +229,29 @@ function SectionBody({ section, s }: { section: DocSection; s: Styles }) {
                 {e.aside ? <Text style={s.entryMeta}>{e.aside}</Text> : null}
               </View>
             ) : null}
-          </View>
-          {e.summary ? <Text style={s.entrySummary}>{e.summary}</Text> : null}
-          {e.bullets.map((b) => (
-            <View key={b.sourceId} style={s.bulletRow}>
-              <Text style={s.bulletGlyph}>•</Text>
-              <Text style={s.bulletText}>{b.text}</Text>
-            </View>
-          ))}
-        </View>
-      ))}
-    </>
-  );
+            {e.summary ? <Text style={s.entrySummary}>{e.summary}</Text> : null}
+            {first ? bullet(first) : null}
+          </>
+        ),
+      });
+      for (const b of rest) blocks.push({ key: b.sourceId, gap: 0, body: bullet(b) });
+      blocks[blocks.length - 1]!.gap += t.entryGap;
+    });
+  }
+
+  blocks[blocks.length - 1]!.gap += t.sectionGap;
+
+  // Nothing follows the last block, so the space below it is never seen — but
+  // @react-pdf counts it when deciding whether the block fits. On Classic that
+  // was twenty-one points at the foot of every page: more than a line, held
+  // for a gap before nothing.
+  if (last) blocks[blocks.length - 1]!.gap = 0;
+
+  return blocks.map((b) => (
+    <View key={`${section.key}:${b.key}`} wrap={false} style={b.gap ? { marginBottom: b.gap } : undefined}>
+      {b.body}
+    </View>
+  ));
 }
 
 export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId: TemplateRef }) {
@@ -230,16 +274,9 @@ export function ResumePdf({ doc, templateId }: { doc: ResumeDocument; templateId
           ) : null}
         </View>
 
-        {doc.sections.map((section) => (
-          <View key={section.key} style={s.section}>
-            {/* A heading with nothing under it is worse than a heading on the
-                next page, so require room for something to follow it. */}
-            <Text style={s.heading} minPresenceAhead={MIN_ROOM_AFTER_HEADING}>
-              {t.uppercaseHeadings ? section.heading.toUpperCase() : section.heading}
-            </Text>
-            <SectionBody section={section} s={s} />
-          </View>
-        ))}
+        {doc.sections.flatMap((section, i) =>
+          sectionBlocks(section, s, t, i === doc.sections.length - 1),
+        )}
       </Page>
     </Document>
   );
