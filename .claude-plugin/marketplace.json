@@ -1,0 +1,14 @@
+{
+  "name": "sartor",
+  "description": "Sartor's Claude Code plugin.",
+  "owner": {
+    "name": "Tristan Heilman"
+  },
+  "plugins": [
+    {
+      "name": "sartor",
+      "source": "./plugin",
+      "description": "Tailor a resume to a job posting without inventing anything."
+    }
+  ]
+}

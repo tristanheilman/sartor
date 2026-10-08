@@ -209,6 +209,54 @@ anything reachable by deep import into `dist/` is not.
 
 ---
 
+## Using it from an agent
+
+The same pipeline is a command-line tool, `sartor`, built for an agent to drive:
+one JSON envelope per command on stdout, a stable error code and a hint on every
+failure, distinct exit codes, and nothing that ever prompts. It is not on npm
+yet; from a clone, `npm run build:lib && npm link` puts it on your PATH.
+
+The steps that need a language model can run two ways:
+
+- **The agent does them.** `tailor prompt` prints the instructions, the profile
+  and posting, and the plan's JSON Schema; the agent writes the plan; `tailor
+  apply` takes it from there. No API key — an agent in Claude Code reasons on the
+  person's own Claude subscription, and sartor never touches it.
+- **Your own key.** `tailor run` makes the call itself, with a key from
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY`.
+
+```sh
+sartor ingest prompt resume.pdf          # agent writes structured.json
+sartor ingest apply structured.json --out profile.json
+sartor tailor prompt --profile profile.json --posting posting.txt --pages 1
+                                          # agent writes plan.json
+sartor tailor apply --profile profile.json --posting posting.txt --plan plan.json --out run.json
+sartor review run.json --reject 4         # the person decides every change
+sartor render run.json --format pdf --out resume.pdf
+```
+
+Either way the plan meets the checks the app applies: anything that does not
+point at the profile is dropped, the page is fitted with the renderer's own
+measurements, and every generated line is checked for names and numbers the
+profile does not contain. `render` will not write a resume while such a line is
+accepted; the person can reject it, or vouch for it.
+
+### Claude Code plugin
+
+`plugin/` holds two skills built on the CLI — `import-resume` and
+`tailor-resume` — written to the open [Agent Skills](https://agentskills.io/specification)
+format so other agents can load them too. To install them in Claude Code:
+
+```sh
+claude plugin marketplace add tristanheilman/sartor
+claude plugin install sartor@sartor
+```
+
+Every command, flag, output field and exit code is in
+[the CLI reference](plugin/skills/tailor-resume/references/cli.md).
+
+---
+
 ## Status
 
 Working end to end: profile management, resume import, tailoring, the

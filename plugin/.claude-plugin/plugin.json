@@ -1,0 +1,12 @@
+{
+  "name": "sartor",
+  "description": "Tailor a resume to a job posting without inventing anything: skills that drive the sartor CLI, where the agent chooses and orders the person's own bullets and the CLI fits, checks and renders them.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Tristan Heilman"
+  },
+  "homepage": "https://github.com/tristanheilman/sartor",
+  "repository": "https://github.com/tristanheilman/sartor",
+  "license": "MIT",
+  "keywords": ["resume", "job-search", "tailoring"]
+}
