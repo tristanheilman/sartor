@@ -1,6 +1,7 @@
 {
-  "intent": "A role whose bullets are genuinely marginal for the posting, which is where the selector stops being deterministic. Ardent Systems is a 2019-2020 co-op with three QA and web bullets, none of which matter much to a React Native posting \u2014 so whether it survives is a judgement call, and across five recordings of the same profile and posting the model made it differently: the role was kept twice and dropped three times. Nothing in the prompt says a job has value as employment history independent of its bullets, so there is no tie-break and the dice decide. platform-stretch cannot show this, because its second employer has obviously relevant work and every recording keeps it.",
+  "intent": "A role whose bullets are genuinely marginal for the posting, which is where the selector stops being deterministic. Ardent Systems is a 2019-2020 co-op with three QA and web bullets, none of which matter much to a React Native posting — so whether it survives is a judgement call, and across five recordings of the same profile and posting the model made it differently: the role was kept twice and dropped three times. Nothing in the prompt says a job has value as employment history independent of its bullets, so there is no tie-break and the dice decide. platform-stretch cannot show this, because its second employer has obviously relevant work and every recording keeps it.",
   "pageTarget": 1,
+  "fit": true,
   "mustInclude": [
     "blt_90233d035d12793e",
     "blt_fab954c9b7163fa6",

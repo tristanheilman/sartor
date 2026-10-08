@@ -61,6 +61,30 @@ const keepAll = (): TailorPlan =>
     skills: profile.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
   });
 
+/**
+ * The shared profile without its projects, and a posting its role bullets are
+ * on topic for. The fill puts back bullets a plan left unmentioned only when
+ * the posting is about them; the projects share the roles' text, so with a
+ * posting in play they would be reinstated and crowd out what a test is about.
+ */
+const rolesOnly: Profile = profileSchema.parse({ ...profile, projects: [] });
+const ON_TOPIC = 'We want someone who owned a specific, checkable piece of work that took real effort to do.';
+
+/** One bullet a role, the rest left unmentioned — room for the fill to work with. */
+const firstBulletOnly = (p: Profile): TailorPlan =>
+  tailorPlanSchema.parse({
+    summary: { text: '', rationale: '' },
+    work: p.work.map((w, i) => ({
+      id: w.id, include: true, order: i,
+      bullets: w.bullets.slice(0, 1).map((b) => ({ bulletId: b.id, include: true, order: 0 })),
+    })),
+    projects: p.projects.map((pr, i) => ({
+      id: pr.id, include: false, order: i,
+      bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
+    })),
+    skills: p.skills.map((sk, i) => ({ id: sk.id, include: true, order: i, keywords: sk.keywords })),
+  });
+
 const CLASSIC_METRICS = {
   baseSize: 10, lineHeight: 1.4, pageMargin: 42,
   sectionGap: 12, entryGap: 9, bulletGap: 3, headingRule: true,
@@ -532,12 +556,13 @@ describe('a second bullet on every role before a skill group comes back', () => 
     ],
   });
 
-  // One bullet a role, and the two groups the posting names left out.
+  // Every bullet included, so the trim cuts and the fill puts back; the two
+  // groups the posting names left out.
   const plan = tailorPlanSchema.parse({
     summary: { text: '', rationale: '' },
     work: p.work.map((w, i) => ({
       id: w.id, include: true, order: i,
-      bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j === 0, order: j })),
+      bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
     })),
     skills: p.skills.map((g, i) => ({ id: g.id, include: i < 2, order: i, keywords: g.keywords })),
   });
@@ -659,7 +684,7 @@ describe('recent roles before old ones, and before a project’s second line', (
   it('never gives an old role a second bullet before every recent role has two', () => {
     const wrong = sweep.filter((words) => {
       const p = at(words);
-      const c = counts(fitToTarget(p, planFor(p, 1), 1, undefined, jd).plan);
+      const c = counts(fitToTarget(p, planFor(p, 99), 1, undefined, jd).plan);
       return c.w_old! >= 2 && (c.w_now! < 2 || c.w_mid! < 2);
     });
     expect(wrong).toEqual([]);
@@ -670,7 +695,7 @@ describe('recent roles before old ones, and before a project’s second line', (
     // Wridz's three-line one; Wridz must still get its second line there.
     const wrong = sweep.filter((words) => {
       const p = at(words);
-      const c = counts(fitToTarget(p, planFor(p, 1), 1, undefined, jd).plan);
+      const c = counts(fitToTarget(p, planFor(p, 99), 1, undefined, jd).plan);
       return c.w_mid! < 2 && (c.w_old! >= 2 || c.prj_lib! >= 2);
     });
     expect(wrong).toEqual([]);
@@ -683,6 +708,74 @@ describe('recent roles before old ones, and before a project’s second line', (
       return (c.w_now! < 2 || c.w_mid! < 2) && (c.prj_lib! >= 2 || c.w_old! >= 2);
     });
     expect(wrong).toEqual([]);
+  });
+});
+
+describe('what the fill may put back', () => {
+  /**
+   * The fill switched bullets back on wherever the page had room, including
+   * ones the plan had set include:false. On a backend posting that printed
+   * "Organised the office coffee rota and ran the summer intern social
+   * programme" — a line the model had excluded as irrelevant, and the eval's
+   * own example of padding.
+   *
+   * include:false is the model's judgement and the fill respects it. What it
+   * may put back: bullets the plan included that the trim had to cut, and
+   * then bullets the plan never mentioned that the posting is about.
+   */
+  const p: Profile = profileSchema.parse({
+    id: 'prf_fill', createdAt: 'now', updatedAt: 'now',
+    basics: { name: 'Riley Okafor', summary: 'Backend engineer.' },
+    work: [{
+      id: 'w1', name: 'Harbor Freight Systems', position: 'Senior Backend Engineer', startDate: '2020', endDate: 'Present',
+      bullets: [
+        { id: 'b_ledger', text: 'Rebuilt the shipment ledger in Go on PostgreSQL.' },
+        { id: 'b_coffee', text: 'Organised the office coffee rota and ran the summer intern social programme.' },
+        { id: 'b_kafka', text: 'Moved shipment events onto Kafka, with PostgreSQL as the system of record.' },
+        { id: 'b_offtopic', text: 'Hosted the quarterly board games evening for the whole floor.' },
+      ],
+    }],
+  });
+  const jd = 'Senior Backend Engineer. Go, PostgreSQL, Kafka, shipment systems.';
+  const on = (pl: TailorPlan, id: string) => pl.work[0]!.bullets.find((b) => b.bulletId === id)!.include;
+
+  it('never puts back a bullet the plan set include:false', () => {
+    const plan = tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: [{ id: 'w1', include: true, order: 0, bullets: [
+        { bulletId: 'b_ledger', include: true, order: 0 },
+        { bulletId: 'b_coffee', include: false, order: 1 },
+        { bulletId: 'b_kafka', include: false, order: 2 },
+        { bulletId: 'b_offtopic', include: false, order: 3 },
+      ] }],
+    });
+    const { plan: fitted, added } = fitToTarget(p, plan, 1, undefined, jd);
+
+    expect(added).toEqual([]);
+    expect(on(fitted, 'b_coffee')).toBe(false);
+    expect(on(fitted, 'b_kafka')).toBe(false);
+  });
+
+  it('puts back a bullet the plan did not mention when the posting is about it', () => {
+    const plan = tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: [{ id: 'w1', include: true, order: 0, bullets: [{ bulletId: 'b_ledger', include: true, order: 0 }] }],
+    });
+    const { plan: fitted, added } = fitToTarget(p, plan, 1, undefined, jd);
+
+    expect(added).toContain('b_kafka');
+    expect(on(fitted, 'b_kafka')).toBe(true);
+    // Unmentioned and off topic: left out.
+    expect(on(fitted, 'b_offtopic')).toBe(false);
+    expect(on(fitted, 'b_coffee')).toBe(false);
+  });
+
+  it('puts back nothing unmentioned without a posting to judge it against', () => {
+    const plan = tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: [{ id: 'w1', include: true, order: 0, bullets: [{ bulletId: 'b_ledger', include: true, order: 0 }] }],
+    });
+    expect(fitToTarget(p, plan, 1).added).toEqual([]);
   });
 });
 
@@ -1025,59 +1118,47 @@ describe('filling the page rather than merely fitting it', () => {
    * bullets are switched on rather than off, they are the person's own, and the
    * review screen shows every one.
    */
-  const sparse = (): TailorPlan =>
-    tailorPlanSchema.parse({
-      summary: { text: '', rationale: '' },
-      work: profile.work.map((w, i) => ({
-        id: w.id,
-        include: true,
-        order: i,
-        // One bullet each, as an over-cautious plan returns.
-        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j === 0, order: j })),
-      })),
-      projects: profile.projects.map((p, i) => ({
-        id: p.id, include: false, order: i,
-        bullets: p.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
-      })),
-      skills: profile.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
-    });
+  // The plan names one bullet a role and is silent about the rest, which the
+  // posting is about: what the fill may put back. A bullet the plan set
+  // include:false is never put back — see 'what the fill may put back'.
+  const sparse = (): TailorPlan => firstBulletOnly(rolesOnly);
 
   const kept = (plan: TailorPlan) =>
     plan.work.filter((w) => w.include).reduce((n, w) => n + w.bullets.filter((b) => b.include).length, 0);
 
   it('adds bullets back when the page has room', () => {
     const before = kept(sparse());
-    const { plan, added } = fitToTarget(profile, sparse(), 1);
+    const { plan, added } = fitToTarget(rolesOnly, sparse(), 1, undefined, ON_TOPIC);
 
     expect(kept(plan)).toBeGreaterThan(before);
     expect(added.length).toBeGreaterThan(0);
   });
 
   it('still fits afterwards', () => {
-    expect(fitToTarget(profile, sparse(), 1).fits).toBe(true);
+    expect(fitToTarget(rolesOnly, sparse(), 1, undefined, ON_TOPIC).fits).toBe(true);
   });
 
   it('fills most of the page', () => {
-    const { plan } = fitToTarget(profile, sparse(), 1);
+    const { plan } = fitToTarget(rolesOnly, sparse(), 1, undefined, ON_TOPIC);
     const CLASSIC = {
       baseSize: 10, lineHeight: 1.4, pageMargin: 42,
       sectionGap: 12, entryGap: 9, bulletGap: 3, headingRule: true,
     };
-    const used = estimateHeight(buildDocument(profile, plan, buildChanges(profile, plan)), CLASSIC);
+    const used = estimateHeight(buildDocument(rolesOnly, plan, buildChanges(rolesOnly, plan)), CLASSIC);
     expect(used).toBeGreaterThan(pageHeight(CLASSIC) * 0.85);
   });
 
   it('spreads them rather than stacking one entry', () => {
     // Six bullets on the newest role and one on everything else is not a
     // fuller resume, it is a lopsided one.
-    const { plan } = fitToTarget(profile, sparse(), 1);
+    const { plan } = fitToTarget(rolesOnly, sparse(), 1, undefined, ON_TOPIC);
     const counts = plan.work.filter((w) => w.include).map((w) => w.bullets.filter((b) => b.include).length);
 
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(2);
   });
 
   it('takes the model’s next choice, not an arbitrary one', () => {
-    const { plan } = fitToTarget(profile, sparse(), 1);
+    const { plan } = fitToTarget(rolesOnly, sparse(), 1, undefined, ON_TOPIC);
     for (const w of plan.work) {
       const on = w.bullets.filter((b) => b.include).map((b) => b.order).sort((a, b) => a - b);
       // A contiguous run from the top of the model's ranking.
@@ -1173,22 +1254,10 @@ describe('giving every role enough to look like a job', () => {
    * ties broke toward whichever came first, so the newest role took a second
    * bullet while the oldest still had one.
    */
-  const sparse = (): TailorPlan =>
-    tailorPlanSchema.parse({
-      summary: { text: '', rationale: '' },
-      work: profile.work.map((w, i) => ({
-        id: w.id, include: true, order: i,
-        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j === 0, order: j })),
-      })),
-      projects: profile.projects.map((p, i) => ({
-        id: p.id, include: false, order: i,
-        bullets: p.bullets.map((b, j) => ({ bulletId: b.id, include: false, order: j })),
-      })),
-      skills: profile.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
-    });
+  const sparse = (): TailorPlan => firstBulletOnly(rolesOnly);
 
   it('brings every role to two before giving any a third', () => {
-    const { plan } = fitToTarget(profile, sparse(), 1);
+    const { plan } = fitToTarget(rolesOnly, sparse(), 1, undefined, ON_TOPIC);
     const counts = plan.work.filter((w) => w.include).map((w) => w.bullets.filter((b) => b.include).length);
 
     // Either everything reached two, or nothing got past two while one lagged.
@@ -1202,10 +1271,10 @@ describe('giving every role enough to look like a job', () => {
     // happened there. An exact spread cannot be required — a role whose next
     // bullet is three lines long may be passed over when only one line is left,
     // and that is the fill pass working, not failing.
-    const { plan } = fitToTarget(profile, sparse(), 1);
+    const { plan } = fitToTarget(rolesOnly, sparse(), 1, undefined, ON_TOPIC);
 
     for (const w of plan.work.filter((x) => x.include)) {
-      const available = profile.work.find((x) => x.id === w.id)!.bullets.length;
+      const available = rolesOnly.work.find((x) => x.id === w.id)!.bullets.length;
       const kept = w.bullets.filter((b) => b.include).length;
       expect(kept, w.id).toBeGreaterThanOrEqual(Math.min(2, available));
     }
@@ -1237,7 +1306,7 @@ describe('filling with what actually fits', () => {
           { id: 'n0', text: 'Owned the release cycle end to end.' },
           // Three lines, and first in the queue when this entry has fewest.
           { id: 'n1', text: 'A deliberately long line about the work that cannot fit into the small remaining space. '.repeat(6) },
-          { id: 'n2', text: 'Shipped it.' },
+          { id: 'n2', text: 'Released the update.' },
         ],
       },
       {
@@ -1260,20 +1329,24 @@ describe('filling with what actually fits', () => {
       summary: { text: '', rationale: '' },
       work: longAndShort.work.map((w, i) => ({
         id: w.id, include: true, order: i,
-        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j === 0, order: j })),
+        // The first bullet named, the rest left for the fill to find.
+        bullets: w.bullets.slice(0, 1).map((b) => ({ bulletId: b.id, include: true, order: 0 })),
       })),
       projects: [],
       skills: longAndShort.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
     });
 
+  // What the posting is about, so the unmentioned bullets are fair game.
+  const jd = 'Owns the release cycle and deployment; long involved work; released updates; refactored geolocation; integrated Stripe.';
+
   it('keeps going past a bullet that does not fit', () => {
-    const { added } = fitToTarget(longAndShort, seeded(), 1);
+    const { added } = fitToTarget(longAndShort, seeded(), 1, undefined, jd);
     // The long one is skipped; the short ones still get in.
     expect(added.length).toBeGreaterThan(1);
   });
 
   it('skips the one that would overflow rather than stopping', () => {
-    const { plan } = fitToTarget(longAndShort, seeded(), 1);
+    const { plan } = fitToTarget(longAndShort, seeded(), 1, undefined, jd);
     const on = (id: string) =>
       plan.work.flatMap((w) => w.bullets).find((b) => b.bulletId === id)!.include;
 
@@ -1282,7 +1355,7 @@ describe('filling with what actually fits', () => {
   });
 
   it('still does not overflow the page', () => {
-    expect(fitToTarget(longAndShort, seeded(), 1).fits).toBe(true);
+    expect(fitToTarget(longAndShort, seeded(), 1, undefined, jd).fits).toBe(true);
   });
 
   it('terminates when nothing left fits', () => {
