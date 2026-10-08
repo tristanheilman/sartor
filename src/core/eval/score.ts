@@ -1,6 +1,9 @@
 import type { Profile } from '../schema';
 import type { TailorPlan } from '../tailor/plan';
 import { validatePlan } from '../tailor/run';
+import { fitToTarget } from '../tailor/fit';
+import { isOngoing, toMonths } from '../dates';
+import { getTemplate } from '../render/templates';
 import { buildChanges, buildDocument } from '../tailor/apply';
 import { checkText, profileLexicon } from '../tailor/guard';
 import { buildCoverage } from '../tailor/coverage';
@@ -65,6 +68,27 @@ export interface EvalCase {
    * still be failing — see the assertion in `harness.test.ts`.
    */
   knownFailures: Record<string, string>;
+  /**
+   * The recordings are the model's own output, before the fit pass.
+   *
+   * Older cases recorded the plan after fitting, so replaying it measured the
+   * model and the trim as one thing and could not see a change to either. A
+   * case recorded raw replays through `fitToTarget` exactly as `runTailor`
+   * does, which is the only way to test a prompt that relies on the trim.
+   */
+  fit?: boolean;
+  /**
+   * Fraction of the page the rendered last line must reach. Turns on the
+   * rendered page check in the harness: exactly `pageTarget` pages, and no
+   * band of empty page at the foot of the last.
+   */
+  minFill?: number;
+  /**
+   * Entry id -> the fewest bullets it may print with. For a role a reader
+   * weighs — the current job, the one before it — one bullet reads as though
+   * nothing happened there.
+   */
+  minBullets?: Record<string, number>;
 }
 
 export interface Gate {
@@ -117,8 +141,12 @@ export function scorePlan(testCase: EvalCase, rawPlan: TailorPlan): EvalResult {
   const { profile, posting, pageTarget } = testCase;
 
   // Exactly the path the application takes. An eval that reimplements the
-  // pipeline is testing the reimplementation.
-  const plan = validatePlan(rawPlan, profile).plan;
+  // pipeline is testing the reimplementation. Classic, because that is what
+  // the harness renders.
+  const valid = validatePlan(rawPlan, profile).plan;
+  const plan = testCase.fit
+    ? fitToTarget(profile, valid, pageTarget, getTemplate('classic'), posting).plan
+    : valid;
   const changes = buildChanges(profile, plan);
   const doc = buildDocument(profile, plan, changes);
 
@@ -185,6 +213,57 @@ export function scorePlan(testCase: EvalCase, rawPlan: TailorPlan): EvalResult {
     doc.sections.flatMap((s) => s.entries ?? []).map((e) => e.sourceId),
   );
   const keptEntries = testCase.mustKeepEntries.filter((id) => renderedEntries.has(id));
+
+  // --- Gate: work history reads newest first ------------------------------
+  // Checked against the profile's own dates rather than the code that sorts,
+  // so the gate cannot agree with a bug by sharing it.
+  {
+    const roles = doc.sections
+      .filter((sec) => sec.key === 'work')
+      .flatMap((sec) => sec.entries ?? [])
+      .map((e) => profile.work.find((w) => w.id === e.sourceId)!)
+      .filter(Boolean);
+    const ends = roles.map((w) => (isOngoing(w.endDate) ? Infinity : (toMonths(w.endDate) ?? null)));
+    const outOfOrder = roles.filter((w, i) => {
+      const prev = ends[i - 1];
+      const here = ends[i];
+      return i > 0 && prev != null && here != null && here > prev;
+    });
+    gates.push({
+      name: 'work-newest-first',
+      passed: outOfOrder.length === 0,
+      detail: outOfOrder.length
+        ? `printed above a more recent role: ${outOfOrder.map((w) => w.name).join(', ')}`
+        : `${roles[0]?.name ?? 'no roles'} first`,
+    });
+  }
+
+  // --- Gate: the roles a reader weighs say enough -------------------------
+  if (testCase.minBullets && Object.keys(testCase.minBullets).length) {
+    const printed = new Map(
+      doc.sections.flatMap((sec) => sec.entries ?? []).map((e) => [e.sourceId, e.bullets.length]),
+    );
+    const thin = Object.entries(testCase.minBullets).filter(([id, n]) => (printed.get(id) ?? 0) < n);
+    gates.push({
+      name: 'enough-bullets',
+      passed: thin.length === 0,
+      detail: thin.length
+        ? thin.map(([id, n]) => `${id}: ${printed.get(id) ?? 0} of ${n}`).join(', ')
+        : 'every role named has enough to read',
+    });
+  }
+
+  // --- Gate: the entries a human said must be there are there -------------
+  // Only for cases that name some. A posting that asks for published
+  // libraries is not answered by a resume without them, however full it is.
+  if (testCase.mustKeepEntries.length) {
+    const missing = testCase.mustKeepEntries.filter((id) => !renderedEntries.has(id));
+    gates.push({
+      name: 'keeps-required-entries',
+      passed: missing.length === 0,
+      detail: missing.length ? `missing: ${missing.join(', ')}` : 'every required entry is on the page',
+    });
+  }
 
   const coverage = buildCoverage(posting, documentToSlices(doc), profile);
   const supportable = coverage.terms.filter((t) => t.emphasised && t.status !== 'missing');

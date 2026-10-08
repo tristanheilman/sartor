@@ -50,6 +50,13 @@ resume at all.
 When the page is tight, take bullets from the roles that have the most, and
 from the oldest roles first. Never buy space by removing an employer.
 
+PROJECTS THE POSTING ASKS FOR
+When the posting asks for a kind of work that a project in the profile is an
+instance of — it wants published open-source libraries, and the project is
+one — list that project's id in "requested", rank it near the top of the
+projects, and never set include:false on a project the posting asks for. Do
+not list a project only because it shares a technology with the posting.
+
 WHAT YOU MUST NEVER DO
 - Introduce a skill, technology, tool, employer, job title, date, credential,
   or metric that does not appear in the master profile. Not once, not softened,
@@ -215,7 +222,7 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
   const cap = projectCap(pageTarget);
   const pruneProjects =
     profile.projects.length > cap
-      ? ` Keep at most ${cap} projects — the ones this posting would care about — and set include:false on the rest; each project heading costs space whether or not it has bullets under it. Keep every role: an unexplained gap in a timeline costs more than a long resume.`
+      ? ` Keep at most ${cap} projects — the ones this posting would care about — and set include:false on the rest, except a project the posting asks for, which always stays; each project heading costs space whether or not it has bullets under it. Keep every role: an unexplained gap in a timeline costs more than a long resume.`
       : '';
 
   const inventory =
@@ -223,8 +230,19 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
       ? `${totalBullets} bullets across experience and projects (${roleBullets} in roles, ${projectBullets} in projects)`
       : `${totalBullets} experience bullets`;
 
+  // Twice what fits, on purpose, and said before the page's own figure so
+  // that is not the number the model anchors on. Told the page "fits roughly
+  // 6" first, a model kept seven bullets and set include:false on the two
+  // libraries the posting asked for while ranking them first and second.
+  // The fit pass that runs afterwards
+  // measures the real page and cuts from the end of the model's order, but it
+  // only fills from what was included — so a model that stops at the budget
+  // leaves the page short, and makes the hard cuts before anything is
+  // measured. The budget is a guess about the page; the trim is not.
+  const ask = budget * 2;
+
   return totalBullets > budget
-    ? `The profile has ${inventory} and the target is ${pageTarget} page(s), which fits roughly ${budget} in total. You will need to cut. Drop the bullets least relevant to this posting, taking them from the entries that have the most and from the oldest first; project bullets count against the same budget as role bullets.${pruneProjects} Say why in each rationale.`
+    ? `Include about ${ask} bullets across experience and projects — more than the page holds, on purpose. The plan is trimmed to the page afterwards, in code, always taking from the end of your order, so including too few leaves the page short and including too many costs nothing. The profile has ${inventory}; the ${pageTarget}-page target fits roughly ${budget}, so the page will need to cut some of what you include — that is the trim's job, not yours. So rank carefully: in each entry put the bullets that matter most for this posting first, and order the projects the same way. Roles always print newest first, whatever their order. Set include:false only on what is not relevant to this posting at all.${pruneProjects} Say why in each rationale.`
     : `The profile has ${inventory}, which fits within ${pageTarget} page(s) — roughly ${budget} fit alongside the summary, skills and headings. Include what is relevant; you do not need to cut aggressively.`;
 }
 

@@ -1,4 +1,4 @@
-import { widthOf, wrappedLines } from './metrics';
+import { wrappedLines, wrappedRunLines } from './metrics';
 import type { SectionKey } from '../schema';
 import type { ResumeSlice } from '../tailor/coverage';
 
@@ -136,26 +136,47 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
   const body = t.bodyFont ?? 'Helvetica';
   const heading = t.headingFont ?? 'Helvetica-Bold';
 
-  const wrapped = (text: string, font = body, size = t.baseSize) =>
-    wrappedLines(text, font, size, column);
+  // Widths a little inside what the renderer has, so a paragraph near a break
+  // is counted a line long rather than a line short. Rendering every built-in
+  // template and matching this line breaker to what came out put the
+  // renderer's effective width between 9.6 and 15.1pt inside the column for a
+  // bullet (the marker, its gutter, the row's padding), and no more than 9.8pt
+  // inside it for full-width text. These sit inside every template's figure.
+  // Short is the expensive side to be wrong on: it is a second page.
+  const textColumn = column - 12;
+  const bulletColumn = column - 16;
 
-  // The bullet glyph and its gutter are not available to the text.
-  const bulletColumn = column - 10;
+  const wrapped = (text: string, font = body, size = t.baseSize) =>
+    wrappedLines(text, font, size, textColumn);
 
   // Name, headline, contact. The name renders at 1.9x body size with its own
   // leading; the contact line wraps like anything else.
   const nameSize = t.baseSize * 1.9;
   let height = nameSize * 1.2 + 4;
   if (doc.contact.label) height += t.baseSize * 1.05 * 1.3 + 4;
+  // The page sets `lineHeight`, and @react-pdf resolves it to points before
+  // passing it down: every text that does not set its own gets the body's
+  // leading, whatever its size. So the contact line and the headings are
+  // charged `line`, not their own size times the ratio — which read half a
+  // point high per heading, enough on the tightest templates to call the
+  // last bullet of a full page an overflow.
   if (doc.contact.details.length) {
     height +=
-      wrappedLines(doc.contact.details.join(' · '), body, t.baseSize * 0.95, column) *
-      (t.baseSize * 0.95 * t.lineHeight);
+      wrappedLines(doc.contact.details.join(' · '), body, t.baseSize * 0.95, textColumn) * line +
+      t.sectionGap;
   }
 
+  // Each margin is charged where the renderer puts it: below the contact line,
+  // and below every section — the last one included. Charging a gap *above*
+  // each section instead came to the same total only when there was a contact
+  // line and the last margin did not matter, and it does: the renderer counts
+  // it when the document ends in something that cannot break, such as an
+  // education entry with nothing under it. On Roomy those sixteen points were
+  // the difference between one page and two: a resume the estimate put at 98%
+  // moved its education section onto a page of its own.
   for (const s of doc.sections) {
-    height += t.sectionGap;
-    height += t.baseSize * 1.05 * t.lineHeight + 4 + (t.headingRule ? 2 : 0);
+    // Leading, the gap beneath, and where there is a rule its padding and width.
+    height += line + 4 + (t.headingRule ? 2 + 0.75 : 0);
 
     if (s.summary) height += wrapped(s.summary) * line;
 
@@ -165,26 +186,24 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
     // whole groups to buy back space the layout was wasting.
     const groups = s.skills ?? [];
     if (groups.length) {
-      const text = groups.map((g) => `${g.name}: ${g.keywords.join(', ')}`).join('   ·   ');
-      // The bold labels are wider than the same characters in the body font, so
-      // the paragraph is wider than measuring it wholly in body font suggests.
-      // That extra belongs to the *width*, not to the column — subtracting it
-      // from the column narrowed the line by every label at once and inflated
-      // the count, which is how restoring a third group appeared to *free*
-      // space.
-      const boldExtra = groups.reduce(
-        (n, g) =>
-          n + widthOf(`${g.name}: `, heading, t.baseSize) - widthOf(`${g.name}: `, body, t.baseSize),
-        0,
-      );
-      const total = widthOf(text, body, t.baseSize) + boldExtra;
-      height += Math.max(1, Math.ceil(total / column)) * line + 2;
+      // Set as the renderer sets it: bold labels, the keywords, and a spaced
+      // separator between groups, broken as one paragraph.
+      const runs = groups.flatMap((g, i) => [
+        ...(i > 0 ? [{ text: '   ·   ', font: body }] : []),
+        { text: `${g.name}: `, font: heading },
+        { text: g.keywords.join(', '), font: body },
+      ]);
+      height += wrappedRunLines(runs, t.baseSize, textColumn) * line + 2;
     }
 
     for (const e of s.entries ?? []) {
       height += t.entryGap;
-      // Title and dates share a row; employer and location share the next.
-      height += line * 2 + 2;
+      // Title and dates share a row; employer and location share the next —
+      // when there is one. A project has neither, the renderer prints no row
+      // for it, and charging one anyway cost every project sixteen points the
+      // page never spent: three of them were most of two bullets the fill pass
+      // refused for want of room.
+      height += e.secondary || e.aside ? line * 2 + 2 : line;
       if (e.summary) height += wrapped(e.summary) * line + 2;
       for (const b of e.bullets) {
         height += wrappedLines(b.text, body, t.baseSize, bulletColumn) * line + t.bulletGap;
@@ -192,6 +211,8 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
     }
 
     for (const i of s.items ?? []) height += wrapped(i.text) * line + 2;
+
+    height += t.sectionGap;
   }
 
   return height;

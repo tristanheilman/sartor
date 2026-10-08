@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { getTemplate, TEMPLATES } from './templates';
-import { estimateHeight, linesPerPage } from './model';
+import { estimateHeight, linesPerPage, pageHeight } from './model';
+import { wrappedLines } from './metrics';
+import { renderPdfBlob } from './pdf';
+import * as pdfjs from 'pdfjs-dist';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { beforeAll } from 'vitest';
 import { parseSafetyChecks } from './parseSafety';
 import type { ResumeDocument } from './model';
 
@@ -133,10 +139,8 @@ describe('the estimate against the renderer', () => {
    * high. A resume the estimate called full measured 88% on the page, and the
    * fill pass refused bullets that had nearly three lines of room.
    *
-   * Measured against the real renderer on a document shaped like a full
-   * profile — five sections, five entries, a long summary — the page now breaks
-   * between ratio 0.998 and 1.042. That is the property worth holding: an
-   * estimate at or below 1.0 fits, and just above it does not.
+   * Where the page actually breaks is held against the renderer itself in
+   * the next block.
    */
   const classic = getTemplate('classic');
 
@@ -208,6 +212,211 @@ describe('the estimate against the renderer', () => {
     const sans = { ...tight, bodyFont: 'Helvetica', headingFont: 'Helvetica-Bold' };
 
     expect(estimateHeight(shaped(8), tight)).toBeLessThan(estimateHeight(shaped(8), sans));
+  });
+});
+
+describe('the estimate breaks the page where the renderer does', () => {
+  /**
+   * The fit pass trims and fills against `estimateHeight`, so the estimate's
+   * idea of where a page ends *is* the page target. Two ways it was wrong,
+   * both found on a real one-page resume:
+   *
+   *   - It charged every entry an employer-and-location row. A project has
+   *     neither, so the renderer prints no such row, and each project cost
+   *     sixteen points the page never spent. Three projects were most of two
+   *     bullets the fill pass refused for want of room.
+   *   - It left out the last section's bottom margin. The renderer counts it
+   *     when the document ends in something that cannot break — an education
+   *     entry with nothing under it — so on Roomy a resume the estimate put at
+   *     98% moved its whole education section onto a second page.
+   *
+   * So this grows a document shaped like a real one a bullet at a time on
+   * every template, finds the first bullet the renderer will not fit on one
+   * page, and holds the estimate to the same answer: everything before that
+   * bullet measures as fitting, and that bullet does not.
+   */
+  const pagesIn = async (doc: ResumeDocument, templateId: string) => {
+    const bytes = new TextDecoder('latin1').decode(
+      await (await renderPdfBlob(doc, templateId)).arrayBuffer(),
+    );
+    // The page tree's count. Cheaper than parsing the file back with pdf.js,
+    // and the renderer writes exactly one tree.
+    return Number(/\/Count (\d+)/.exec(bytes)?.[1]);
+  };
+
+  const shaped = (bullets: number, endsWith: 'education' | 'projects'): ResumeDocument => {
+    const projects = {
+      key: 'projects' as const,
+      heading: 'Projects',
+      kind: 'entries' as const,
+      // No employer and no location: a project's second row is empty.
+      entries: ['react-native-island', 'react-native-object-capture', 'Revento'].map((name, i) => ({
+        sourceId: `p${i}`,
+        primary: name,
+        secondary: '',
+        meta: '10/2019 - Present',
+        aside: '',
+        summary: '',
+        bullets: [{ sourceId: `pb${i}`, text: 'Published an open-source React Native library that bridges native iOS and Android APIs.' }],
+      })),
+    };
+    const education = {
+      key: 'education' as const,
+      heading: 'Education',
+      kind: 'entries' as const,
+      entries: [
+        {
+          sourceId: 'e1', primary: 'Bachelor of Science, Computer Science', secondary: 'University of Cincinnati',
+          meta: '05/2021', aside: '', summary: '', bullets: [],
+        },
+      ],
+    };
+    return {
+      contact: {
+        name: 'Tristan Heilman',
+        label: 'Full Stack / Mobile App Developer',
+        details: ['tristan@example.com', '+1-555-0100', 'Cincinnati, OH', 'example.com', 'linkedin.com/in/example', 'github.com/example'],
+      },
+      sections: [
+        {
+          key: 'summary', heading: 'Summary', kind: 'summary',
+          summary: 'Mobile engineer who owns React Native apps end to end: releases, authentication and native integration. Also works the backend side.',
+        },
+        {
+          key: 'skills', heading: 'Skills', kind: 'skills',
+          skills: [
+            { sourceId: 's1', name: 'Languages', keywords: ['TypeScript', 'Swift', 'Kotlin', 'SQL'] },
+            { sourceId: 's2', name: 'Cloud', keywords: ['Firebase', 'AWS Lambda', 'Cognito', 'RDS'] },
+          ],
+        },
+        {
+          key: 'work', heading: 'Experience', kind: 'entries',
+          entries: [
+            {
+              sourceId: 'w1', primary: 'Lead Mobile App Developer', secondary: 'Wridz LLC', meta: '05/2022 - 09/2025',
+              aside: 'Cincinnati, OH', summary: '',
+              // Alternating one- and two-line bullets, as a real role has.
+              bullets: Array.from({ length: bullets }, (_, i) => ({
+                sourceId: `b${i}`,
+                text: i % 2
+                  ? 'Supported a user base of 20k+ iOS and Android users.'
+                  : 'Refactored driver tracking geolocation logic by optimizing GPS polling and background task handling, reducing battery drain.',
+              })),
+            },
+          ],
+        },
+        ...(endsWith === 'education' ? [projects, education] : [education, projects]),
+      ],
+    };
+  };
+
+  /** The fewest role bullets that push the document onto a second page. */
+  const firstSpill = async (templateId: string, endsWith: 'education' | 'projects') => {
+    let lo = 0;
+    let hi = 60;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if ((await pagesIn(shaped(mid, endsWith), templateId)) > 1) hi = mid;
+      else lo = mid + 1;
+    }
+    return lo;
+  };
+
+  for (const endsWith of ['education', 'projects'] as const) {
+    it.each(TEMPLATES.map((t) => t.id))(`%s, ending in ${endsWith}`, async (id) => {
+      const t = getTemplate(id);
+      const n = await firstSpill(id, endsWith);
+      const page = pageHeight(t);
+
+      // Never calls an overflowing document a fit — that is a second page.
+      expect(estimateHeight(shaped(n, endsWith), t), 'spilling document').toBeGreaterThan(page);
+      // Never calls a fitting document an overflow — that is a page left short.
+      expect(estimateHeight(shaped(n - 1, endsWith), t), 'last fitting document').toBeLessThanOrEqual(page);
+    });
+  }
+});
+
+beforeAll(() => {
+  globalThis.DOMMatrix ??= class {} as unknown as typeof DOMMatrix;
+  pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
+    createRequire(import.meta.url).resolve('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+  ).href;
+});
+
+describe('lines counted the way the renderer sets them', () => {
+  /**
+   * The renderer lets spaces shrink by a third of their width and chooses line
+   * breaks across a whole paragraph. Counted the simple way — break when the
+   * next word does not fit at natural spacing — a long bullet on a real
+   * one-page resume counted three lines and printed two. One line of phantom
+   * height per long bullet is how the fill pass came to leave a band of empty
+   * page at the foot of a resume it called full.
+   */
+  const pagesFor = async (bullets: string[], templateId: string) => {
+    const doc: ResumeDocument = {
+      contact: { name: 'A', label: '', details: [] },
+      sections: [
+        {
+          key: 'work', heading: 'Work', kind: 'entries',
+          entries: [{
+            sourceId: 'e', primary: 'Developer', secondary: '', meta: '', aside: '', summary: '',
+            bullets: [...bullets, 'end'].map((text, i) => ({ sourceId: `b${i}`, text })),
+          }],
+        },
+      ],
+    };
+    const blob = await renderPdfBlob(doc, templateId);
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), verbosity: 0 }).promise;
+    const markers: Array<{ page: number; y: number }> = [];
+    for (let n = 1; n <= pdf.numPages; n++) {
+      for (const item of (await (await pdf.getPage(n)).getTextContent()).items) {
+        if ('str' in item && item.str.trim().startsWith('•')) markers.push({ page: n, y: 792 - (item.transform[5] as number) });
+      }
+    }
+    return markers;
+  };
+
+  /** Lines each bullet printed on, from the distance to the next marker. */
+  const printedLines = async (bullets: string[], templateId: string) => {
+    const t = getTemplate(templateId);
+    const markers = await pagesFor(bullets, templateId);
+    return bullets.map((_, i) => {
+      const a = markers[i];
+      const b = markers[i + 1];
+      if (!a || !b || a.page !== b.page) return null;
+      return Math.round((b.y - a.y - t.bulletGap) / (t.baseSize * t.lineHeight));
+    });
+  };
+
+  const bulletColumn = (templateId: string) => 612 - getTemplate(templateId).pageMargin * 2 - 16;
+
+  it('counts a long bullet the two lines it prints on, not three', async () => {
+    const long =
+      'Users pattern now and remains records while built the app sites read sites sites shipped cycle truth of knowledge pattern of shipped while service app operated mobile owned remains remains service and integration making shipped.';
+    const [printed] = await printedLines([long], 'classic');
+
+    expect(printed).toBe(2);
+    expect(wrappedLines(long, 'Helvetica', 10, bulletColumn('classic'))).toBe(2);
+  });
+
+  // Words of resume length in a fixed pseudo-random order, so the lengths
+  // land at many different places relative to a line end.
+  const words = 'built shipped the integration making source of truth while service remains read layer for app data pattern is now being adopted across owned and operated sites mobile release cycle team knowledge backend authentication migration production users records'.split(' ');
+  let seed = 11;
+  const next = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const sample = Array.from({ length: 40 }, () => {
+    const text = Array.from({ length: 8 + Math.floor(next() * 40) }, () => words[Math.floor(next() * words.length)]).join(' ');
+    return `${text[0]!.toUpperCase()}${text.slice(1)}.`;
+  });
+
+  it.each(TEMPLATES.map((t) => t.id))('never counts a bullet a line short on %s', async (id) => {
+    const t = getTemplate(id);
+    const printed = await printedLines(sample, id);
+    const short = sample.filter((text, i) => {
+      const p = printed[i];
+      return p != null && wrappedLines(text, t.bodyFont, t.baseSize, bulletColumn(id)) < p;
+    });
+    expect(short).toEqual([]);
   });
 });
 

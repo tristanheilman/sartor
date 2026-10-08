@@ -329,6 +329,363 @@ describe('which project survives the cut', () => {
   });
 });
 
+describe('between projects that both answer the posting', () => {
+  /**
+   * Vocabulary decides whether a project is on topic, not which of two
+   * on-topic projects the page is spent on.
+   *
+   * A posting asked for "published open-source React Native libraries that
+   * bridge native iOS and Android APIs", and for AWS, PostgreSQL and Firebase.
+   * The model put both libraries first and a full-stack app third. The trim
+   * ranked by shared vocabulary instead, and the full-stack app — whose
+   * bullets are a list of AWS service names — outscored both libraries, so the
+   * one-page resume kept it as a one-line stub and cut the libraries the
+   * posting had singled out. Overlap cannot tell "names the posting's tools"
+   * from "is the thing the posting asked for"; the model can, and here it had.
+   */
+  const jd = `Senior Mobile Engineer (React Native). Ideally you have published open-source
+     React Native libraries that bridge native iOS and Android APIs. Backend: APIs,
+     PostgreSQL, AWS, Firebase.`;
+
+  const p: Profile = profileSchema.parse({
+    ...profile,
+    projects: [
+      { id: 'prj_capture', name: 'react-native-object-capture', bullets: [
+        { id: 'c0', text: "Published a React Native library bridging Apple's Object Capture into JavaScript, enabling LiDAR scanning of real objects." },
+        { id: 'c1', text: 'Maintain the library as an open-source package for other developers.' },
+      ] },
+      { id: 'prj_fullstack', name: 'Revento', bullets: [
+        { id: 'f0', text: 'Developed a full stack mobile application using Firebase and React Native.' },
+        { id: 'f1', text: 'Moved the backend to AWS: EC2, RDS (PostgreSQL), Cognito and CloudWatch.' },
+      ] },
+    ],
+  });
+
+  // The model's order: the library first. Every role bullet kept, so the page
+  // overflows and something has to give.
+  const plan = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: true, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      skills: p.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  it('keeps the project the model ranked first when the page holds only one', () => {
+    const { plan: fitted, droppedEntries } = fitToTarget(p, plan(), 1, undefined, jd);
+
+    expect(droppedEntries).toContain('prj_fullstack');
+    expect(fitted.projects.find((x) => x.id === 'prj_capture')!.include).toBe(true);
+  });
+
+  it('still cuts an off-topic project before an on-topic one the model ranked lower', () => {
+    const withGolf: Profile = profileSchema.parse({
+      ...p,
+      projects: [
+        { id: 'prj_golf', name: 'diy-swing-analysis', bullets: [
+          { id: 'g0', text: 'Built a golf swing analysis desktop app using pose estimation and OpenCV.' },
+          { id: 'g1', text: 'Detected swing phase boundaries from the wrist trajectory across frames.' },
+        ] },
+        ...p.projects,
+      ],
+    });
+    const golfFirst = tailorPlanSchema.parse({
+      ...plan(),
+      projects: withGolf.projects.map((pr, i) => ({
+        id: pr.id, include: true, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+    });
+    const { droppedEntries } = fitToTarget(withGolf, golfFirst, 1, undefined, jd);
+
+    expect(droppedEntries[0]).toBe('prj_golf');
+  });
+});
+
+describe('projects the posting asks for', () => {
+  /**
+   * A one-page run against a posting asking for "published open-source React
+   * Native libraries" came out with neither library on it, twice over:
+   *
+   *   - The model kept each library at one bullet, as told to stay within six.
+   *     The trim then read each as a stub — a heading and a single line — and
+   *     dropped both whole, then reinstated the full-stack app the model had
+   *     excluded, because it shared the most words with the posting.
+   *   - Another run, told the same, set include:false on both libraries while
+   *     ranking them first and second.
+   *
+   * So the plan now names the projects the posting asks for, in `requested`,
+   * and the fit treats that as a floor: each is put back if excluded, never
+   * taken as a stub, and keeps two bullets until the roles are down to two.
+   */
+  const jd = `Senior Mobile Engineer (React Native). Ideally you have published open-source
+     React Native libraries that bridge native iOS and Android APIs. Backend: APIs,
+     PostgreSQL, AWS, Firebase.`;
+
+  const p: Profile = profileSchema.parse({
+    ...profile,
+    projects: [
+      { id: 'prj_capture', name: 'react-native-object-capture', bullets: [
+        { id: 'c0', text: "Published a React Native library bridging Apple's Object Capture into JavaScript, enabling LiDAR scanning of real objects." },
+        { id: 'c1', text: 'Maintain the library as an open-source package for other developers.' },
+      ] },
+      { id: 'prj_island', name: 'react-native-island', bullets: [
+        { id: 'i0', text: 'Built and maintain an open-source React Native library exposing iOS Live Activities and Android notifications.' },
+        { id: 'i1', text: 'Started the library to fill a need found at work, and continue to maintain it.' },
+      ] },
+      { id: 'prj_fullstack', name: 'Revento', bullets: [
+        { id: 'f0', text: 'Developed a full stack mobile application using Firebase and React Native.' },
+        { id: 'f1', text: 'Moved the backend to AWS: EC2, RDS (PostgreSQL), Cognito and CloudWatch.' },
+      ] },
+    ],
+  });
+
+  const planWith = (projects: Record<string, number>, requested: string[]): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: (projects[pr.id] ?? 0) > 0, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: j < (projects[pr.id] ?? 0), order: j })),
+      })),
+      skills: p.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+      requested,
+    });
+
+  const kept = (plan: TailorPlan, id: string) => {
+    const e = plan.projects.find((x) => x.id === id)!;
+    return e.include ? e.bullets.filter((b) => b.include).length : 0;
+  };
+
+  it('keeps a requested project the model gave one bullet, rather than dropping it as a stub', () => {
+    const { plan, fits } = fitToTarget(p, planWith({ prj_capture: 1, prj_island: 1 }, ['prj_capture', 'prj_island']), 1, undefined, jd);
+
+    expect(fits).toBe(true);
+    expect(kept(plan, 'prj_capture')).toBeGreaterThan(0);
+    expect(kept(plan, 'prj_island')).toBeGreaterThan(0);
+  });
+
+  it('puts back a requested project the model excluded', () => {
+    const { plan } = fitToTarget(p, planWith({}, ['prj_capture', 'prj_island']), 1, undefined, jd);
+
+    expect(kept(plan, 'prj_capture')).toBeGreaterThan(0);
+    expect(kept(plan, 'prj_island')).toBeGreaterThan(0);
+  });
+
+  it('does not reinstate a better word match over the projects the posting asked for', () => {
+    const { plan, reinstated } = fitToTarget(p, planWith({ prj_capture: 1, prj_island: 1 }, ['prj_capture', 'prj_island']), 1, undefined, jd);
+
+    expect(reinstated).not.toBe('prj_fullstack');
+    expect(kept(plan, 'prj_fullstack')).toBe(0);
+  });
+
+  it('takes role bullets down to two before a requested project goes below two', () => {
+    const { plan } = fitToTarget(p, planWith({ prj_capture: 2, prj_island: 2 }, ['prj_capture', 'prj_island']), 1, undefined, jd);
+    const roleCounts = plan.work.map((w) => w.bullets.filter((b) => b.include).length);
+
+    if (kept(plan, 'prj_capture') < 2 || kept(plan, 'prj_island') < 2) {
+      expect(Math.max(...roleCounts)).toBeLessThanOrEqual(2);
+    }
+    expect(Math.min(...roleCounts)).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('a second bullet on every role before a skill group comes back', () => {
+  /**
+   * A run kept both libraries the posting asked for, cut every role to one
+   * bullet to get there, then restored a third skill group into the room that
+   * freed: two lines of keywords, and no role got its second line back. The
+   * restore ran before the fill because a keyword the posting names was judged
+   * worth more than "a fourth bullet on a job that already has three" — true,
+   * and not the same thing as a job's second bullet.
+   *
+   * The summary length is what puts the page on that edge: long enough that
+   * the room left holds the groups or the bullets, not both.
+   */
+  const jd = 'React Native. iOS Development, Android Development, App Store Deployment, Firestore, AWS Lambda, Cognito.';
+  const bulletsFor = (n: number, prefix: string) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `${prefix}${i}`,
+      text: `Owned a specific and checkable piece of work, number ${i}, that took real effort to do.`,
+    }));
+
+  const p: Profile = profileSchema.parse({
+    id: 'prf_edge',
+    createdAt: 'now',
+    updatedAt: 'now',
+    basics: { name: 'Tristan Heilman', summary: 'word '.repeat(488) },
+    work: [0, 1, 2].map((i) => ({ id: `w${i}`, name: `Employer ${i}`, position: 'Developer', startDate: '2020', bullets: bulletsFor(6, `w${i}_`) })),
+    skills: [
+      { id: 'skl_lang', name: 'Languages', keywords: ['TypeScript', 'Swift', 'Kotlin'] },
+      { id: 'skl_tools', name: 'Tools', keywords: ['Git', 'Jira'] },
+      { id: 'skl_mobile', name: 'Mobile', keywords: ['iOS Development', 'Android Development', 'App Store Deployment', 'Push Notifications', 'Expo', 'Fastlane', 'Detox'] },
+      { id: 'skl_cloud', name: 'Cloud', keywords: ['Firestore', 'AWS Lambda', 'Cognito', 'S3', 'RDS', 'EC2', 'CloudWatch', 'Firebase Hosting'] },
+    ],
+  });
+
+  // One bullet a role, and the two groups the posting names left out.
+  const plan = tailorPlanSchema.parse({
+    summary: { text: '', rationale: '' },
+    work: p.work.map((w, i) => ({
+      id: w.id, include: true, order: i,
+      bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j === 0, order: j })),
+    })),
+    skills: p.skills.map((g, i) => ({ id: g.id, include: i < 2, order: i, keywords: g.keywords })),
+  });
+
+  it('fills roles to two bullets first, and restores groups only with what is left', () => {
+    const { plan: fitted, fits } = fitToTarget(p, plan, 1, undefined, jd);
+    const counts = fitted.work.map((w) => w.bullets.filter((b) => b.include).length);
+
+    expect(fits).toBe(true);
+    expect(Math.min(...counts)).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('a cap on how much one role can say', () => {
+  /**
+   * A two-page run gave Formedics thirteen bullets, the last of them "Managed
+   * application state with React Redux." — a line the skills section already
+   * says. Two pages had room, so nothing was trimmed, and the room went to the
+   * bottom of one role's list rather than to anything better.
+   */
+  const many: Profile = profileSchema.parse({
+    ...profile,
+    work: [
+      { ...profile.work[0], bullets: bullets(14, 'a') },
+      { ...profile.work[1], bullets: bullets(3, 'b') },
+    ],
+    projects: [],
+  });
+  const plan = tailorPlanSchema.parse({
+    summary: { text: '', rationale: '' },
+    work: many.work.map((w, i) => ({
+      id: w.id, include: true, order: i,
+      bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j < 13, order: j })),
+    })),
+    skills: many.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+  });
+  const counts = (pl: TailorPlan) => pl.work.map((w) => w.bullets.filter((b) => b.include).length);
+
+  it('keeps a role to six bullets even when the page has room for more', () => {
+    const { plan: fitted } = fitToTarget(many, plan, 2);
+    expect(counts(fitted)[0]).toBe(6);
+  });
+
+  it('keeps the six the model ranked highest', () => {
+    const { plan: fitted } = fitToTarget(many, plan, 2);
+    const kept = fitted.work[0]!.bullets.filter((b) => b.include).map((b) => b.bulletId);
+    expect(kept).toEqual(['a0', 'a1', 'a2', 'a3', 'a4', 'a5']);
+  });
+
+  it('still fills the other roles', () => {
+    const { plan: fitted } = fitToTarget(many, plan, 2);
+    expect(counts(fitted)[1]).toBe(3);
+  });
+
+  it('reports the bullets it switched off', () => {
+    const { dropped } = fitToTarget(many, plan, 2);
+    expect(dropped).toEqual(expect.arrayContaining(['a6', 'a12']));
+  });
+});
+
+describe('recent roles before old ones, and before a project’s second line', () => {
+  /**
+   * A one-page run printed CIMx (a 2019-2020 co-op) with two bullets and Wridz
+   * (three years as lead, ended last year) with one. The refill offered
+   * Wridz's next bullet first, found it a line too long for the room left,
+   * and moved on to CIMx — rather than trying Wridz's next, shorter one.
+   *
+   * Recent roles are the current one and any that ended within three years of
+   * where the career now is. Each keeps two bullets ahead of an old role's
+   * second and ahead of a project's second.
+   */
+  const jd = 'Senior Mobile Engineer (React Native). Published open-source React Native libraries.';
+  const line = (n: number, p: string) => `Did a specific and checkable piece of work at ${p}, number ${n}.`;
+  const long = (p: string) =>
+    `Led a long and involved piece of work at ${p} that took several quarters, touched many systems and teams, and needs three full lines on the page to describe properly and completely.`;
+
+  const at = (summaryWords: number): Profile =>
+    profileSchema.parse({
+      id: 'prf_recent', createdAt: 'now', updatedAt: 'now',
+      basics: { name: 'Tristan Heilman', summary: 'word '.repeat(summaryWords) },
+      work: [
+        { id: 'w_now', name: 'Formedics', position: 'Native App Developer', startDate: '10/2025', endDate: 'Present',
+          bullets: [0, 1, 2, 3].map((n) => ({ id: `n${n}`, text: line(n, 'Formedics') })) },
+        { id: 'w_mid', name: 'Wridz', position: 'Lead Mobile Developer', startDate: '05/2022', endDate: '09/2025',
+          bullets: [{ id: 'm0', text: line(0, 'Wridz') }, { id: 'm1', text: long('Wridz') }, { id: 'm2', text: line(2, 'Wridz') }] },
+        { id: 'w_old', name: 'CIMx', position: 'Junior Developer', startDate: '01/2019', endDate: '06/2020',
+          bullets: [0, 1, 2].map((n) => ({ id: `o${n}`, text: line(n, 'CIMx') })) },
+      ],
+      projects: [
+        { id: 'prj_lib', name: 'react-native-island', bullets: [
+          { id: 'l0', text: 'Published an open-source React Native library exposing iOS Live Activities.' },
+          { id: 'l1', text: 'Maintain the library for other developers building React Native apps.' },
+        ] },
+      ],
+    });
+
+  const planFor = (p: Profile, roleBullets: number): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: j < roleBullets, order: j })),
+      })),
+      projects: p.projects.map((pr, i) => ({
+        id: pr.id, include: true, order: i,
+        bullets: pr.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      skills: p.skills.map((g, i) => ({ id: g.id, include: true, order: i, keywords: g.keywords })),
+      requested: ['prj_lib'],
+    });
+
+  const counts = (pl: TailorPlan) => Object.fromEntries(
+    [...pl.work, ...pl.projects].map((e) => [e.id, e.include ? e.bullets.filter((b) => b.include).length : 0]),
+  );
+
+  // From a page with room to spare to one with almost none.
+  const sweep = Array.from({ length: 60 }, (_, i) => 200 + i * 12);
+
+  it('never gives an old role a second bullet before every recent role has two', () => {
+    const wrong = sweep.filter((words) => {
+      const p = at(words);
+      const c = counts(fitToTarget(p, planFor(p, 1), 1, undefined, jd).plan);
+      return c.w_old! >= 2 && (c.w_now! < 2 || c.w_mid! < 2);
+    });
+    expect(wrong).toEqual([]);
+  });
+
+  it('tries a recent role\'s shorter bullet before moving to another entry', () => {
+    // Somewhere in the sweep the room left holds a one-line bullet but not
+    // Wridz's three-line one; Wridz must still get its second line there.
+    const wrong = sweep.filter((words) => {
+      const p = at(words);
+      const c = counts(fitToTarget(p, planFor(p, 1), 1, undefined, jd).plan);
+      return c.w_mid! < 2 && (c.w_old! >= 2 || c.prj_lib! >= 2);
+    });
+    expect(wrong).toEqual([]);
+  });
+
+  it('takes a project to one line, and an old role to one, before a recent role goes below two', () => {
+    const wrong = sweep.filter((words) => {
+      const p = at(words);
+      const c = counts(fitToTarget(p, planFor(p, 4), 1, undefined, jd).plan);
+      return (c.w_now! < 2 || c.w_mid! < 2) && (c.prj_lib! >= 2 || c.w_old! >= 2);
+    });
+    expect(wrong).toEqual([]);
+  });
+});
+
 describe('entries left with nothing under them', () => {
   /**
    * A real run returned a plan with `Revento` included and every one of its

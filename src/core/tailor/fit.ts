@@ -3,6 +3,7 @@ import { buildChanges, buildDocument } from './apply';
 import { estimateHeight, pageHeight, type PageMetrics } from '../render/model';
 import { buildLexicon, tokenize } from './lexicon';
 import { isCommonSentenceOpener } from './stopwords';
+import { byRecency, recentRoles } from '../dates';
 import type { TailorPlan, PlannedEntry } from './plan';
 
 /**
@@ -30,13 +31,15 @@ import type { TailorPlan, PlannedEntry } from './plan';
  * The model ranked the content; this respects that ranking and only ever
  * removes from the end of it. Within that, the order of sacrifice is:
  *
- *   1. Project bullets, from the project the posting cares about *least*.
+ *   1. Project bullets: off-topic projects first, then the on-topic ones in
+ *      reverse of the model's order.
  *   2. Whole projects, once one is down to a single bullet — a heading and one
  *      line costs three lines to say almost nothing.
  *   3. Role bullets, from the oldest role with the most, working up.
  *
- * The most relevant project is held back until every other project is gone, so
- * a page spent on projects is spent on the one the posting asked about. The
+ * The model's first on-topic project is held back until every other project
+ * is gone, so a page spent on projects is spent on the one the posting asked
+ * about. The
  * first version of this ranked by size instead, and produced a resume with no
  * projects at all for a posting whose nice-to-haves were "published
  * open-source React Native libraries" — while the summary still said the
@@ -74,12 +77,16 @@ const DEFAULT_METRICS: PageMetrics = {
  * cut to the lower line, the fill rose to the upper one, and running it again
  * cut and refilled the same bullet forever.
  *
- * Small, because `estimateHeight` now works from the template's own leading and
- * gaps and reads about three percent *high* against a rendered page. That
- * pessimism is the real safety margin; this is the allowance for character
- * width, which is the one thing still approximated.
+ * None, now. It was four points, held for the one thing the estimate still
+ * approximated: how lines break. The estimate now runs the renderer's own line
+ * breaker against widths set deliberately inside the renderer's, so it can
+ * count a paragraph a line long but never a line short, and it lays the page
+ * out block by block as the renderer does — `pagefit.test.ts` renders every
+ * built-in template to hold it to both. The margin lives in the measurement;
+ * four more points on top cost a recent role its second bullet by a fifth of
+ * a point.
  */
-const SAFETY_POINTS = 4;
+const SAFETY_POINTS = 0;
 
 export interface FitResult {
   plan: TailorPlan;
@@ -126,21 +133,55 @@ function relevanceTo(jdLexicon: Set<string>, name: string, bulletText: string): 
   return hits / terms.size;
 }
 
-/** Project ids, least relevant first. Ties keep the profile's own order. */
+/**
+ * Project ids in the order the trim gives them up, least wanted first.
+ *
+ * Vocabulary decides whether a project is on topic at all; it does not decide
+ * between two that are. Off-topic projects — below the same bar reinstatement
+ * uses — go first, least relevant first. The rest go in reverse of the
+ * model's own order, so its first choice is the one held back.
+ *
+ * Ranking everything by overlap got that second part wrong. A posting asked
+ * for published React Native libraries that bridge native APIs, and also named
+ * AWS, PostgreSQL and Firebase. The model put both libraries first; a
+ * full-stack app whose bullets list AWS services outscored them on shared
+ * words, so the one-page resume kept the app as a one-line stub and cut the
+ * libraries the posting had singled out. Overlap cannot tell "names the
+ * posting's tools" from "is the thing the posting asked for". The model can.
+ */
 function projectsByRelevance(plan: TailorPlan, profile: Profile, jdText: string): string[] {
   const jdLexicon = buildLexicon(jdText);
   const byId = new Map(profile.projects.map((p) => [p.id, p]));
 
-  return plan.projects
-    .map((e, i) => {
-      const source = byId.get(e.id);
-      const score = source
-        ? relevanceTo(jdLexicon, source.name, source.bullets.map((b) => b.text).join(' '))
-        : 0;
-      return { id: e.id, score, i };
-    })
-    .sort((a, b) => a.score - b.score || a.i - b.i)
-    .map((x) => x.id);
+  const scored = plan.projects.map((e, i) => {
+    const source = byId.get(e.id);
+    const score = source
+      ? relevanceTo(jdLexicon, source.name, source.bullets.map((b) => b.text).join(' '))
+      : 0;
+    return { id: e.id, score, order: e.order, i };
+  });
+
+  const offTopic = scored
+    .filter((x) => x.score < REINSTATE_THRESHOLD)
+    .sort((a, b) => a.score - b.score || a.i - b.i);
+  const onTopic = scored
+    .filter((x) => x.score >= REINSTATE_THRESHOLD)
+    .sort((a, b) => b.order - a.order || b.i - a.i);
+
+  return [...offTopic, ...onTopic].map((x) => x.id);
+}
+
+/** The on-topic project the posting matches best, or null when none clears the bar. */
+function bestMatch(plan: TailorPlan, profile: Profile, jdText: string): string | null {
+  const jdLexicon = buildLexicon(jdText);
+  let best: { id: string; score: number } | null = null;
+  for (const e of plan.projects) {
+    const source = profile.projects.find((p) => p.id === e.id);
+    if (!source) continue;
+    const score = relevanceTo(jdLexicon, source.name, source.bullets.map((b) => b.text).join(' '));
+    if (score >= REINSTATE_THRESHOLD && (!best || score > best.score)) best = { id: e.id, score };
+  }
+  return best?.id ?? null;
 }
 
 /**
@@ -169,6 +210,19 @@ const PROTECTED_PROJECT_BULLETS = 2;
 const REINSTATE_THRESHOLD = 0.12;
 
 /**
+ * The most bullets one role shows, however much room there is.
+ *
+ * A two-page run gave one role thirteen, the last of them "Managed application
+ * state with React Redux." — something the skills section already says. The
+ * page had room, so nothing was trimmed, and the room went to the bottom of
+ * one role's list. Six says what a job was; beyond that each line is weaker
+ * than the last and the reader stops before reaching it. Soft only in that the
+ * model chooses which six: its highest-ranked. Two-page targets only — see
+ * where it is applied.
+ */
+const ROLE_BULLET_CAP = 6;
+
+/**
  * Skill groups a resume keeps whatever else has to go.
  *
  * A skills section stripped to one line reads as an omission rather than as
@@ -186,19 +240,29 @@ const MIN_SKILL_GROUPS = 2;
  * Order of preference, and the reason for each:
  *
  *   1. Projects the posting did not ask about. Cheapest thing on the page.
- *   2. Role bullets — but only once the best project is down to a line or two,
- *      so a relevant library is not sacrificed to keep a fourth bullet on a job
- *      the reader can already see three of.
- *   3. The best project after all, if roles have nothing left to give.
+ *   2. Held projects — the ones the posting asked for, or without that the
+ *      best match — beyond two bullets.
+ *   3. Role bullets, down to two a role, so a relevant library is not
+ *      sacrificed to keep a third bullet on a job the reader can already see
+ *      two of.
+ *   4. Held projects down to one bullet. Never as a stub to be dropped whole:
+ *      a heading and one line costs two lines here, and it is the line the
+ *      posting asked for.
+ *   5. Role bullets down to one — old roles first, recent ones (the current
+ *      role, and any that ended within three years of it) last.
+ *   6. Held projects after all, if nothing else is left to give. A resume that
+ *      does not fit is worse than one without a projects section.
  */
 function nextCut(
   plan: TailorPlan,
   profile: Profile,
   ranking: string[] | null,
-): { entry: PlannedEntry; bulletId: string; kind: 'project' | 'work' } | null {
+  requested: Set<string>,
+  recent: Set<string>,
+): { entry: PlannedEntry; bulletId: string; kind: 'project' | 'held' | 'work' } | null {
   const live = plan.projects.filter((e) => e.include && keptBullets(e).length > 0);
 
-  const take = (entry: PlannedEntry, kind: 'project' | 'work') => {
+  const take = (entry: PlannedEntry, kind: 'project' | 'held' | 'work') => {
     const bullets = keptBullets(entry);
     return { entry, bulletId: bullets[bullets.length - 1]!.bulletId, kind };
   };
@@ -211,29 +275,44 @@ function nextCut(
       : keptBullets(b).length - keptBullets(a).length,
   );
 
-  // The most relevant project is the last one the ranking would reach.
-  const best = order && byPreference.length ? byPreference[byPreference.length - 1] : null;
-  const unprotected = byPreference.filter(
-    (e) => e !== best || keptBullets(e).length > PROTECTED_PROJECT_BULLETS,
+  // What is held back: the projects the posting asked for when the plan names
+  // them, otherwise the best match — the last one the ranking would reach.
+  const held = new Set(
+    requested.size
+      ? live.filter((e) => requested.has(e.id))
+      : order && byPreference.length
+        ? [byPreference[byPreference.length - 1]!]
+        : [],
   );
 
-  if (unprotected.length) return take(unprotected[0]!, 'project');
+  const free = byPreference.find((e) => !held.has(e));
+  if (free) return take(free, 'project');
+
+  const heldOver = (n: number) => byPreference.find((e) => held.has(e) && keptBullets(e).length > n);
 
   // Oldest first: recent work is what a reader weighs, and the oldest role
   // carrying five bullets is the least defensible use of a page.
   const seniority = new Map(profile.work.map((w, i) => [w.id, i]));
-  const roles = plan.work
-    .filter((e) => e.include && keptBullets(e).length > 1)
-    .sort((a, b) => {
-      const byCount = keptBullets(b).length - keptBullets(a).length;
-      return byCount !== 0 ? byCount : (seniority.get(b.id) ?? 0) - (seniority.get(a.id) ?? 0);
-    });
+  const roleOver = (n: number, which: (id: string) => boolean = () => true) =>
+    plan.work
+      .filter((e) => e.include && which(e.id) && keptBullets(e).length > n)
+      .sort((a, b) => {
+        const byCount = keptBullets(b).length - keptBullets(a).length;
+        return byCount !== 0 ? byCount : (seniority.get(b.id) ?? 0) - (seniority.get(a.id) ?? 0);
+      })[0];
 
-  if (roles[0]) return take(roles[0], 'work');
+  const step =
+    (heldOver(PROTECTED_PROJECT_BULLETS) && take(heldOver(PROTECTED_PROJECT_BULLETS)!, 'held')) ||
+    (roleOver(PROTECTED_PROJECT_BULLETS) && take(roleOver(PROTECTED_PROJECT_BULLETS)!, 'work')) ||
+    (heldOver(1) && take(heldOver(1)!, 'held')) ||
+    // An old role gives up its second line before a recent one does: a
+    // reader weighs the job they are being hired from, not a co-op from six
+    // years ago.
+    (roleOver(1, (id) => !recent.has(id)) && take(roleOver(1, (id) => !recent.has(id))!, 'work')) ||
+    (roleOver(1) && take(roleOver(1)!, 'work'));
+  if (step) return step;
 
-  // Nothing left but the project we were holding back. A resume that does not
-  // fit is worse than one without a projects section.
-  return live.length ? take(byPreference[byPreference.length - 1]!, 'project') : null;
+  return live.length ? take(byPreference[0]!, 'project') : null;
 }
 
 /**
@@ -326,6 +405,10 @@ export function fitToTarget(
   const dropped: string[] = [];
   const droppedEntries: string[] = [];
   const ranking = jdText?.trim() ? projectsByRelevance(plan, profile, jdText) : null;
+  // The current role and any that ended within three years of it. These keep
+  // two bullets ahead of an old role's second and a project's second.
+  const recent = recentRoles(profile.work);
+  const roleOf = (id: string) => profile.work.find((w) => w.id === id)!;
 
   // The ranking can only order what the plan kept. Across runs of one profile
   // against one posting the model sometimes kept `react-native-island` and
@@ -342,27 +425,44 @@ export function fitToTarget(
   // existed and the better match was never considered — and a section
   // containing *a* project is not the same as one containing the right one. The
   // weaker entry then ranks lowest and the trim takes it first.
+  //
+  // When the plan names the projects the posting asks for, those are what is
+  // put back, and the vocabulary match is not consulted at all: a run that
+  // named both libraries had the full-stack app reinstated over them, because
+  // it shared more words with the posting.
   let reinstated: string | null = null;
-  if (ranking && !next.projects.find((e) => e.id === ranking[ranking.length - 1])?.include) {
-    const best = ranking[ranking.length - 1];
-    const entry = best ? next.projects.find((e) => e.id === best) : undefined;
-    const source = best ? profile.projects.find((pr) => pr.id === best) : undefined;
+  const requested = new Set((plan.requested ?? []).filter((id) => next.projects.some((e) => e.id === id)));
+  const putBack = (entry: PlannedEntry) => {
+    entry.include = true;
+    // Its own best lines, in the order the model gave them.
+    for (const b of [...entry.bullets].sort((a, c) => a.order - c.order).slice(0, PROTECTED_PROJECT_BULLETS)) {
+      b.include = true;
+    }
+    reinstated ??= entry.id;
+    // The model dropped it, so its own order would make it the first thing
+    // the trim takes back. It was put back because the posting asked for it;
+    // it is held back as long as any project is.
+    if (ranking) {
+      ranking.splice(ranking.indexOf(entry.id), 1);
+      ranking.push(entry.id);
+    }
+  };
 
-    if (entry && source) {
-      const score = relevanceTo(
-        buildLexicon(jdText!),
-        source.name,
-        source.bullets.map((b) => b.text).join(' '),
-      );
-      if (score >= REINSTATE_THRESHOLD) {
-        entry.include = true;
-        // Its own best lines, in the order the model gave them.
-        for (const b of [...entry.bullets].sort((a, c) => a.order - c.order).slice(0, PROTECTED_PROJECT_BULLETS)) {
-          b.include = true;
-        }
-        reinstated = entry.id;
+  if (requested.size) {
+    // The model's last choice first, so its first choice ends up the most held.
+    const asked = next.projects.filter((e) => requested.has(e.id)).sort((a, b) => b.order - a.order);
+    for (const entry of asked) {
+      // An entry included with nothing under it is as absent as an excluded one.
+      if (!entry.include || keptBullets(entry).length === 0) putBack(entry);
+      else if (ranking) {
+        ranking.splice(ranking.indexOf(entry.id), 1);
+        ranking.push(entry.id);
       }
     }
+  } else if (ranking) {
+    const best = bestMatch(plan, profile, jdText!);
+    const bestEntry = best ? next.projects.find((e) => e.id === best) : undefined;
+    if (bestEntry && !bestEntry.include) putBack(bestEntry);
   }
 
   // A project the plan kept but emptied is a heading, a date range and nothing
@@ -396,6 +496,16 @@ export function fitToTarget(
     if (!entry.include || entry.bullets.some((b) => b.include)) continue;
     const first = [...entry.bullets].sort((a, b) => a.order - b.order)[0];
     if (first) first.include = true;
+  }
+
+  // Two pages only. On one, the page is the cap: the trim already weighs a
+  // role's sixth bullet against everything else competing for the space.
+  const roleCap = pageTarget === 2 ? ROLE_BULLET_CAP : Infinity;
+  for (const entry of next.work) {
+    for (const b of keptBullets(entry).slice(roleCap)) {
+      b.include = false;
+      dropped.push(b.bulletId);
+    }
   }
 
   // Changes, not an empty array. `buildDocument` only honours a drop once the
@@ -446,7 +556,7 @@ export function fitToTarget(
   const limit = next.work.concat(next.projects).reduce((n, e) => n + e.bullets.length, 0) + 1;
 
   for (let i = 0; i < limit && overflows(); i++) {
-    const cut = nextCut(next, profile, ranking);
+    const cut = nextCut(next, profile, ranking, requested, recent);
     if (!cut) break;
 
     for (const b of cut.entry.bullets) {
@@ -478,6 +588,140 @@ export function fitToTarget(
   // Growing back is the same kind of change in the other direction: bullets are
   // switched on, they are the person's own, they are the model's next choices
   // rather than arbitrary ones, and the review screen shows every one.
+  const added: string[] = [];
+  // Bullets tried and found too long for the space that was left. Remembered so
+  // the loop does not offer them again and stall.
+  const tooBig = new Set<string>();
+  /** Switches bullets back on while any fit — only roles below `roleFloor`, if given. */
+  const grow = (roleFloor?: number) => {
+    for (let i = 0; i < limit; i++) {
+      // The entry with the least to show goes first, so the page fills evenly
+      // instead of stacking everything onto the newest role. Roles before
+      // projects: employment is what a reader weighs.
+      // Fewest first, and roles before projects at the same count. A role left on
+      // one bullet beside another with three reads as though nothing happened
+      // there — worse than no bullets at all, because it looks like that was the
+      // best there was. CIMx shipped with a single ten-word line for exactly this
+      // reason: the tie broke toward the newest role and the room ran out.
+      //
+      // Among roles level on bullets, recent before old and then newest first.
+      // Breaking that tie by plan order gave a 2019 co-op its second line while
+      // the role the person left last year had one.
+      const rank = (e: PlannedEntry) => keptBullets(e).length;
+      const isRole = new Set(next.work.map((e) => e.id));
+      const age = (e: PlannedEntry) => (recent.has(e.id) ? 0 : 1);
+      const candidates = [...next.work, ...next.projects]
+        .filter((e) => e.include && e.bullets.some((b) => !b.include && !tooBig.has(b.bulletId)))
+        .filter((e) => roleFloor === undefined || (isRole.has(e.id) && rank(e) < roleFloor))
+        .filter((e) => !isRole.has(e.id) || rank(e) < roleCap)
+        .sort(
+          (a, b) =>
+            rank(a) - rank(b) ||
+            Number(isRole.has(b.id)) - Number(isRole.has(a.id)) ||
+            age(a) - age(b) ||
+            (isRole.has(a.id) && isRole.has(b.id) ? byRecency(roleOf(a.id), roleOf(b.id)) : 0),
+        );
+
+      // "Does the next candidate fit" is the wrong question; "does anything left
+      // fit" is the right one. Stopping at the first bullet too big for the
+      // remaining space abandoned shorter ones behind it — a real export finished
+      // with forty-one points of slack and a one-line bullet never tried, because
+      // the entry at the front of the queue happened to offer a three-line one.
+      //
+      // And within an entry, its next bullets in the model's order before the
+      // next entry. A role whose next line is three lines long usually has a
+      // one-line one after it; moving on to another entry instead is how a
+      // recent role was left on one bullet while an old one got two.
+      let placed = false;
+      for (const entry of candidates) {
+        const offered = [...entry.bullets]
+          .filter((b) => !b.include && !tooBig.has(b.bulletId))
+          .sort((a, b) => a.order - b.order);
+        for (const bullet of offered) {
+          bullet.include = true;
+          if (overflows()) {
+            bullet.include = false;
+            // Remember it, so the next pass does not try it again and stall.
+            tooBig.add(bullet.bulletId);
+            continue;
+          }
+          added.push(bullet.bulletId);
+          placed = true;
+          break;
+        }
+        if (placed) break;
+      }
+      if (!placed) break;
+    }
+  };
+
+  // Every role to two bullets before any skill group comes back. A run kept
+  // both libraries the posting asked for, cut each role to one bullet to get
+  // there, and then restored a third skill group into the room that freed —
+  // two lines of keywords, and no role got its second line back.
+  grow(PROTECTED_PROJECT_BULLETS);
+
+  // A recent role still on one bullet when the page is full, while a project
+  // shows a second line or an old role a second bullet. Filling cannot fix
+  // that — there is no room to fill — so the room is moved: the weaker lines
+  // are switched off one at a time, least wanted first, until the role's own
+  // next bullet fits. If it never fits, everything is put back as it was.
+  // Nothing is rewritten; every line switched either way is a change the
+  // review screen shows.
+  const secureFloors = () => {
+  for (const role of next.work.filter((e) => e.include && recent.has(e.id)).sort((a, b) => byRecency(roleOf(a.id), roleOf(b.id)))) {
+    if (keptBullets(role).length >= PROTECTED_PROJECT_BULLETS) continue;
+    const offered = [...role.bullets].filter((b) => !b.include).sort((a, b) => a.order - b.order);
+    if (!offered.length) continue;
+
+    const beyondFirst = (e: PlannedEntry) => keptBullets(e).slice(1).reverse();
+    const projectOrder = (ranking ?? next.projects.map((e) => e.id)).map((id) => next.projects.find((e) => e.id === id)!).filter(Boolean);
+    const donors = [
+      ...projectOrder.filter((e) => e.include && !requested.has(e.id)).flatMap(beyondFirst),
+      ...projectOrder.filter((e) => e.include && requested.has(e.id)).flatMap(beyondFirst),
+      ...next.work
+        .filter((e) => e.include && !recent.has(e.id))
+        .sort((a, b) => byRecency(roleOf(b.id), roleOf(a.id)))
+        .flatMap(beyondFirst),
+    ];
+
+    // Then skill groups beyond the two a resume always keeps, least relevant
+    // first: a group of keywords is the cheapest thing on the page, and a
+    // posting that asks for payments is answered by the bullet about the
+    // payments integration more than by a third line of tool names.
+    const jdForSkills = ranking ? buildLexicon(jdText!) : null;
+    const spareGroups = next.skills
+      .filter((g) => g.include)
+      .map((g, i) => ({ g, score: jdForSkills ? relevanceTo(jdForSkills, '', g.keywords.join(' ')) : -i }))
+      .sort((a, b) => a.score - b.score)
+      .slice(0, Math.max(0, next.skills.filter((g) => g.include).length - MIN_SKILL_GROUPS))
+      .map(({ g }) => g);
+
+    const given: Array<{ include: boolean; bulletId?: string }> = [];
+    let placed: (typeof offered)[number] | undefined;
+    for (const donor of [...donors, ...spareGroups]) {
+      donor.include = false;
+      given.push(donor);
+      placed = offered.find((b) => {
+        b.include = true;
+        if (!overflows()) return true;
+        b.include = false;
+        return false;
+      });
+      if (placed) break;
+    }
+
+    if (placed) {
+      added.push(placed.bulletId);
+      dropped.push(...given.flatMap((d) => (d.bulletId ? [d.bulletId] : [])));
+    } else {
+      for (const d of given) d.include = true;
+    }
+  }
+  };
+
+  secureFloors();
+
   // Skill groups the model dropped that the posting asked for.
   //
   // A plan came back keeping two groups of five, dropping the ones holding GCP,
@@ -486,71 +730,44 @@ export function fitToTarget(
   // paragraph a group often costs part of a line rather than a whole one, and a
   // group the posting asked for is worth more than the space it would leave.
   //
-  // Before bullets, because a keyword the posting named earns its line more
-  // surely than a fourth bullet on a job that already has three.
+  // Before the rest of the bullets, because a keyword the posting named earns
+  // its line more surely than a third bullet on a job that already has two —
+  // but after every job has two, which is the line above.
   const restoredSkills: string[] = [];
-  if (ranking) {
+  const restoreSkills = () => {
+    if (!ranking) return;
     const jdLexicon = buildLexicon(jdText!);
-    const dropped = next.skills
+    const candidates = next.skills
       .filter((g) => !g.include)
       .map((g) => ({ g, score: relevanceTo(jdLexicon, '', g.keywords.join(' ')) }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score);
 
-    for (const { g } of dropped) {
+    for (const { g } of candidates) {
       g.include = true;
       if (overflows()) {
         g.include = false;
         continue;
       }
-      restoredSkills.push(g.id);
+      if (!restoredSkills.includes(g.id)) restoredSkills.push(g.id);
     }
-  }
+  };
 
-  const added: string[] = [];
-  // Bullets tried and found too long for the space that was left. Remembered so
-  // the loop does not offer them again and stall.
-  const tooBig = new Set<string>();
-  for (let i = 0; i < limit; i++) {
-    // The entry with the least to show goes first, so the page fills evenly
-    // instead of stacking everything onto the newest role. Roles before
-    // projects: employment is what a reader weighs.
-    // Fewest first, and roles before projects at the same count. A role left on
-    // one bullet beside another with three reads as though nothing happened
-    // there — worse than no bullets at all, because it looks like that was the
-    // best there was. CIMx shipped with a single ten-word line for exactly this
-    // reason: the tie broke toward the newest role and the room ran out.
-    const rank = (e: PlannedEntry) => keptBullets(e).length;
-    const isRole = new Set(next.work.map((e) => e.id));
-    const candidates = [...next.work, ...next.projects]
-      .filter((e) => e.include && e.bullets.some((b) => !b.include && !tooBig.has(b.bulletId)))
-      .sort((a, b) => rank(a) - rank(b) || Number(isRole.has(b.id)) - Number(isRole.has(a.id)));
+  restoreSkills();
+  grow();
+  // A group put back above can take room a recent role's second bullet then
+  // finds it needs — the restore runs once no bullet fits, and a group often
+  // fits where a bullet did not. So the floor is checked again, and may take
+  // that group back out.
+  secureFloors();
+  // Once no bullet fits, a group the posting asked for may still: the skills
+  // flow as one paragraph, so a group often costs part of a line rather than a
+  // whole one. The room under the last bullet that would not fit is spent on
+  // that rather than left as a band of empty page — and if it moves a break
+  // so a bullet now fits after all, the fill runs once more.
+  restoreSkills();
+  grow();
 
-    // "Does the next candidate fit" is the wrong question; "does anything left
-    // fit" is the right one. Stopping at the first bullet too big for the
-    // remaining space abandoned shorter ones behind it — a real export finished
-    // with forty-one points of slack and a one-line bullet never tried, because
-    // the entry at the front of the queue happened to offer a three-line one.
-    let placed = false;
-    for (const entry of candidates) {
-      const nextBullet = [...entry.bullets]
-        .filter((b) => !b.include && !tooBig.has(b.bulletId))
-        .sort((a, b) => a.order - b.order)[0];
-      if (!nextBullet) continue;
-
-      nextBullet.include = true;
-      if (overflows()) {
-        nextBullet.include = false;
-        // Remember it, so the next pass does not try it again and stall.
-        tooBig.add(nextBullet.bulletId);
-        continue;
-      }
-      added.push(nextBullet.bulletId);
-      placed = true;
-      break;
-    }
-    if (!placed) break;
-  }
 
   return {
     plan: next,

@@ -41,6 +41,7 @@ function makeRun(id: string, profileId: string, createdAt: string, title = 'Back
       education: [],
       skills: [],
       notes: '',
+      requested: [],
     },
     changes: [],
     notes: '',

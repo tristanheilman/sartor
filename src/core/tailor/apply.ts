@@ -1,4 +1,5 @@
-import type { Profile, Bullet, SectionKey } from '../schema';
+import type { Profile, Bullet, SectionKey, Work } from '../schema';
+import { byRecency } from '../dates';
 import { SECTION_KEYS } from '../schema';
 import { ids } from '../ids';
 import type { TailorPlan, PlannedBullet } from './plan';
@@ -303,6 +304,12 @@ export function buildDocument(profile: Profile, plan: TailorPlan, changes: Chang
         return !isAccepted('entry-drop', s.id);
       })
       .sort((a, b) => (orderOf.get(a.id) ?? 999) - (orderOf.get(b.id) ?? 999))
+      // Roles print newest first whatever the plan ranked first. Relevance is
+      // the right order for projects and the wrong one for a career: a run
+      // ranked Wridz above Formedics and printed the older job on top, so the
+      // reader found the current role second. Stable, so roles whose dates
+      // cannot be read keep the plan's order among themselves.
+      .sort((a, b) => (section === 'work' ? byRecency(a as Work, b as Work) : 0))
       .map((s) => {
         const p = planned.find((x) => x.id === s.id);
         const bulletOrder = new Map((p?.bullets ?? []).map((b) => [b.bulletId, b.order]));
