@@ -26,6 +26,7 @@ export {
 export {
   ingestResume,
   rawToProfile,
+  structuredToProfile,
   INGEST_SYSTEM_PROMPT,
   INGEST_JSON_SCHEMA,
   type IngestResult,
