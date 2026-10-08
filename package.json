@@ -31,6 +31,9 @@
     "LICENSE"
   ],
   "types": "./dist/index.d.ts",
+  "bin": {
+    "sartor": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

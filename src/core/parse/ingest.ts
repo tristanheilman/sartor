@@ -331,14 +331,34 @@ export async function ingestResume(
     cfg,
   );
 
-  const parsed = rawSchema.safeParse(result.json);
-  if (!parsed.success) {
+  const structured = structuredToProfile(result.json, opts.label ?? 'Imported resume');
+  if (!structured.ok) {
     throw new Error(
-      `The model returned a structure we could not read (${parsed.error.issues[0]?.message ?? 'unknown'}). Try again, or paste the text manually.`,
+      `The model returned a structure we could not read (${structured.issues[0]?.message ?? 'unknown'}). Try again, or paste the text manually.`,
     );
   }
+  return { profile: structured.profile, warnings: structured.warnings, duplicates: structured.duplicates };
+}
 
-  const profile = rawToProfile(parsed.data, opts.label ?? 'Imported resume');
+/**
+ * A structured resume — JSON in the shape of `INGEST_JSON_SCHEMA`, from a
+ * model or from an agent — as a profile, with the same warnings an import
+ * shows and the bullets it flagged as one fact said twice.
+ *
+ * Separate from `ingestResume` so the structuring can happen anywhere: an
+ * agent following `INGEST_SYSTEM_PROMPT` in its own session produces the same
+ * JSON a provider call would, and lands in the same checks.
+ */
+export function structuredToProfile(
+  json: unknown,
+  label: string,
+):
+  | { ok: true; profile: Profile; warnings: string[]; duplicates: DuplicateBullets[] }
+  | { ok: false; issues: Array<{ path: PropertyKey[]; message: string }> } {
+  const parsed = rawSchema.safeParse(json);
+  if (!parsed.success) return { ok: false, issues: parsed.error.issues };
+
+  const profile = rawToProfile(parsed.data, label);
 
   const warnings: string[] = [];
   if (!profile.basics.name) warnings.push('No name was found.');
@@ -352,5 +372,5 @@ export async function ingestResume(
     if (!w.startDate && !w.endDate) warnings.push(`No dates found for "${w.position || w.name}".`);
   }
 
-  return { profile, warnings, duplicates: duplicatesIn(parsed.data, profile) };
+  return { ok: true, profile, warnings, duplicates: duplicatesIn(parsed.data, profile) };
 }

@@ -19,6 +19,10 @@ export default defineConfig({
     // should not mean shipping both engines to everyone.
     'render/pdf': 'src/render/pdf.ts',
     'render/docx': 'src/render/docx.ts',
+    // The `sartor` executable, and the loader hook it registers so pdf.js
+    // runs under Node 20.
+    cli: 'src/cli/index.ts',
+    'cli/pdfjs-hook': 'src/cli/pdfjs-hook.ts',
   },
   format: ['esm'],
   // Declarations come from `tsc --emitDeclarationOnly` instead: tsup's bundled
