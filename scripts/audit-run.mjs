@@ -374,11 +374,24 @@ if (args.plan) {
     // What the model chose, before the fit pass trimmed or filled it. The
     // plan above is the fitted one, and the two are easy to mistake.
     write(name.replace(/\.json$/, '.model.json'), outcome.modelPlan);
-    recorded.push({ n: i, dropped: outcome.dropped.length, plan: outcome.run.plan });
-    if (i === 1) write('05-tailor.response.json', outcome.run);
+    recorded.push({ n: i, dropped: outcome.dropped.length, plan: outcome.run.plan, modelPlan: outcome.modelPlan, fit: outcome.fit });
+    // The response is what the model returned; the run is what the fit pass
+    // made of it. This file used to hold the run under the response's name,
+    // and a fitted plan of six bullets was read as a model that ignored a
+    // request for twelve — the model had included twenty.
+    if (i === 1) {
+      write('05-tailor.response.json', outcome.modelPlan);
+      write('05-tailor.run.json', outcome.run);
+    }
   }
 
   plan = recorded[0].plan;
+
+  function bulletsIn(p) {
+    return [...p.work, ...p.projects]
+      .filter((e) => e.include)
+      .reduce((n, e) => n + e.bullets.filter((b) => b.include).length, 0);
+  }
 
   // Report the spread here too, so an expensive recording session tells you
   // immediately whether the selector is stable enough to iterate against.
@@ -389,8 +402,11 @@ if (args.plan) {
     id: '05',
     name: 'tailoring plan',
     status: 'ran',
-    outputs: repeat === 1 ? ['05-plan.json'] : ['05-plans/'],
-    note: repeat === 1 ? `${recorded[0].dropped} dropped as unreal` : `${repeat} recordings, roles kept: ${kept.join(' ')}`,
+    outputs: repeat === 1 ? ['05-tailor.response.json', '05-tailor.run.json', '05-plan.json'] : ['05-plans/'],
+    note:
+      repeat === 1
+        ? `model included ${bulletsIn(recorded[0].modelPlan)} bullets, fit kept ${bulletsIn(recorded[0].plan)} (${recorded[0].fit.dropped.length} switched off, ${recorded[0].fit.added.length} on); ${recorded[0].dropped} dropped as unreal`
+        : `${repeat} recordings, roles kept: ${kept.join(' ')}`,
   });
 } else {
   record({
