@@ -77,14 +77,16 @@ const DEFAULT_METRICS: PageMetrics = {
  * cut to the lower line, the fill rose to the upper one, and running it again
  * cut and refilled the same bullet forever.
  *
- * Small, because `estimateHeight` works from the template's own leading, gaps
- * and font widths, and breaks the page where the renderer does on every
- * built-in template — `pagefit.test.ts` renders it to check.
- * It used to read a few percent high, and that pessimism was quietly doing
- * this constant's job while costing a bullet or two of every page; this is
- * now the whole allowance.
+ * None, now. It was four points, held for the one thing the estimate still
+ * approximated: how lines break. The estimate now runs the renderer's own line
+ * breaker against widths set deliberately inside the renderer's, so it can
+ * count a paragraph a line long but never a line short, and it lays the page
+ * out block by block as the renderer does — `pagefit.test.ts` renders every
+ * built-in template to hold it to both. The margin lives in the measurement;
+ * four more points on top cost a recent role its second bullet by a fifth of
+ * a point.
  */
-const SAFETY_POINTS = 4;
+const SAFETY_POINTS = 0;
 
 export interface FitResult {
   plan: TailorPlan;
@@ -666,6 +668,7 @@ export function fitToTarget(
   // next bullet fits. If it never fits, everything is put back as it was.
   // Nothing is rewritten; every line switched either way is a change the
   // review screen shows.
+  const secureFloors = () => {
   for (const role of next.work.filter((e) => e.include && recent.has(e.id)).sort((a, b) => byRecency(roleOf(a.id), roleOf(b.id)))) {
     if (keptBullets(role).length >= PROTECTED_PROJECT_BULLETS) continue;
     const offered = [...role.bullets].filter((b) => !b.include).sort((a, b) => a.order - b.order);
@@ -682,9 +685,21 @@ export function fitToTarget(
         .flatMap(beyondFirst),
     ];
 
-    const given: typeof donors = [];
+    // Then skill groups beyond the two a resume always keeps, least relevant
+    // first: a group of keywords is the cheapest thing on the page, and a
+    // posting that asks for payments is answered by the bullet about the
+    // payments integration more than by a third line of tool names.
+    const jdForSkills = ranking ? buildLexicon(jdText!) : null;
+    const spareGroups = next.skills
+      .filter((g) => g.include)
+      .map((g, i) => ({ g, score: jdForSkills ? relevanceTo(jdForSkills, '', g.keywords.join(' ')) : -i }))
+      .sort((a, b) => a.score - b.score)
+      .slice(0, Math.max(0, next.skills.filter((g) => g.include).length - MIN_SKILL_GROUPS))
+      .map(({ g }) => g);
+
+    const given: Array<{ include: boolean; bulletId?: string }> = [];
     let placed: (typeof offered)[number] | undefined;
-    for (const donor of donors) {
+    for (const donor of [...donors, ...spareGroups]) {
       donor.include = false;
       given.push(donor);
       placed = offered.find((b) => {
@@ -698,11 +713,14 @@ export function fitToTarget(
 
     if (placed) {
       added.push(placed.bulletId);
-      dropped.push(...given.map((d) => d.bulletId));
+      dropped.push(...given.flatMap((d) => (d.bulletId ? [d.bulletId] : [])));
     } else {
       for (const d of given) d.include = true;
     }
   }
+  };
+
+  secureFloors();
 
   // Skill groups the model dropped that the posting asked for.
   //
@@ -716,24 +734,38 @@ export function fitToTarget(
   // its line more surely than a third bullet on a job that already has two —
   // but after every job has two, which is the line above.
   const restoredSkills: string[] = [];
-  if (ranking) {
+  const restoreSkills = () => {
+    if (!ranking) return;
     const jdLexicon = buildLexicon(jdText!);
-    const dropped = next.skills
+    const candidates = next.skills
       .filter((g) => !g.include)
       .map((g) => ({ g, score: relevanceTo(jdLexicon, '', g.keywords.join(' ')) }))
       .filter((x) => x.score > 0)
       .sort((a, b) => b.score - a.score);
 
-    for (const { g } of dropped) {
+    for (const { g } of candidates) {
       g.include = true;
       if (overflows()) {
         g.include = false;
         continue;
       }
-      restoredSkills.push(g.id);
+      if (!restoredSkills.includes(g.id)) restoredSkills.push(g.id);
     }
-  }
+  };
 
+  restoreSkills();
+  grow();
+  // A group put back above can take room a recent role's second bullet then
+  // finds it needs — the restore runs once no bullet fits, and a group often
+  // fits where a bullet did not. So the floor is checked again, and may take
+  // that group back out.
+  secureFloors();
+  // Once no bullet fits, a group the posting asked for may still: the skills
+  // flow as one paragraph, so a group often costs part of a line rather than a
+  // whole one. The room under the last bullet that would not fit is spent on
+  // that rather than left as a band of empty page — and if it moves a break
+  // so a bullet now fits after all, the fill runs once more.
+  restoreSkills();
   grow();
 
 
