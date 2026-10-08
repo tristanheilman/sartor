@@ -36,7 +36,7 @@ export {
  * Bullets an import read as one fact said twice, and how the person settles a
  * pair: one wording stays the bullet, the other becomes its variant.
  */
-export { keepOneWording, type DuplicateBullets } from './core/parse/duplicates';
+export { keepOneWording, resolveDuplicates, type DuplicateBullets } from './core/parse/duplicates';
 
 /**
  * Merging a second source into an existing profile. `planMerge` proposes,

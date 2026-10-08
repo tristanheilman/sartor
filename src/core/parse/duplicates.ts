@@ -70,3 +70,43 @@ function asVariants(other: Bullet, keep: Bullet): Bullet['variants'] {
     return true;
   });
 }
+
+/**
+ * Settles flagged pairs from a list of wordings to keep, for a run with nobody
+ * to ask — the audit script, or anything else scripted.
+ *
+ * Each entry names a bullet by id or by the start of its text. Ids are minted
+ * afresh on every import, so a list written against one import would match
+ * nothing in the next if ids were the only key. A pair is settled only when
+ * exactly one of its two bullets is named; naming neither or both is not an
+ * answer, and the pair is reported back untouched.
+ */
+export function resolveDuplicates(
+  profile: Profile,
+  pairs: DuplicateBullets[],
+  keep: string[],
+): { profile: Profile; resolved: Array<{ keepId: string; otherId: string }>; unresolved: DuplicateBullets[] } {
+  const norm = (t: string) => t.replace(/\s+/g, ' ').trim().toLowerCase();
+  const textOf = new Map(
+    [...profile.work, ...profile.projects, ...profile.education]
+      .flatMap((e) => e.bullets)
+      .map((b) => [b.id, norm(b.text)] as const),
+  );
+  const named = (id: string) =>
+    keep.some((k) => k === id || (norm(k) !== '' && (textOf.get(id) ?? '').startsWith(norm(k))));
+
+  let next = profile;
+  const resolved: Array<{ keepId: string; otherId: string }> = [];
+  const unresolved: DuplicateBullets[] = [];
+  for (const pair of pairs) {
+    const [a, b] = pair.bulletIds;
+    if (named(a) === named(b)) {
+      unresolved.push(pair);
+      continue;
+    }
+    const [keepId, otherId] = named(a) ? [a, b] : [b, a];
+    next = keepOneWording(next, keepId, otherId);
+    resolved.push({ keepId, otherId });
+  }
+  return { profile: next, resolved, unresolved };
+}

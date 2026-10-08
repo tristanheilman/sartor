@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ingestResume, INGEST_JSON_SCHEMA, INGEST_SYSTEM_PROMPT } from './ingest';
-import { keepOneWording } from './duplicates';
+import { keepOneWording, resolveDuplicates } from './duplicates';
 import type { LLMProvider } from '../provider';
 
 /**
@@ -157,5 +157,47 @@ describe('keeping one wording', () => {
     const a = profile.projects[0]!.bullets[0]!.id;
     const b = profile.projects[1]!.bullets[0]!.id;
     expect(keepOneWording(profile, a, b)).toBe(profile);
+  });
+});
+
+describe('settling flagged pairs from a list, for a run with nobody to ask', () => {
+  /**
+   * The audit flags suspected repeats but a scripted run had no way to answer
+   * them, so it went on using the misspelled "PhotogrammatrySession" bullet.
+   * Bullet ids are minted afresh on every import, so the list may name a
+   * wording by the start of its text as well as by id.
+   */
+  const setup = async () => {
+    const { profile, duplicates } = await ingest(raw([{ name: 'react-native-object-capture', bullets: CAPTURE }]));
+    return { profile, duplicates };
+  };
+
+  it('keeps the wording a list names by the start of its text', async () => {
+    const { profile, duplicates } = await setup();
+    const { profile: next, resolved, unresolved } = resolveDuplicates(profile, duplicates, ['Published a React Native library bridging']);
+
+    expect(next.projects[0]!.bullets.map((b) => b.text)).toEqual([CAPTURE[1]!.text, CAPTURE[2]!.text]);
+    expect(next.projects[0]!.bullets[1]!.variants.map((v) => v.text)).toEqual([CAPTURE[0]!.text]);
+    expect(resolved).toHaveLength(1);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('keeps the wording a list names by id', async () => {
+    const { profile, duplicates } = await setup();
+    const keep = duplicates[0]!.bulletIds[0];
+    const { profile: next } = resolveDuplicates(profile, duplicates, [keep]);
+    expect(next.projects[0]!.bullets[0]!.id).toBe(keep);
+    expect(next.projects[0]!.bullets).toHaveLength(2);
+  });
+
+  it('leaves a pair alone when the list names neither, or both', async () => {
+    const { profile, duplicates } = await setup();
+    const neither = resolveDuplicates(profile, duplicates, ['Something else entirely']);
+    const both = resolveDuplicates(profile, duplicates, ['Built a public', 'Published a React Native']);
+
+    expect(neither.profile).toBe(profile);
+    expect(neither.unresolved).toEqual(duplicates);
+    expect(both.profile).toBe(profile);
+    expect(both.unresolved).toEqual(duplicates);
   });
 });
