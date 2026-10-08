@@ -59,7 +59,11 @@ export const anthropicProvider: LLMProvider = {
     try {
       const stream = client.messages.stream({
         model: cfg.model,
-        max_tokens: req.maxTokens ?? 16000,
+        // Streamed, so a high ceiling cannot hit an HTTP timeout. A tailoring
+        // plan for a full profile is about 7,000 tokens of JSON and thinking
+        // shares this cap; at 16,000 roughly one call in four was cut off
+        // mid-string.
+        max_tokens: req.maxTokens ?? 64000,
         system: req.system,
         messages: [{ role: 'user', content: req.user }],
         output_config: outputConfig,
@@ -74,6 +78,17 @@ export const anthropicProvider: LLMProvider = {
         throw new ProviderError(
           'The model declined this request. Nothing was generated.',
           message.stop_details,
+          'invalid-response',
+        );
+      }
+
+      // A response cut off at the cap is not bad output, and saying "not valid
+      // JSON" sent people looking for a parsing bug. Truncated JSON never
+      // parses, so this is checked before anything tries.
+      if (message.stop_reason === 'max_tokens') {
+        throw new ProviderError(
+          `The response was cut off at the ${message.usage.output_tokens}-token output limit before it finished. Try again; if it keeps happening, the profile may be too large for one call.`,
+          undefined,
           'invalid-response',
         );
       }

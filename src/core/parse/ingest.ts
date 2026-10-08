@@ -325,7 +325,6 @@ export async function ingestResume(
       system: INGEST_SYSTEM_PROMPT,
       user: `Convert this resume into the JSON structure.\n\n---\n${text}\n---`,
       jsonSchema: { name: 'resume_profile', schema: INGEST_JSON_SCHEMA },
-      maxTokens: 16000,
       signal: opts.signal,
       onToken: opts.onToken,
     },
