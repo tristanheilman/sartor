@@ -294,7 +294,7 @@ export async function tailorPromptCommand(ctx: Ctx): Promise<Result> {
 async function finishRun(ctx: Ctx, file: RunFile, out: string, dropped: string[]): Promise<Result> {
   await writeRunFile(ctx.io, out, file);
   const summary = summarizeRun(file);
-  const warnings = [...dropped];
+  const warnings = [...dropped, ...unsupportedWarnings(summary.summaryUnsupported, file.run.changes)];
   if (!summary.estimate.fits) {
     warnings.push(`Even trimmed as far as it will go, this needs ${summary.estimate.pages} pages against a target of ${summary.pageTarget}. Try a denser template (--template compact) or a 2-page target.`);
   }
@@ -562,6 +562,22 @@ export async function renderCommand(ctx: Ctx): Promise<Result> {
   };
 }
 
+/**
+ * A summary term nothing else on the page shows, and how to fix it: put back
+ * what was cut, or take the term out. Which, is the person's call.
+ */
+function unsupportedWarnings(terms: Array<{ term: string; restoredBy: number[] }>, changes: Change[]): string[] {
+  return terms.map(({ term, restoredBy }) => {
+    const ways = restoredBy.map((n) => {
+      const c = changes[n - 1]!;
+      return `change ${n} (${c.kind === 'bullet-drop' ? 'a bullet under ' : ''}${c.label})`;
+    });
+    return ways.length
+      ? `The summary mentions "${term}", but nothing else left on the page shows it. Rejecting ${ways.join(' or ')} puts it back; otherwise take "${term}" out of the summary.`
+      : `The summary mentions "${term}", but nothing else on the page shows it. Take it out of the summary, or keep something on the page that does.`;
+  });
+}
+
 export async function checkCommand(ctx: Ctx): Promise<Result> {
   const path = requirePositional(ctx, 0, 'the run file', 'sartor check <run.json>');
   const file = await readRunFile(ctx.io, path);
@@ -591,7 +607,11 @@ export async function checkCommand(ctx: Ctx): Promise<Result> {
         inProfileNotOnPage: emphasised.filter((t) => t.status === 'in-profile').map((t) => t.term),
         notInProfile: emphasised.filter((t) => t.status === 'missing').map((t) => t.term),
       },
+      summaryUnsupported: summary.summaryUnsupported,
     },
+    // Not a problem: nothing is fabricated, and the page can still render.
+    // But review may have changed what the page shows since the run was written.
+    warnings: unsupportedWarnings(summary.summaryUnsupported, run.changes),
     text: [
       problems.length ? `Problems:\n${problems.map((p) => `  - ${p}`).join('\n')}` : 'No problems.',
       `Estimate: ${summary.estimate.pages} page(s), last ${Math.round(summary.estimate.lastPageFill * 100)}% full (target ${summary.pageTarget}).`,

@@ -68,7 +68,7 @@ Write a prompt to a file with `--out`, never with a shell redirect (`> file`). T
 | `sartor tailor run --profile --posting [--pages] [--template] [--provider] [--model]` | The same, making the model call with a provider API key. |
 | `sartor review <run.json> [--accept] [--reject] [--acknowledge] [--accept-rest] [--detailed]` | Lists changes by number; records decisions in the run file. |
 | `sartor render <run.json> [--format pdf\|docx\|txt] [--template] [--out]` | Writes the resume. Refuses while an unverified change is accepted. |
-| `sartor check <run.json>` | Unverified changes, page estimate, parse safety, posting coverage. |
+| `sartor check <run.json>` | Unverified changes, page estimate, parse safety, posting coverage. Warns when the summary names something nothing else on the page shows. |
 | `sartor schema <profile\|plan\|structured-resume>` | A JSON Schema. |
 | `sartor templates` | The templates, densest to roomiest. |
 

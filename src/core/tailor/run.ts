@@ -6,6 +6,7 @@ import { tailorPlanSchema, TAILOR_PLAN_JSON_SCHEMA, type TailorPlan } from './pl
 import { TAILOR_SYSTEM_PROMPT, buildTailorUserPrompt, type TailorConstraints } from './prompt';
 import { buildChanges, type TailorRun } from './apply';
 import { fitToTarget } from './fit';
+import { unsupportedSummaryTerms, type UnsupportedTerm } from './support';
 import type { PageMetrics } from '../render/model';
 
 /**
@@ -96,6 +97,12 @@ export interface TailorOutcome {
   /** Plan elements discarded for pointing at nothing real. Shown to the user. */
   dropped: string[];
   /**
+   * Names and numbers the summary uses that nothing else left on the page
+   * shows. The summary is written before the fit, which may cut the bullet
+   * that backed it.
+   */
+  summaryUnsupported: UnsupportedTerm[];
+  /**
    * Bullets switched off to reach the page target, and whether it worked.
    * `false` means the document is as small as the trim is willing to make it —
    * roles and their first bullet are never taken.
@@ -149,6 +156,7 @@ export async function runTailor(
   // switched off, which the review screen already shows as changes the user can
   // put back one at a time.
   const fitted = fitToTarget(profile, plan, constraints.pageTarget, opts.template, jd.text);
+  const changes = buildChanges(profile, fitted.plan);
 
   return {
     run: {
@@ -160,11 +168,12 @@ export async function runTailor(
       jd,
       constraints,
       plan: fitted.plan,
-      changes: buildChanges(profile, fitted.plan),
+      changes,
       notes: plan.notes,
     },
     modelPlan: plan,
     dropped,
+    summaryUnsupported: unsupportedSummaryTerms(profile, fitted.plan, changes),
     fit: {
       dropped: fitted.dropped,
       added: fitted.added,

@@ -2,6 +2,7 @@ import { profileSchema, type Profile } from '../core/schema';
 import { fromPaste, type JobDescription } from '../core/jd/normalize';
 import { getTemplate, isBuiltInTemplate, TEMPLATES, type Template } from '../core/render/templates';
 import { buildDocument, blockingChanges, type Change } from '../core/tailor/apply';
+import { unsupportedSummaryTerms } from '../core/tailor/support';
 import { estimateHeight, pageHeight } from '../core/render/model';
 import { measureSummary } from '../core/tailor/summary';
 import { PROVIDERS, type ProviderConfig } from '../core/provider';
@@ -113,6 +114,12 @@ export function summarizeRun(file: RunFile) {
       blocking: blocking.length,
     },
     notes: run.notes,
+    // Numbered as `review` lists the changes, so an agent can name the one to
+    // reject.
+    summaryUnsupported: unsupportedSummaryTerms(profile, run.plan, run.changes).map((t) => ({
+      term: t.term,
+      restoredBy: t.restoredBy.map((id) => run.changes.findIndex((c) => c.id === id) + 1),
+    })),
   };
 }
 

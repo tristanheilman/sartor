@@ -58,6 +58,8 @@ The product's promise to the person is: **nothing invented, nothing silently rew
 
    A change listing `unverified` words uses a name or number the profile does not contain. Reject it — unless the person tells you it is true, in which case `--acknowledge` it. Never acknowledge one on your own judgement.
 
+   A warning that the summary mentions something nothing else on the page shows means what backed it was cut, by the fit or by the plan. Give the person both fixes: reject the change the warning names, which puts it back, or take the term out of the summary in `plan.json` and apply again.
+
 5. **Check, then render:**
 
    ```bash

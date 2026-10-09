@@ -69,6 +69,9 @@ export {
   type Severity,
 } from './core/tailor/guard';
 
+/** What the summary claims that the fitted page no longer shows. */
+export { unsupportedSummaryTerms, type UnsupportedTerm } from './core/tailor/support';
+
 export {
   tokenize,
   buildLexicon,

@@ -319,6 +319,53 @@ describe('reviewing and rendering', () => {
   });
 });
 
+describe('a summary the fitted page no longer backs', () => {
+  // Written before the fit, the summary cites a speed-up whose only bullet the
+  // fit then cuts: Roomy holds one bullet fewer than this plan includes.
+  const cited = async (template: string) => {
+    const p = JSON.parse(readFileSync(plan, 'utf8'));
+    p.summary = {
+      text: "Backend engineer with eight years on data-heavy services, most at home in Go and PostgreSQL, who cut a rating service's response time 4x. Experience owning event ingestion pipelines end to end, and mentoring engineers through on-call.",
+      rationale: 'Leads with the speed-up.',
+    };
+    writeFileSync(join(cwd, 'plan.json'), JSON.stringify(p));
+    return sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'plan.json', '--pages', '1', '--template', template, '--out', 'run.json']);
+  };
+
+  it('is reported, with the change that would put the evidence back', async () => {
+    const r = await cited('roomy');
+    expect(r.code).toBe(0);
+    expect(r.json.data.summaryUnsupported).toHaveLength(1);
+    const [{ term, restoredBy }] = r.json.data.summaryUnsupported;
+    expect(term).toBe('4x');
+    const changes = (await sartor(['review', 'run.json'])).json.data.changes;
+    expect(changes[restoredBy[0] - 1].change).toMatch(/4x/);
+    expect(r.json.warnings.join(' ')).toMatch(new RegExp(`mentions "4x", but nothing else left on the page shows it\\. Rejecting change ${restoredBy[0]} \\(a bullet under`));
+  });
+
+  it('clears once the person puts the bullet back', async () => {
+    const r = await cited('roomy');
+    const [{ restoredBy }] = r.json.data.summaryUnsupported;
+    await sartor(['review', 'run.json', '--reject', String(restoredBy[0])]);
+    const check = await sartor(['check', 'run.json']);
+    expect(check.json.data.summaryUnsupported).toEqual([]);
+    expect((check.json.warnings ?? []).join(' ')).not.toMatch(/4x/);
+  });
+
+  it('is reported by check as a warning, not a problem', async () => {
+    await cited('roomy');
+    const check = await sartor(['check', 'run.json']);
+    expect(check.json.warnings.join(' ')).toMatch(/"4x"/);
+    expect(check.json.data.problems.join(' ')).not.toMatch(/4x/);
+  });
+
+  it('is not reported when the page keeps the bullet', async () => {
+    const r = await cited('classic');
+    expect(r.json.data.summaryUnsupported).toEqual([]);
+    expect((r.json.warnings ?? []).join(' ')).not.toMatch(/summary mentions/);
+  });
+});
+
 describe('structuring a resume', () => {
   const structured = {
     basics: { name: 'Dana Reyes', label: 'Engineer', email: 'dana@example.com', phone: '', url: '', summary: '', city: '', region: '', profiles: [] },
