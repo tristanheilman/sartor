@@ -3,6 +3,8 @@ import { profileSchema, type Profile } from '../schema';
 import { fromPaste } from '../jd/normalize';
 import { buildTailorUserPrompt, DEFAULT_CONSTRAINTS, TAILOR_SYSTEM_PROMPT } from './prompt';
 import { TAILOR_PLAN_JSON_SCHEMA } from './plan';
+import { getTemplate } from '../render/templates';
+import { summaryCharacterBudget } from './summary';
 
 /**
  * The length budget, which decided nothing about half the document.
@@ -268,6 +270,27 @@ describe('what the summary is for', () => {
   it('is more relaxed about length on two pages', () => {
     const two = buildTailorUserPrompt(p(), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 2 });
     expect(two).not.toBe(onePage());
+  });
+
+  it('gives the length in printed lines: three on one page, four on two', () => {
+    // Sentences have no length. Bounded only by them, one-page summaries ran
+    // to four and five lines.
+    expect(onePage()).toMatch(/Summary: At most 3 printed lines/);
+    expect(buildTailorUserPrompt(p(), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 2 })).toMatch(/Summary: At most 4 printed lines/);
+  });
+
+  it('turns the lines into characters for the template the resume prints in', () => {
+    const chars = (id: string) =>
+      Number(buildTailorUserPrompt(p(), jd, { ...DEFAULT_CONSTRAINTS, pageTarget: 1 }, getTemplate(id)).match(/about (\d+) characters/)![1]);
+    expect(chars('roomy')).toBe(summaryCharacterBudget(1, getTemplate('roomy')));
+    expect(chars('roomy')).toBeLessThan(chars('compact'));
+    // Without a template, the default one's.
+    expect(onePage()).toContain(`about ${summaryCharacterBudget(1, getTemplate('classic'))} characters`);
+  });
+
+  it('puts the budget in the schema as well, for a writer that reads only the schema', () => {
+    const description = TAILOR_PLAN_JSON_SCHEMA.properties.summary.properties.text.description;
+    expect(description).toMatch(/3 printed lines on a one-page resume, 4 on two/);
   });
 });
 

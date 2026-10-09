@@ -160,6 +160,54 @@ describe('the agent workflow', () => {
     expect(file.profile.basics.name).toBe('Riley Okafor');
   });
 
+  describe('a summary longer than the page allows', () => {
+    // Ordinary words only, so the guard has nothing to say about it and the
+    // length is the only thing wrong.
+    const long =
+      'Backend engineer who builds the services other teams depend on, and who cares as much about how they fail as how they work. ' +
+      'Comfortable owning a system end to end, from the first design review through the incident that tests it, and patient with the slow work of making it boring. ' +
+      'Writes things down, reviews carefully, and leaves every codebase a little easier for the next person than it was before, which is most of the job. ' +
+      'Happiest on a small team with a clear goal and room to decide how to reach it.';
+    const withSummary = async (text: string, extra: string[] = []) => {
+      const p = JSON.parse(readFileSync(plan, 'utf8'));
+      p.summary = { text, rationale: 'Frames the career.' };
+      writeFileSync(join(cwd, 'plan.json'), JSON.stringify(p));
+      return sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'plan.json', '--out', 'run.json', ...extra]);
+    };
+
+    it('is reported with its length and the budget', async () => {
+      const r = await withSummary(long);
+      expect(r.code).toBe(0);
+      expect(r.json.data.summaryLength).toMatchObject({ budget: 3, over: true });
+      expect(r.json.data.summaryLength.lines).toBeGreaterThan(3);
+      expect(r.json.warnings.join(' ')).toMatch(/summary prints on \d+ lines; a 1-page resume allows 3/);
+      expect(r.json.warnings.join(' ')).toMatch(/shorter one in the plan/);
+    });
+
+    it('is measured against four lines on two pages', async () => {
+      const r = await withSummary(long, ['--pages', '2']);
+      expect(r.json.data.summaryLength.budget).toBe(4);
+    });
+
+    it('is not reported when it fits', async () => {
+      const r = await applied();
+      expect(r.json.data.summaryLength.over).toBe(false);
+      expect((r.json.warnings ?? []).join(' ')).not.toMatch(/summary prints/);
+    });
+  });
+
+  it('writes the prompt for the template it will be applied in', async () => {
+    // A summary's lines hold fewer characters in a roomier template, so the
+    // plan has to be written for the template it will be applied with.
+    const chars = async (template: string) => {
+      const r = await sartor(['tailor', 'prompt', '--profile', profile, '--posting', posting, '--pages', '1', '--template', template]);
+      expect(r.code).toBe(0);
+      expect(r.json.next[0]).toContain(`--template ${template}`);
+      return Number(r.json.data.input.match(/about (\d+) characters/)[1]);
+    };
+    expect(await chars('roomy')).toBeLessThan(await chars('compact'));
+  });
+
   it('says exactly where a plan is wrong', async () => {
     writeFileSync(join(cwd, 'bad.json'), JSON.stringify({ summary: 'not an object' }));
     const r = await sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'bad.json']);

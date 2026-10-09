@@ -1,6 +1,6 @@
 import type { Profile } from '../schema';
 import { buildChanges, buildDocument } from './apply';
-import { estimateHeight, pageHeight, type PageMetrics } from '../render/model';
+import { DEFAULT_PAGE_METRICS, estimateHeight, pageHeight, type PageMetrics } from '../render/model';
 import { buildLexicon, tokenize } from './lexicon';
 import { isCommonSentenceOpener } from './stopwords';
 import { byRecency, recentRoles } from '../dates';
@@ -55,19 +55,6 @@ import type { TailorPlan, PlannedEntry } from './plan';
  * complete account of the profile, and every plan a provider returns covers
  * everything.
  */
-
-/** The default template's metrics, when the caller does not say which. */
-const DEFAULT_METRICS: PageMetrics = {
-  baseSize: 10,
-  lineHeight: 1.4,
-  pageMargin: 42,
-  sectionGap: 12,
-  entryGap: 9,
-  bulletGap: 3,
-  headingRule: true,
-  bodyFont: 'Helvetica',
-  headingFont: 'Helvetica-Bold',
-};
 
 /**
  * Points held back from the page.
@@ -396,7 +383,7 @@ export function fitToTarget(
   /** The posting, so projects can be ranked by what it actually asked for. */
   jdText?: string,
 ): FitResult {
-  const metrics = template ?? DEFAULT_METRICS;
+  const metrics = template ?? DEFAULT_PAGE_METRICS;
   const budget = pageHeight(metrics) * pageTarget - SAFETY_POINTS;
 
   // Structured clone would drop nothing here, but the plan is plain data and

@@ -78,8 +78,9 @@ export interface RunOptions {
   onToken?: (chunk: string) => void;
   /**
    * The template the result will be rendered in, which decides how much text a
-   * page holds. Omitted, the trim assumes the default density — which errs
-   * toward cutting slightly more than a compact template needs.
+   * page holds — and so how long the summary may be. Omitted, the trim assumes
+   * the default density, which errs toward cutting slightly more than a compact
+   * template needs.
    */
   template?: PageMetrics;
 }
@@ -122,7 +123,7 @@ export async function runTailor(
   const result = await provider.complete(
     {
       system: TAILOR_SYSTEM_PROMPT,
-      user: buildTailorUserPrompt(profile, jd, constraints),
+      user: buildTailorUserPrompt(profile, jd, constraints, opts.template),
       jsonSchema: { name: 'tailor_plan', schema: TAILOR_PLAN_JSON_SCHEMA },
       signal: opts.signal,
       onToken: opts.onToken,
