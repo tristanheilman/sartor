@@ -1,5 +1,5 @@
-import { tokenize, buildLexicon, isGrounded } from './lexicon';
-import { SENTENCE_START_ALLOWLIST, GENERIC_TERMS, CALENDAR_WORDS } from './stopwords';
+import { tokenize, buildLexicon, collectStrings, equivalentForms, isGrounded, type Token } from './lexicon';
+import { SENTENCE_START_ALLOWLIST, GENERIC_TERMS, CALENDAR_WORDS, isKindOfThing } from './stopwords';
 import type { Profile } from '../schema';
 
 /**
@@ -223,7 +223,7 @@ const NOISE = new Set([
 const CONTRACTION_RE = /['’](?:re|ve|ll|d|m|t)$/;
 
 function isNoise(norm: string): boolean {
-  return NOISE.has(norm) || CONTRACTION_RE.test(norm);
+  return NOISE.has(norm) || CONTRACTION_RE.test(norm) || isKindOfThing(norm);
 }
 
 /**
@@ -341,6 +341,47 @@ function writtenLines(jdText: string): Array<[number, number]> {
   return lines;
 }
 
+/** Words in one name: "Google Cloud Platform". Longer runs are lists. */
+const MAX_NAME_WORDS = 3;
+
+/**
+ * Adjacent capitalised terms joined into the one name they make.
+ *
+ * "React Native" is one technology, and counting it as "React" and "Native"
+ * reported two requirements where the posting made one — and credited the
+ * React half to a resume that only ever used React for the web. Terms join
+ * only when a single space separates them and both are capitalised: a comma,
+ * a full stop or a line break between them means a list, and a lowercase word
+ * in between ("Ruby on Rails") is not something this can tell from prose.
+ */
+function joinNames<T extends Token & { emphasised: boolean }>(text: string, terms: T[]): T[] {
+  const out: T[] = [];
+  let run: T[] = [];
+  const flush = () => {
+    if (!run.length) return;
+    out.push({
+      ...run[0]!,
+      raw: run.map((t) => t.raw).join(' '),
+      norm: run.map((t) => t.norm).join(' '),
+      emphasised: run.some((t) => t.emphasised),
+    });
+    run = [];
+  };
+  for (const t of terms) {
+    const prev = run[run.length - 1];
+    const joins =
+      prev !== undefined &&
+      run.length < MAX_NAME_WORDS &&
+      /^[A-Z]/.test(prev.raw) &&
+      /^[A-Z]/.test(t.raw) &&
+      text.slice(prev.index + prev.raw.length, t.index) === ' ';
+    if (!joins) flush();
+    run.push(t);
+  }
+  flush();
+  return out;
+}
+
 export function extractRequirements(jdText: string, limit = 40): Array<{
   term: string;
   norm: string;
@@ -374,9 +415,7 @@ export function extractRequirements(jdText: string, limit = 40): Array<{
   }
   const inCueWindow = (i: number) => cueWindows.some(([a, b]) => i >= a && i <= b);
 
-  const outsideHeader = new Set<string>();
-  for (const t of tokens) if (t.index > headerAt) outsideHeader.add(t.norm);
-
+  const qualifying: Array<Token & { emphasised: boolean }> = [];
   for (const t of tokens) {
     // A wish is not a requirement.
     const emphasised = inCueWindow(t.index) && t.index < optionalAt;
@@ -387,15 +426,24 @@ export function extractRequirements(jdText: string, limit = 40): Array<{
     // prose ("experience", "daily", "exposure").
     const inRequirementClause =
       emphasised && !isNoise(t.norm) && t.norm.length >= 2 && /^[A-Z]/.test(t.raw);
-    if (!looksLikeSkill(t.raw, t.norm) && !inRequirementClause) continue;
-    // Named only in the title: the employer, not a skill.
+    if (looksLikeSkill(t.raw, t.norm) || inRequirementClause) qualifying.push({ ...t, emphasised });
+  }
+
+  const terms = joinNames(jdText, qualifying);
+
+  // Named only in the title: the employer, not a skill.
+  const outsideHeader = new Set<string>();
+  for (const t of tokens) if (t.index > headerAt) outsideHeader.add(t.norm);
+  for (const t of terms) if (t.index > headerAt) outsideHeader.add(t.norm);
+
+  for (const t of terms) {
     if (!outsideHeader.has(t.norm)) continue;
     const existing = counts.get(t.norm);
     if (existing) {
       existing.mentions += 1;
-      existing.emphasised ||= emphasised;
+      existing.emphasised ||= t.emphasised;
     } else {
-      counts.set(t.norm, { term: t.raw, mentions: 1, emphasised });
+      counts.set(t.norm, { term: t.raw, mentions: 1, emphasised: t.emphasised });
     }
   }
 
@@ -414,6 +462,11 @@ export interface ResumeSlice {
   /** Human-readable location, e.g. "Experience · Senior Engineer, Acme". */
   label: string;
   text: string;
+  /**
+   * The summary, which claims things rather than showing them. A term only
+   * the summary names is listed there but not counted as on the page.
+   */
+  summary?: boolean;
 }
 
 /**
@@ -457,6 +510,38 @@ function stemSet(source: unknown): Set<string> {
   return out;
 }
 
+/** One word of a name, matched as loosely as coverage matches single terms. */
+function sameWord(word: string, wanted: string): boolean {
+  return equivalentForms(wanted).includes(word) || stem(word) === stem(wanted);
+}
+
+/**
+ * Whether a run of text mentions a name of several words, in order.
+ *
+ * Hyphens and slashes split words here, so "React Native" is found in
+ * "react-native-island" as well as in "React Native".
+ */
+function namesIn(strings: string[], parts: string[]): boolean {
+  return strings.some((s) => {
+    const words = tokenize(s).flatMap((t) => t.norm.split(/[-/]/)).filter(Boolean);
+    for (let i = 0; i + parts.length <= words.length; i++) {
+      if (parts.every((p, j) => sameWord(words[i + j]!, p))) return true;
+    }
+    return false;
+  });
+}
+
+/**
+ * Whether `text` mentions a posting term, matched the way coverage matches.
+ * For anything else that needs to ask the same question — the fit, ranking
+ * skill groups by the posting terms they carry.
+ */
+export function mentionsTerm(norm: string, text: string): boolean {
+  const parts = norm.split(' ');
+  if (parts.length > 1) return namesIn([text], parts);
+  return isGrounded(norm, buildLexicon(text)) || stemSet(text).has(stem(norm));
+}
+
 export function buildCoverage(
   jdText: string,
   resumeSlices: ResumeSlice[],
@@ -465,21 +550,29 @@ export function buildCoverage(
   const requirements = extractRequirements(jdText);
   const profileLex = buildLexicon(profile);
   const profileStems = stemSet(profile);
+  const profileStrings = collectStrings(profile);
 
   const sliceLexicons = resumeSlices.map((s) => ({
     label: s.label,
+    summary: s.summary ?? false,
+    text: s.text,
     lex: buildLexicon(s.text),
     stems: stemSet(s.text),
   }));
 
   const terms: CoverageTerm[] = requirements.map((r) => {
-    const rootedIn = (lex: Set<string>, stems: Set<string>) =>
-      isGrounded(r.norm, lex) || stems.has(stem(r.norm));
+    const parts = r.norm.split(' ');
+    const rootedIn = (lex: Set<string>, stems: Set<string>, strings: string[]) =>
+      parts.length > 1 ? namesIn(strings, parts) : isGrounded(r.norm, lex) || stems.has(stem(r.norm));
 
-    const locations = sliceLexicons.filter((s) => rootedIn(s.lex, s.stems)).map((s) => s.label);
-    const inProfile = rootedIn(profileLex, profileStems);
-    const status: TermStatus =
-      locations.length > 0 ? 'present' : inProfile ? 'in-profile' : 'missing';
+    const found = sliceLexicons.filter((s) => rootedIn(s.lex, s.stems, [s.text]));
+    const locations = found.map((s) => s.label);
+    // What the summary says, the rest of the page has to show. A term only the
+    // summary names reads as covered to someone skimming this list, on the
+    // same page where nothing backs it.
+    const shown = found.some((s) => !s.summary);
+    const inProfile = rootedIn(profileLex, profileStems, profileStrings);
+    const status: TermStatus = shown ? 'present' : inProfile ? 'in-profile' : 'missing';
     return { term: r.term, norm: r.norm, mentions: r.mentions, emphasised: r.emphasised, status, locations };
   });
 
