@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import * as pdfjs from 'pdfjs-dist';
 import { renderPdfBlob } from './pdf';
+import { estimateHeight } from './model';
 import { getTemplate, TEMPLATES } from './templates';
 import type { ResumeDocument } from './model';
 
@@ -203,6 +204,83 @@ describe.each(TEMPLATES.map((t) => t.id))('page breaks on %s', (id) => {
       for (const page of pages.slice(0, -1)) {
         const lastBaseline = page[page.length - 1]!.y;
         expect(bottom - lastBaseline, 'empty points at the foot of the page').toBeLessThan(line * 12);
+      }
+    }
+  });
+});
+
+describe.each(TEMPLATES.map((t) => t.id))('the skills line on %s', (id) => {
+  /**
+   * A one-page Compact export ended a skills line with "NodeJS-" and began the
+   * next with "·". The separator between groups is its own styled run, and
+   * @react-pdf treats two runs meeting without a single space between them as
+   * a hyphenation point — its run of three spaces did not count as one — so
+   * the only break it allowed there inserted a hyphen into the last keyword.
+   *
+   * The separator now stays with the group that follows it, and the line
+   * breaks before it without a hyphen. Swept so the break lands on and around
+   * every separator, on every template.
+   */
+  const groups = (extra: number) => [
+    { sourceId: 'g1', name: 'Languages & Frameworks', keywords: ['Javascript / Typescript', 'React / React Native', 'Swift / Objective-C', 'Kotlin', 'SQL / PostgreSQL', ...Array(extra).fill('Go'), 'NodeJS'] },
+    { sourceId: 'g2', name: 'Mobile & Web Development', keywords: ['iOS / Android Development', 'App / Play Store Deployment', 'Push Notification Support'] },
+    { sourceId: 'g3', name: 'Cloud Services', keywords: ['Firebase', 'AWS (Lambda, Cognito, S3, RDS)', 'GCP'] },
+    { sourceId: 'g4', name: 'Testing & Quality', keywords: ['Jest / Detox / Appium', 'Unit / Integration / Regression'] },
+  ];
+  const doc = (extra: number): ResumeDocument => ({
+    contact: { name: 'Tristan Heilman', label: '', details: [] },
+    sections: [
+      { key: 'skills', heading: 'Skills', kind: 'skills', skills: groups(extra) },
+      { key: 'summary', heading: 'Summary', kind: 'summary', summary: 'End of the skills section.' },
+    ],
+  });
+
+  /** The printed lines of the skills paragraph. */
+  const skillLines = (pages: Line[][]) => {
+    const lines = pages[0]!.map((l) => l.text.trim());
+    const start = lines.findIndex((l) => /^skills$/i.test(l));
+    const end = lines.findIndex((l) => /^summary$/i.test(l));
+    return lines.slice(start + 1, end);
+  };
+
+  let printed: string[][] = [];
+  beforeAll(async () => {
+    printed = [];
+    for (let extra = 0; extra < 14; extra++) printed.push(skillLines(await pagesOf(doc(extra), id)));
+  });
+
+  it('never hyphenates a keyword at a line end', () => {
+    const hyphenated = printed.flat().filter((l) => /-$/.test(l));
+    expect(hyphenated).toEqual([]);
+  });
+
+  it('never leaves a separator at the end of a line', () => {
+    const dangling = printed.flat().filter((l) => /·$/.test(l));
+    expect(dangling).toEqual([]);
+  });
+
+  it('is never counted a line short by the page estimate', () => {
+    // The fit pass measures this paragraph with the same runs and the same
+    // rule against breaking between them; reading it short would be a
+    // second page. Measured as the estimate measures it: with a heading, and
+    // the skills section's lines alone.
+    const t = getTemplate(id);
+    const line = t.baseSize * t.lineHeight;
+    printed.forEach((lines, extra) => {
+      const estimated = estimateHeight({ ...doc(extra), sections: [doc(extra).sections[0]!] }, t);
+      const withoutSkills = estimateHeight({ ...doc(extra), sections: [{ ...doc(extra).sections[0]!, skills: [] }] }, t);
+      const counted = Math.round((estimated - withoutSkills - 2) / line);
+      expect(counted, `extra ${extra}`).toBeGreaterThanOrEqual(lines.length);
+    });
+  });
+
+  it('keeps a separator on the same line as the group it introduces', () => {
+    const names = groups(0).map((g) => g.name.split(' ')[0]!);
+    for (const lines of printed) {
+      for (const line of lines) {
+        for (const [, after] of line.matchAll(/·\s*(\S+)/g)) {
+          expect(names, `"${line}"`).toContain(after);
+        }
       }
     }
   });

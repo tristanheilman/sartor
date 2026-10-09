@@ -32,7 +32,9 @@ export function widthOf(text: string, font: string, size: number): number {
   const table = WIDTHS[font] ?? WIDTHS['Helvetica']!;
   let mille = 0;
   for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
+    let code = text.charCodeAt(i);
+    // A non-breaking space is drawn with the space glyph, at its width.
+    if (code === 0xa0) code = 32;
     mille += code >= 32 && code <= 126 ? table[code - 32]! : FALLBACK_WIDTH;
   }
   return (mille * size) / 1000;
@@ -67,11 +69,18 @@ export function wrappedRunLines(
   runs: Array<{ text: string; font: string }>,
   size: number,
   maxWidth: number,
+  /**
+   * Whether two runs meeting with no space between them may break there, at
+   * the cost of a hyphen. @react-pdf allows it by default; the skills line
+   * forbids it, with the maximum hyphenation penalty.
+   */
+  opts: { breakBetweenRuns?: boolean } = {},
 ): number {
+  const breakBetweenRuns = opts.breakBetweenRuns ?? true;
   if (!runs.some((r) => r.text.trim())) return 0;
   if (maxWidth <= 0) return 1;
 
-  const key = `${size}|${maxWidth}|${runs.map((r) => `${r.font}:${r.text}`).join('\u0000')}`;
+  const key = `${size}|${maxWidth}|${breakBetweenRuns}|${runs.map((r) => `${r.font}:${r.text}`).join('\u0000')}`;
   const cached = lineCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -83,7 +92,7 @@ export function wrappedRunLines(
     return naturalLines(runs, size, maxWidth);
   }
 
-  const nodes = paragraphNodes(runs, size);
+  const nodes = paragraphNodes(runs, size, breakBetweenRuns ? 600 : INFINITE);
   let tolerance = 4;
   let breaks = knuthPlass(nodes, maxWidth, tolerance);
   // As the renderer does: loosen the tolerance before giving up, then fall
@@ -154,7 +163,7 @@ type LineNode =
   | { type: 'penalty'; width: number; penalty: number; flagged: number };
 
 /** Words become boxes and runs of spaces become glue, split as the renderer splits them. */
-function paragraphNodes(runs: Array<{ text: string; font: string }>, size: number): LineNode[] {
+function paragraphNodes(runs: Array<{ text: string; font: string }>, size: number, hyphenPenalty: number): LineNode[] {
   const syllables: Array<{ text: string; font: string }> = [];
   for (const run of runs) {
     for (const part of run.text.replace(/\s/g, ' ').split(/([ ]+)/g).filter(Boolean)) {
@@ -173,7 +182,7 @@ function paragraphNodes(runs: Array<{ text: string; font: string }>, size: numbe
     // Two pieces with no space between them — a bold label and its text — may
     // break only at a cost, which the renderer prices as a hyphen.
     const next = syllables[i + 1]?.text;
-    if (next !== undefined && next !== ' ') nodes.push({ type: 'penalty', width: 5, penalty: 600, flagged: 1 });
+    if (next !== undefined && next !== ' ') nodes.push({ type: 'penalty', width: 5, penalty: hyphenPenalty, flagged: 1 });
   });
   nodes.push({ type: 'glue', width: 0, stretch: INFINITE, shrink: 0 });
   nodes.push({ type: 'penalty', width: 0, penalty: -INFINITE, flagged: 1 });

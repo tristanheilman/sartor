@@ -200,12 +200,14 @@ export function estimateHeight(doc: ResumeDocument, t: PageMetrics): number {
     if (s.kind === 'skills' && groups.length) {
       // Set as the renderer sets it: bold labels, the keywords, and a spaced
       // separator between groups, broken as one paragraph.
+      // The separator and the gap before it exactly as `pdf.tsx` sets them,
+      // and like the renderer, never breaking between two runs.
       const runs = groups.flatMap((g, i) => [
-        ...(i > 0 ? [{ text: '   ·   ', font: body }] : []),
+        ...(i > 0 ? [{ text: ' ·\u00A0\u00A0\u00A0', font: body }] : []),
         { text: `${g.name}: `, font: heading },
-        { text: g.keywords.join(', '), font: body },
+        { text: `${g.keywords.join(', ')}${i < groups.length - 1 ? '\u00A0\u00A0' : ''}`, font: body },
       ]);
-      lead += wrappedRunLines(runs, t.baseSize, textColumn) * line + 2;
+      lead += wrappedRunLines(runs, t.baseSize, textColumn, { breakBetweenRuns: false }) * line + 2;
     }
 
     if (s.kind === 'list') {

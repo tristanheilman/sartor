@@ -102,7 +102,32 @@ function makeStyles(t: Template) {
 }
 
 /** Between skill groups when they run together on one line. */
-const SKILL_SEPARATOR = '   ·   ';
+const SKILL_SEPARATOR = ' ·\u00A0\u00A0\u00A0';
+
+/**
+ * Ends every group but the last, so the gap before a separator is as wide as
+ * the gap after it without being a place the line may break.
+ */
+const SKILL_GAP = '\u00A0\u00A0';
+
+/**
+ * Where a skills line may break, and where it may not.
+ *
+ * The separator is its own styled run, and @react-pdf treats two runs meeting
+ * without a single space between them as a hyphenation point. The separator
+ * used to be three spaces, a dot and three spaces; three spaces are not "a
+ * space" to it, so the only break it allowed after a group inserted a hyphen —
+ * a Compact export printed "NodeJS-" at the end of one line and "·" at the
+ * start of the next.
+ *
+ * Now the group before ends in non-breaking spaces and the separator begins
+ * with one ordinary space, which is the only place the line breaks between
+ * groups — before the dot, never after it. The dot and the label it
+ * introduces meet as two runs, and the maximum hyphenation penalty
+ * (@react-pdf's "never") stops it breaking there. On the page the gap either
+ * side of the dot is three spaces, as it was.
+ */
+const NO_BREAK_BETWEEN_RUNS = { hyphenationPenalty: 10000 } as object;
 
 type Styles = ReturnType<typeof makeStyles>;
 
@@ -172,12 +197,14 @@ function sectionBlocks(section: DocSection, s: Styles, t: Template, last: boolea
               Flowed, the text fills every line it starts, and the labels stay
               bold so the section is still scannable rather than a wall of
               nouns. */}
-          <Text style={s.skillRow}>
+          {/* `hyphenationPenalty` is read by @react-pdf's layout but missing from its types. */}
+          <Text style={s.skillRow} {...NO_BREAK_BETWEEN_RUNS}>
             {groups.map((g, i) => (
               <Text key={g.sourceId}>
                 {i > 0 ? <Text style={s.skillSeparator}>{SKILL_SEPARATOR}</Text> : null}
                 <Text style={s.skillName}>{g.name}: </Text>
                 {g.keywords.join(', ')}
+                {i < groups.length - 1 ? SKILL_GAP : null}
               </Text>
             ))}
           </Text>
