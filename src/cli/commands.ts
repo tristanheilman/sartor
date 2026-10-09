@@ -144,12 +144,16 @@ async function promptResult(
   text: string,
   next: string[],
 ): Promise<Result> {
+  // `next` travels with the prompt. The task says to run it, and an agent
+  // reading only the file — the point of --out — had no `next` to run: it
+  // lived in the stdout envelope alone.
+  const full = { ...payload, next };
   const out = str(ctx.flags.out);
-  if (!out) return { data: payload, text, next };
-  await writeOut(ctx.io, out, `${JSON.stringify(payload, null, 2)}\n`);
+  if (!out) return { data: full, text, next };
+  await writeOut(ctx.io, out, `${JSON.stringify(full, null, 2)}\n`);
   return {
-    data: { written: out, contains: ['task', 'instructions', 'input', 'schema'] },
-    text: `Wrote the prompt to ${out}. Read it, write the JSON it asks for, then run the next command.`,
+    data: { written: out, contains: Object.keys(full) },
+    text: `Wrote the prompt to ${out}. Read it, write the JSON it asks for, then run the command in its \`next\`.`,
     next,
   };
 }
@@ -164,7 +168,7 @@ export async function ingestPromptCommand(ctx: Ctx): Promise<Result> {
   return promptResult(
     ctx,
     {
-      task: 'Structure the resume below into JSON that matches `schema` exactly, following `instructions`. Write only the JSON to a file, then run the `next` command on it.',
+      task: 'Structure the resume below into JSON that matches `schema` exactly, following `instructions`. Write only the JSON to a file, then run the first command in `next`, with your file in place of structured.json.',
       instructions: INGEST_SYSTEM_PROMPT,
       input,
       schema: INGEST_JSON_SCHEMA,
@@ -272,7 +276,7 @@ export async function tailorPromptCommand(ctx: Ctx): Promise<Result> {
   return promptResult(
     ctx,
     {
-      task: 'Produce a tailoring plan for the posting below, following `instructions`, as JSON matching `schema` exactly. Write only the JSON to a file, then run the `next` command on it. The plan selects and orders; it never invents.',
+      task: 'Produce a tailoring plan for the posting below, following `instructions`, as JSON matching `schema` exactly. Write only the JSON to a file, then run the first command in `next`, with your file in place of plan.json. The plan selects and orders; it never invents.',
       instructions: TAILOR_SYSTEM_PROMPT,
       input,
       schema: TAILOR_PLAN_JSON_SCHEMA,

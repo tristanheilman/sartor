@@ -116,7 +116,7 @@ describe('the agent workflow', () => {
   it('hands the agent instructions, input and schema for a plan', async () => {
     const r = await sartor(['tailor', 'prompt', '--profile', profile, '--posting', posting, '--pages', '1']);
     expect(r.code).toBe(0);
-    expect(Object.keys(r.json.data)).toEqual(['task', 'instructions', 'input', 'schema']);
+    expect(Object.keys(r.json.data)).toEqual(['task', 'instructions', 'input', 'schema', 'next']);
     expect(r.json.data.input).toMatch(/Riley Okafor/);
     expect(r.json.data.schema.required).toContain('requested');
     expect(r.json.next[0]).toMatch(/^sartor tailor apply/);
@@ -131,8 +131,12 @@ describe('the agent workflow', () => {
     expect(r.json.data).toMatchObject({ written: 'tailor-prompt.json' });
     expect(r.json.data.instructions).toBeUndefined();
     const written = JSON.parse(readFileSync(join(cwd, 'tailor-prompt.json'), 'utf8'));
-    expect(Object.keys(written)).toEqual(['task', 'instructions', 'input', 'schema']);
+    expect(Object.keys(written)).toEqual(['task', 'instructions', 'input', 'schema', 'next']);
     expect(written.input).toMatch(/Riley Okafor/);
+    // The task points at a command; the file has to carry it. Every agent that
+    // read a prompt file asked where `next` was.
+    expect(written.task).toMatch(/`next`/);
+    expect(written.next[0]).toMatch(/^sartor tailor apply /);
   });
 
   it('writes the ingest prompt to a file with --out', async () => {
@@ -140,7 +144,8 @@ describe('the agent workflow', () => {
     const r = await sartor(['ingest', 'prompt', 'resume.txt', '--out', 'ingest-prompt.json']);
     expect(r.code).toBe(0);
     const written = JSON.parse(readFileSync(join(cwd, 'ingest-prompt.json'), 'utf8'));
-    expect(Object.keys(written)).toEqual(['task', 'instructions', 'input', 'schema']);
+    expect(Object.keys(written)).toEqual(['task', 'instructions', 'input', 'schema', 'next']);
+    expect(written.next[0]).toMatch(/^sartor ingest apply /);
     expect(written.input).toMatch(/Shipped the billing service/);
   });
 
