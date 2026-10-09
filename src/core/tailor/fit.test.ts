@@ -1506,6 +1506,32 @@ describe('which skill groups the page keeps', () => {
     expect(kept(p, planFor(p), jd)).toEqual(['k_lang', 'k_cloud']);
   });
 
+  /**
+   * Crowded by roles that each have only the two bullets a role keeps, so
+   * every cut the trim could make instead is one that takes a role below two
+   * lines — and a skill group gives way before that. Which group, is what is
+   * being tested.
+   */
+  const LONG = 'Owned a specific and checkable piece of work that took real effort to do, from the first design review through the rollout, the incident that tested it and the write-up afterwards.';
+  const tight = (skills: Profile['skills'], first = LONG) =>
+    profileSchema.parse({
+      ...profile,
+      basics: { ...profile.basics, summary: '' },
+      work: Array.from({ length: 8 }, (_, i) => ({
+        id: `wrk_${i}`,
+        name: `Employer ${i}`,
+        position: 'Engineer',
+        startDate: `${2024 - i * 2}-01`,
+        endDate: `${2025 - i * 2}-12`,
+        bullets: [
+          { id: `t${i}a`, text: i === 0 ? first : LONG },
+          { id: `t${i}b`, text: LONG },
+        ],
+      })),
+      projects: [],
+      skills,
+    });
+
   describe('a group that is the summary’s only evidence', () => {
     // Kafka and Kubernetes are each one stated requirement, so the two groups
     // carry the same; the plan ranked the data group lower. Each is long
@@ -1527,20 +1553,94 @@ describe('which skill groups the page keeps', () => {
     const summary = 'Backend engineer who models event data in Snowflake.';
 
     it('is kept, though the plan ranked it lower', () => {
-      const p = crowded(skills);
+      const p = tight(skills);
       expect(kept(p, planFor(p, summary), jd)).toEqual(['k_lang', 'k_data']);
     });
 
     it('is not, when a bullet on the page shows the same thing', () => {
-      const p = crowded(skills, 'Moved the reporting warehouse onto Snowflake.');
+      const p = tight(skills, 'Moved the reporting warehouse onto Snowflake, from the first design review through the rollout, the incident that tested it and the write-up afterwards.');
       expect(kept(p, planFor(p, summary), jd)).toEqual(['k_lang', 'k_infra']);
     });
 
     it('and the summary is not left naming something the page does not show', () => {
-      const p = crowded(skills);
+      const p = tight(skills);
       const { plan } = fitToTarget(p, planFor(p, summary), 1, undefined, jd);
       const page = JSON.stringify(buildDocument(p, plan, buildChanges(p, plan)).sections.filter((s) => s.kind !== 'summary'));
       expect(page).toMatch(/Snowflake/);
     });
+  });
+});
+
+describe('a skill group weighed against the bullets the plan over-supplied', () => {
+  /**
+   * Skill groups went before any bullet. The prompt asks the plan for about
+   * twice what the page holds, so the page always overflowed when the trim
+   * began, and every run lost all but two groups — on a template with room
+   * for fifteen bullets as on one with room for nine. The group that was the
+   * page's only mention of AWS went while the model's least-wanted bullets
+   * were still there.
+   */
+  // Two printed lines each, so the plan's surplus really does overflow.
+  const many = (n: number, p: string) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `${p}${i}`,
+      text: `Owned a specific and checkable piece of work, number ${i}, that took real effort to do, from the first design review through the rollout.`,
+    }));
+
+  const roles = (first?: string) => [
+    { id: 'w_new', name: 'Formedics', position: 'Engineer', startDate: '2023-01', bullets: [{ id: 'w_new_0', text: first ?? many(1, 'x')[0]!.text }, ...many(14, 'w_new_').slice(1)] },
+    { id: 'w_old', name: 'Wridz', position: 'Engineer', startDate: '2019-01', endDate: '2022-12', bullets: many(14, 'w_old_') },
+  ];
+
+  const long = (head: string[]) => [...head, 'Origami', 'Beekeeping', 'Calligraphy', 'Juggling', 'Sailing', 'Pottery', 'Fencing', 'Archery', 'Rowing'];
+  const skills = [
+    { id: 'k_lang', name: 'Languages', keywords: long(['TypeScript', 'Kotlin']) },
+    { id: 'k_cloud', name: 'Cloud', keywords: long(['AWS']) },
+    { id: 'k_obs', name: 'Observability', keywords: long(['Datadog']) },
+  ];
+  const jd = 'Mobile Engineer\n\nYou have experience with TypeScript, Kotlin, AWS and Datadog.\n';
+
+  const make = (work: unknown[], projects: unknown[] = []) =>
+    profileSchema.parse({ ...profile, basics: { ...profile.basics, summary: '' }, work, projects, skills });
+
+  const everything = (p: Profile): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({ id: w.id, include: true, order: i, bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })) })),
+      projects: p.projects.map((x, i) => ({ id: x.id, include: true, order: i, bullets: x.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })) })),
+      skills: p.skills.map((g, i) => ({ id: g.id, include: true, order: i, keywords: g.keywords })),
+    });
+
+  const keptGroups = (p: Profile) =>
+    fitToTarget(p, everything(p), 1, undefined, jd).plan.skills.filter((g) => g.include).map((g) => g.id);
+
+  it('keeps every group that is the page’s only mention of a stated requirement, and cuts surplus bullets instead', () => {
+    const p = make(roles());
+    const out = fitToTarget(p, everything(p), 1, undefined, jd);
+    expect(out.plan.skills.filter((g) => g.include).map((g) => g.id)).toEqual(['k_lang', 'k_cloud', 'k_obs']);
+    expect(out.fits).toBe(true);
+  });
+
+  it('still lets a group go first when a bullet already shows what it names', () => {
+    // Datadog is on the page in the newest role's first line, so the group
+    // naming it adds nothing a surplus bullet would take with it.
+    const p = make(roles('Set up Datadog dashboards and alerting for the payments service.'));
+    expect(keptGroups(p)).toEqual(['k_lang', 'k_cloud']);
+  });
+
+  it('takes a project the posting did not ask for before a group', () => {
+    // Two projects: the one sharing the posting's vocabulary is held back as
+    // the best match, the other is surplus.
+    const p = make(
+      roles().map((r) => ({ ...r, bullets: r.bullets.slice(0, 2) })),
+      [
+        { id: 'prj_lib', name: 'kotlin-aws-sdk', bullets: [{ id: 'l0', text: 'A Kotlin client for AWS, written in TypeScript and Kotlin.' }] },
+        { id: 'prj_side', name: 'Sourdough timer', bullets: many(12, 's') },
+      ],
+    );
+    const out = fitToTarget(p, everything(p), 1, undefined, jd);
+    expect(out.dropped.filter((id) => id.startsWith('s')).length).toBeGreaterThan(0);
+    expect(out.plan.skills.filter((g) => g.include).map((g) => g.id)).toEqual(['k_lang', 'k_cloud', 'k_obs']);
+    expect(out.fits).toBe(true);
   });
 });

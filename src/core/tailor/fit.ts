@@ -1,6 +1,6 @@
 import type { Profile } from '../schema';
 import { buildChanges, buildDocument } from './apply';
-import { DEFAULT_PAGE_METRICS, estimateHeight, pageHeight, type PageMetrics } from '../render/model';
+import { DEFAULT_PAGE_METRICS, estimateHeight, pageHeight, type PageMetrics, type ResumeDocument } from '../render/model';
 import { buildLexicon, collectStrings, tokenize } from './lexicon';
 import { extractRequirements, mentionsTerm } from './coverage';
 import { isCommonSentenceOpener } from './stopwords';
@@ -128,34 +128,56 @@ function relevanceTo(jdLexicon: Set<string>, name: string, bulletText: string): 
 }
 
 /**
- * What a skill group is worth to this posting: the posting's terms it names.
+ * What a line of the page is worth to this posting: the posting's terms it
+ * names. Skill groups are ranked by it, and weighed by it against the bullet
+ * the trim would otherwise take.
  *
- * Not a proportion, which is what projects and bullets are scored by. A group
- * that spells out a technology — AWS, then ten AWS services in parentheses —
- * carried the posting's terms and scored 0.18, diluted by its own detail,
- * while a group that matched on "development", "app" and "store" scored 0.33
- * and stayed. A reader scans a skills line for the posting's terms, not for
- * words in common with it.
+ * Not a proportion, which is what projects are ranked by. A group that spells
+ * out a technology — AWS, then ten AWS services in parentheses — carried the
+ * posting's terms and scored 0.18, diluted by its own detail, while a group
+ * that matched on "development", "app" and "store" scored 0.33 and stayed. A
+ * reader scans a skills line for the posting's terms, not for words in common
+ * with it.
  *
- * So a group is worth the coverage terms it carries, a requirement the
- * posting stated counting double. And it is worth as much again for each term
- * the summary names that nothing else on the page shows: then the group is the
+ * So a line is worth the coverage terms it carries, a requirement the posting
+ * stated counting double. And it is worth as much again for each term the
+ * summary names that nothing else on the page shows: then the line is the
  * summary's only evidence, and cutting it leaves the summary claiming
  * something the page does not back. Two groups carrying two stated
  * requirements each are otherwise equal; the one holding the only mention of
  * AWS that the summary leads with is not.
  */
-function skillWorth(jdText: string, summary: string): (keywords: string[], restOfPage: string) => number {
+function evidenceWorth(
+  jdText: string,
+  summary: string,
+): (text: string, restOfPage: string, only?: 'unshown') => number {
   const posting = new Map<string, number>();
   for (const t of extractRequirements(jdText)) posting.set(t.norm, t.emphasised ? 2 : 1);
   const claimed = extractRequirements(summary).map((t) => t.norm);
-  return (keywords, restOfPage) => {
-    const text = keywords.join(', ');
+  // `unshown`: only what nothing else on the page shows — what the page would
+  // lose with this line.
+  return (text, restOfPage, only) => {
     let worth = 0;
-    for (const [norm, weight] of posting) if (mentionsTerm(norm, text)) worth += weight;
+    for (const [norm, weight] of posting) {
+      if (mentionsTerm(norm, text) && (only !== 'unshown' || !mentionsTerm(norm, restOfPage))) worth += weight;
+    }
     for (const norm of claimed) if (mentionsTerm(norm, text) && !mentionsTerm(norm, restOfPage)) worth += 2;
     return worth;
   };
+}
+
+/** Everything the page prints but the summary and the one line being weighed. */
+function restOfPage(doc: ResumeDocument, skip: { group?: string; bullet?: string }): string {
+  return collectStrings({
+    ...doc,
+    sections: doc.sections
+      .filter((sec) => sec.kind !== 'summary')
+      .map((sec) =>
+        sec.kind === 'skills'
+          ? { ...sec, skills: sec.skills?.filter((g) => g.sourceId !== skip.group) }
+          : { ...sec, entries: sec.entries?.map((e) => ({ ...e, bullets: e.bullets.filter((b) => b.sourceId !== skip.bullet) })) },
+      ),
+  }).join('\n');
 }
 
 /**
@@ -284,7 +306,7 @@ function nextCut(
   ranking: string[] | null,
   requested: Set<string>,
   recent: Set<string>,
-): { entry: PlannedEntry; bulletId: string; kind: 'project' | 'held' | 'work' } | null {
+): { entry: PlannedEntry; bulletId: string; kind: 'project' | 'held' | 'work'; free?: boolean } | null {
   const live = plan.projects.filter((e) => e.include && keptBullets(e).length > 0);
 
   const take = (entry: PlannedEntry, kind: 'project' | 'held' | 'work') => {
@@ -311,7 +333,7 @@ function nextCut(
   );
 
   const free = byPreference.find((e) => !held.has(e));
-  if (free) return take(free, 'project');
+  if (free) return { ...take(free, 'project'), free: true };
 
   const heldOver = (n: number) => byPreference.find((e) => held.has(e) && keptBullets(e).length > n);
 
@@ -461,7 +483,8 @@ export function fitToTarget(
   const ranking = jdText?.trim() ? projectsByRelevance(plan, profile, jdText) : null;
   // The summary that will print: the plan's, or the profile's own when the
   // plan wrote none.
-  const worthOf = jdText?.trim() ? skillWorth(jdText, plan.summary.text.trim() || profile.basics.summary) : null;
+  const worthOf = jdText?.trim() ? evidenceWorth(jdText, plan.summary.text.trim() || profile.basics.summary) : null;
+  const pageNow = () => buildDocument(profile, next, buildChanges(profile, next));
   /**
    * Skill groups in the order the trim gives them up, with what each is
    * worth: least worth first, and
@@ -473,16 +496,9 @@ export function fitToTarget(
    */
   const byWorth = (groups: TailorPlan['skills']): Array<{ g: TailorPlan['skills'][number]; worth: number }> => {
     if (!worthOf) return [...groups].reverse().map((g) => ({ g, worth: 0 }));
-    const doc = buildDocument(profile, next, buildChanges(profile, next));
-    const without = (id: string) =>
-      collectStrings({
-        ...doc,
-        sections: doc.sections
-          .filter((sec) => sec.kind !== 'summary')
-          .map((sec) => (sec.kind === 'skills' ? { ...sec, skills: sec.skills?.filter((x) => x.sourceId !== id) } : sec)),
-      }).join('\n');
+    const doc = pageNow();
     return groups
-      .map((g, i) => ({ g, worth: worthOf(g.keywords, without(g.id)), i }))
+      .map((g, i) => ({ g, worth: worthOf(g.keywords.join(', '), restOfPage(doc, { group: g.id })), i }))
       .sort((a, b) => a.worth - b.worth || b.g.order - a.g.order || b.i - a.i)
       .map(({ g, worth }) => ({ g, worth }));
   };
@@ -604,22 +620,66 @@ export function fitToTarget(
     estimateHeight(buildDocument(profile, next, buildChanges(profile, next)), metrics);
   const overflows = () => heightNow() > budget;
 
-  // Skills before the protected project. Roles down to a bullet each still left
-  // the page overflowing while six skill groups took eleven lines, two of them
-  // naming nothing the posting had asked for — and the project the posting *had*
-  // asked for was sacrificed to keep them. A group nobody reads is the cheapest
+  const spareGroup = () =>
+    next.skills.filter((g) => g.include).length > MIN_SKILL_GROUPS ? byWorth(next.skills.filter((g) => g.include))[0] : undefined;
+
+  // A group naming nothing the posting or the summary does goes before any
+  // bullet. Roles down to a bullet each still left the page overflowing while
+  // six skill groups took eleven lines, two of them naming nothing the posting
+  // had asked for — and the project the posting *had* asked for was
+  // sacrificed to keep them. A list of words nobody reads is the cheapest
   // thing on a resume to lose.
-  {
-    // With a posting, least worth first. Without one there is nothing to be
-    // relevant to, so the profile's own order stands and the trailing groups
-    // go first — which is still better than not cutting skills at all and
-    // taking the difference out of someone's employment history.
-    // One at a time, re-ranked after each: cutting one of two groups that
-    // both name AWS makes the other the only one that does.
-    while (overflows() && next.skills.filter((x) => x.include).length > MIN_SKILL_GROUPS) {
-      leastWorthFirst(next.skills.filter((x) => x.include))[0]!.include = false;
-    }
+  //
+  // Without a posting there is nothing to weigh a group by, so every group
+  // beyond the minimum goes here, trailing groups first — still better than
+  // taking the difference out of someone's employment history.
+  //
+  // One at a time, re-ranked after each: cutting one of two groups that both
+  // name AWS makes the other the only one that does.
+  for (let spare = spareGroup(); spare && (!worthOf || spare.worth === 0) && overflows(); spare = spareGroup()) {
+    spare.g.include = false;
   }
+
+  /**
+   * Whether a skill group carrying the posting's terms should give way before
+   * the bullet the trim would take next.
+   *
+   * These used to go before any bullet, like the groups above. But the plan
+   * includes about twice what the page holds, on purpose, so the page always
+   * overflows when the trim starts, and every run lost all but two groups
+   * before a single over-supplied bullet was looked at. A group that was the
+   * page's only mention of AWS — which the posting asked for and the summary
+   * claimed — was cut while a project naming AWS was still on the page, and
+   * that project was cut next.
+   *
+   *   - A bullet from a project the posting did not ask for goes first. It is
+   *     the cheapest thing on the page, and the project usually goes whole.
+   *   - A line that would take an entry below two — a role's second bullet, a
+   *     requested project's — outranks a group, as it always has: a role on
+   *     one line reads as though nothing happened there.
+   *   - Otherwise the bullet is surplus the plan supplied for the trim to cut,
+   *     and the two are weighed by what each alone shows: the posting's terms
+   *     and the summary's claims that nothing else on the page does. The group
+   *     stays only if it would take more of that with it. Between equals it
+   *     goes, as before.
+   *
+   * By what each alone shows, not by every posting term each names. Counting
+   * terms, a group naming one tool the bullets already showed outweighed a
+   * role's line about leading two teams through a handover, which names no
+   * posting term at all — and a human reading the posting marked that line as
+   * one the page must keep. Terms are what a keyword list is made of; they are
+   * not all a bullet is for. The group earns its place over a bullet when the
+   * page would otherwise lose something.
+   */
+  const groupGivesWay = (group: TailorPlan['skills'][number], cut: NonNullable<ReturnType<typeof nextCut>>) => {
+    if (cut.free) return false;
+    if (keptBullets(cut.entry).length <= PROTECTED_PROJECT_BULLETS) return true;
+    const doc = pageNow();
+    const bullet = doc.sections.flatMap((sec) => sec.entries ?? []).flatMap((e) => e.bullets).find((b) => b.sourceId === cut.bulletId)?.text ?? '';
+    const groupAlone = worthOf!(group.keywords.join(', '), restOfPage(doc, { group: group.id }), 'unshown');
+    const bulletAlone = worthOf!(bullet, restOfPage(doc, { bullet: cut.bulletId }), 'unshown');
+    return groupAlone <= bulletAlone;
+  };
 
   // Bounded by the number of bullets, and every iteration switches one off, so
   // this terminates. The guard is against a bug in `nextCut`, not against the
@@ -629,10 +689,15 @@ export function fitToTarget(
   // covering a single role bounded the loop at thirteen — so the trim stopped
   // with two roles and six projects untouched and reported a document it had
   // not finished shrinking.
-  const limit = next.work.concat(next.projects).reduce((n, e) => n + e.bullets.length, 0) + 1;
+  const limit = next.work.concat(next.projects).reduce((n, e) => n + e.bullets.length, 0) + next.skills.length + 1;
 
   for (let i = 0; i < limit && overflows(); i++) {
     const cut = nextCut(next, profile, ranking, requested, recent);
+    const spare = spareGroup();
+    if (spare && (!cut || groupGivesWay(spare.g, cut))) {
+      spare.g.include = false;
+      continue;
+    }
     if (!cut) break;
 
     for (const b of cut.entry.bullets) {
