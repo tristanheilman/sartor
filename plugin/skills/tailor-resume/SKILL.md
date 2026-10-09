@@ -37,7 +37,7 @@ The product's promise to the person is: **nothing invented, nothing silently rew
 2. **Write the plan** to `plan.json`: JSON matching `data.schema` exactly, following `data.instructions`. In particular:
    - Select and order only. Every `bulletId` and entry `id` must come from the profile.
    - Include **more than fits** — about twice what the page holds, ranked best first within each entry, and projects ranked by how well they answer the posting. The fit pass trims from the end of your order, so ranking is what decides what survives.
-   - List in `requested` any project the posting explicitly asks for (it wants published libraries, and this is one). Never set `include: false` on those.
+   - List in `requested` any project that is an example of something the posting explicitly asks for — not one that merely shares a technology with it. Never set `include: false` on those.
    - Leave each bullet's `text` empty with `textSource: "canonical"` so the person's own wording is used. Reword only if the person asked for it; every rewording is flagged for their review.
    - Never add a skill, tool, employer, title, date, credential or number the profile lacks. If the posting asks for something the profile cannot support, say so in `notes` instead.
 
