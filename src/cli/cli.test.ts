@@ -122,6 +122,28 @@ describe('the agent workflow', () => {
     expect(r.json.next[0]).toMatch(/^sartor tailor apply/);
   });
 
+  it('writes the prompt to a file with --out, so no shell redirect is needed', async () => {
+    // A `> file` redirect is a second command as far as a tool permission is
+    // concerned, so a skill's \`Bash(sartor *)\` grant did not cover it and the
+    // agent stopped to ask. --out keeps the whole step inside one sartor call.
+    const r = await sartor(['tailor', 'prompt', '--profile', profile, '--posting', posting, '--pages', '1', '--out', 'tailor-prompt.json']);
+    expect(r.code).toBe(0);
+    expect(r.json.data).toMatchObject({ written: 'tailor-prompt.json' });
+    expect(r.json.data.instructions).toBeUndefined();
+    const written = JSON.parse(readFileSync(join(cwd, 'tailor-prompt.json'), 'utf8'));
+    expect(Object.keys(written)).toEqual(['task', 'instructions', 'input', 'schema']);
+    expect(written.input).toMatch(/Riley Okafor/);
+  });
+
+  it('writes the ingest prompt to a file with --out', async () => {
+    writeFileSync(join(cwd, 'resume.txt'), 'Dana Reyes\nEngineer at Acme, 2020 - 2024\n- Shipped the billing service.');
+    const r = await sartor(['ingest', 'prompt', 'resume.txt', '--out', 'ingest-prompt.json']);
+    expect(r.code).toBe(0);
+    const written = JSON.parse(readFileSync(join(cwd, 'ingest-prompt.json'), 'utf8'));
+    expect(Object.keys(written)).toEqual(['task', 'instructions', 'input', 'schema']);
+    expect(written.input).toMatch(/Shipped the billing service/);
+  });
+
   it('reads the posting from stdin', async () => {
     const r = await sartor(['tailor', 'prompt', '--profile', profile, '--posting', '-'], { stdin: readFileSync(posting, 'utf8') });
     expect(r.code).toBe(0);
