@@ -59,6 +59,8 @@ export const runFileSchema = z.object({
       added: z.array(z.string()),
       restoredSkills: z.array(z.string()),
       droppedEntries: z.array(z.string()),
+      // Absent from run files written before it was reported.
+      emptyRolesFilled: z.array(z.object({ roleId: z.string(), bulletId: z.string() })).default([]),
       fits: z.boolean(),
       reinstated: z.string().nullable(),
     })

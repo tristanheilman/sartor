@@ -160,6 +160,17 @@ describe('the agent workflow', () => {
     expect(file.profile.basics.name).toBe('Riley Okafor');
   });
 
+  it('says when a kept role with every bullet left out was given its first one back', async () => {
+    const p = JSON.parse(readFileSync(plan, 'utf8'));
+    const role = p.work[1];
+    for (const b of role.bullets) b.include = false;
+    writeFileSync(join(cwd, 'plan.json'), JSON.stringify(p));
+    const r = await sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'plan.json', '--out', 'run.json']);
+    expect(r.code).toBe(0);
+    expect(r.json.data.fit.emptyRolesFilled).toEqual([expect.objectContaining({ roleId: role.id })]);
+    expect(r.json.warnings.join(' ')).toMatch(/Pinecrest Analytics/);
+  });
+
   it('says exactly where a plan is wrong', async () => {
     writeFileSync(join(cwd, 'bad.json'), JSON.stringify({ summary: 'not an object' }));
     const r = await sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'bad.json']);

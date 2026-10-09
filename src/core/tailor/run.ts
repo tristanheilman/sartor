@@ -104,6 +104,8 @@ export interface TailorOutcome {
     added: string[];
     restoredSkills: string[];
     droppedEntries: string[];
+    /** Kept roles the plan emptied, and the top-ranked bullet each got back. */
+    emptyRolesFilled: Array<{ roleId: string; bulletId: string }>;
     fits: boolean;
     /** A project the posting asked for that the model had dropped, put back. */
     reinstated: string | null;
@@ -167,6 +169,7 @@ export async function runTailor(
       added: fitted.added,
       restoredSkills: fitted.restoredSkills,
       droppedEntries: fitted.droppedEntries,
+      emptyRolesFilled: fitted.emptyRolesFilled,
       fits: fitted.fits,
       reinstated: fitted.reinstated,
     },

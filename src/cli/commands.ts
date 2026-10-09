@@ -290,6 +290,13 @@ async function finishRun(ctx: Ctx, file: RunFile, out: string, dropped: string[]
   if (!summary.estimate.fits) {
     warnings.push(`Even trimmed as far as it will go, this needs ${summary.estimate.pages} pages against a target of ${summary.pageTarget}. Try a denser template (--template compact) or a 2-page target.`);
   }
+  for (const { roleId, bulletId } of file.fit?.emptyRolesFilled ?? []) {
+    const role = file.profile.work.find((w) => w.id === roleId);
+    const bullet = role?.bullets.find((b) => b.id === bulletId);
+    warnings.push(
+      `The plan kept ${role ? `${role.position}, ${role.name}` : roleId} but left out every bullet, so its top-ranked one was put back rather than print a bare job title: "${bullet ? clip(bullet.text, 80) : bulletId}".`,
+    );
+  }
   if (summary.changes.blocking) {
     warnings.push(`${summary.changes.blocking} change(s) contain a name or number the profile does not have. They block rendering until each is rejected or acknowledged.`);
   }
@@ -350,7 +357,7 @@ export async function tailorApplyCommand(ctx: Ctx): Promise<Result> {
 }
 
 function summarizeFit(f: ReturnType<typeof fitToTarget>) {
-  return { dropped: f.dropped, added: f.added, restoredSkills: f.restoredSkills, droppedEntries: f.droppedEntries, fits: f.fits, reinstated: f.reinstated };
+  return { dropped: f.dropped, added: f.added, restoredSkills: f.restoredSkills, droppedEntries: f.droppedEntries, emptyRolesFilled: f.emptyRolesFilled, fits: f.fits, reinstated: f.reinstated };
 }
 
 /** Provider failures as CLI failures an agent can act on. */
