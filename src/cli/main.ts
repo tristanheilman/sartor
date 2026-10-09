@@ -78,9 +78,9 @@ export const COMMANDS: Command[] = [
   {
     name: 'tailor prompt',
     summary: 'Instructions and schema for a tailoring plan (agent workflow)',
-    usage: 'sartor tailor prompt --profile profile.json --posting posting.txt [--pages 1|2] [--tone plain|impact|technical] [--seniority text] [--out prompt.json]',
-    help: 'Prints the instructions, the profile and posting, and the JSON Schema for a tailoring plan — or writes them to a file with --out, which needs no shell redirect. The plan selects and orders bullets the profile already has; it never introduces a name, number or technology the profile lacks. Write it as JSON matching `schema`, then run `sartor tailor apply`.',
-    options: { ...profileOpt, ...postingOpt, ...pagesOpt, ...toneOpt, ...outOpt },
+    usage: 'sartor tailor prompt --profile profile.json --posting posting.txt [--pages 1|2] [--template classic] [--tone plain|impact|technical] [--seniority text] [--out prompt.json]',
+    help: 'Prints the instructions, the profile and posting, and the JSON Schema for a tailoring plan — or writes them to a file with --out, which needs no shell redirect. The plan selects and orders bullets the profile already has; it never introduces a name, number or technology the profile lacks. Write it as JSON matching `schema`, then run `sartor tailor apply`. Pass the --template you will apply with: it sets how long the summary may be.',
+    options: { ...profileOpt, ...postingOpt, ...pagesOpt, ...toneOpt, ...templateOpt, ...outOpt },
     run: cmd.tailorPromptCommand,
   },
   {

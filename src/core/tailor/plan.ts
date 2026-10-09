@@ -98,7 +98,11 @@ export const TAILOR_PLAN_JSON_SCHEMA = {
       additionalProperties: false,
       required: ['text', 'rationale'],
       properties: {
-        text: { type: 'string', description: 'Rewritten professional summary.' },
+        text: {
+          type: 'string',
+          description:
+            'Rewritten professional summary. At most 3 printed lines on a one-page resume, 4 on two pages; the constraints give that length in characters for the template it prints in.',
+        },
         rationale: { type: 'string' },
       },
     },

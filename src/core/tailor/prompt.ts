@@ -1,5 +1,7 @@
 import type { Profile } from '../schema';
 import type { JobDescription } from '../jd/normalize';
+import type { PageMetrics } from '../render/model';
+import { summaryCharacterBudget, summaryLineBudget } from './summary';
 
 export interface TailorConstraints {
   pageTarget: 1 | 2;
@@ -249,6 +251,11 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
 /**
  * How long the summary may be, and what it is for.
  *
+ * The length is printed lines, given as characters for the template it will
+ * print in — a model cannot see where a line breaks, and words are a poor
+ * proxy (see `charactersPerLine`). The word figure is there because it is the
+ * unit a writer counts in, not because it is exact.
+ *
  * A tailored resume came back with a six-line summary narrating the Auth0
  * migration, a 2.8-million-user anonymization, the Jest suite and the Fastlane
  * pipelines — with those same facts cut from the bullets underneath to make
@@ -262,16 +269,26 @@ function budgetHint(profile: Profile, pageTarget: 1 | 2): string {
  *
  * On two pages there is room for both, so the rule relaxes.
  */
-function summaryHint(pageTarget: 1 | 2): string {
+function summaryHint(pageTarget: 1 | 2, template?: PageMetrics): string {
+  const characters = summaryCharacterBudget(pageTarget, template);
+  // Seven characters to a word, space included, to the nearest five.
+  const words = Math.round(characters / 7 / 5) * 5;
+  const length = `At most ${summaryLineBudget(pageTarget)} printed lines: about ${characters} characters, roughly ${words} words.`;
   return pageTarget === 1
-    ? 'At most two sentences. It says what kind of engineer this is and what they are for — it is not a place to store accomplishments. Anything about a specific job belongs in a bullet under that role, where a reader can see who it was for; do not repeat in the summary what a bullet already says, because on one page that space is bullets you had to cut.'
-    : 'Three or four sentences. Frame the career; leave specific achievements to the bullets under the roles they belong to rather than repeating them here.';
+    ? `${length} No more than two sentences. It says what kind of engineer this is and what they are for — it is not a place to store accomplishments. Anything about a specific job belongs in a bullet under that role, where a reader can see who it was for; do not repeat in the summary what a bullet already says, because on one page that space is bullets you had to cut.`
+    : `${length} Frame the career; leave specific achievements to the bullets under the roles they belong to rather than repeating them here.`;
 }
 
+/**
+ * The input half of the prompt. `template` is the one the result will print
+ * in, which decides how many characters the summary's lines hold; omitted,
+ * the default template's.
+ */
 export function buildTailorUserPrompt(
   profile: Profile,
   jd: JobDescription,
   constraints: TailorConstraints,
+  template?: PageMetrics,
 ): string {
   const toneLine = {
     plain: 'Plain and direct. No superlatives, no filler adjectives.',
@@ -288,7 +305,7 @@ ${JSON.stringify(profileForModel(profile), null, 1)}
 
 # CONSTRAINTS
 - Target length: ${constraints.pageTarget} page(s). ${budgetHint(profile, constraints.pageTarget)}
-- Summary: ${summaryHint(constraints.pageTarget)}
+- Summary: ${summaryHint(constraints.pageTarget, template)}
 - Tone: ${toneLine}
 ${constraints.seniority ? `- Target seniority: ${constraints.seniority}. Do not claim seniority the profile does not support; adjust emphasis only.\n` : ''}
 # TASK

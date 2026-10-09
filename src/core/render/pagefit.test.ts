@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getTemplate, TEMPLATES } from './templates';
-import { estimateHeight, linesPerPage, pageHeight } from './model';
+import { estimateHeight, linesPerPage, pageHeight, printedLines } from './model';
 import { wrappedLines } from './metrics';
 import { renderPdfBlob } from './pdf';
 import * as pdfjs from 'pdfjs-dist';
@@ -499,3 +499,49 @@ describe('the template set', () => {
     }
   });
 });
+
+describe('a summary\'s lines, as a warning counts them', () => {
+  /**
+   * `tailor apply` tells the person their summary prints on four lines. That
+   * has to be what the page shows, so this measure uses the column's own
+   * width rather than the narrower one the page fit plays safe with — which
+   * read a three-line summary as four about one time in ten.
+   */
+  const rowsPrinted = async (summary: string, templateId: string) => {
+    const doc: ResumeDocument = {
+      contact: { name: 'A', label: '', details: [] },
+      sections: [
+        { key: 'summary', heading: 'Summary', kind: 'summary', summary },
+        {
+          key: 'work', heading: 'Work', kind: 'entries',
+          entries: [{ sourceId: 'e', primary: 'Developer', secondary: '', meta: '', aside: '', summary: '', bullets: [{ sourceId: 'b', text: 'end' }] }],
+        },
+      ],
+    };
+    const blob = await renderPdfBlob(doc, templateId);
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), verbosity: 0 }).promise;
+    const rows = ((await (await pdf.getPage(1)).getTextContent()).items as Array<{ str: string; transform: number[] }>)
+      .filter((i) => i.str.trim())
+      .map((i) => ({ y: Math.round(i.transform[5]!), text: i.str.trim() }));
+    // Headings may print in capitals.
+    const top = rows.find((r) => /^summary$/i.test(r.text))!.y;
+    const bottom = rows.find((r) => /^work$/i.test(r.text))!.y;
+    return new Set(rows.filter((r) => r.y < top && r.y > bottom).map((r) => r.y)).size;
+  };
+
+  const prose =
+    'Data engineer who designs streaming pipelines and the warehouse models downstream of them, with a habit of making the on-call rotation quieter than it was before, and of writing down why each decision was made so the next person can change it safely.';
+  const longer = `${prose} ${prose}`;
+
+  // Cut where the page fit's narrower measure reads one line more than prints:
+  // on Classic, a summary of three lines it would have called four.
+  const cuts: Record<string, number> = { classic: 346, roomy: 276, 'serif-compact': 393 };
+
+  for (const [id, at] of Object.entries(cuts)) {
+    it(`matches what ${id} prints, near a break`, async () => {
+      const summary = longer.slice(0, at);
+      expect(printedLines(summary, getTemplate(id))).toBe(await rowsPrinted(summary, id));
+    });
+  }
+});
+

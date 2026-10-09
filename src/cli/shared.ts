@@ -3,6 +3,7 @@ import { fromPaste, type JobDescription } from '../core/jd/normalize';
 import { getTemplate, isBuiltInTemplate, TEMPLATES, type Template } from '../core/render/templates';
 import { buildDocument, blockingChanges, type Change } from '../core/tailor/apply';
 import { estimateHeight, pageHeight } from '../core/render/model';
+import { measureSummary } from '../core/tailor/summary';
 import { PROVIDERS, type ProviderConfig } from '../core/provider';
 import { CliError, EXIT, describeIssues, readJson, readText, type Io } from './io';
 import type { RunFile } from './runfile';
@@ -99,6 +100,11 @@ export function summarizeRun(file: RunFile) {
     },
     entries,
     skills: doc.sections.find((s) => s.key === 'skills')?.skills?.map((g) => g.name) ?? [],
+    summaryLength: measureSummary(
+      doc.sections.find((s) => s.kind === 'summary')?.summary ?? '',
+      run.constraints.pageTarget,
+      template,
+    ),
     changes: {
       total: run.changes.length,
       accepted: run.changes.filter((c) => c.status === 'accepted').length,

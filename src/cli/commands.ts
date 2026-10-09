@@ -270,9 +270,13 @@ export async function tailorPromptCommand(ctx: Ctx): Promise<Result> {
   const profile = await loadProfile(ctx.io, str(ctx.flags.profile));
   const jd = await loadPosting(ctx.io, str(ctx.flags.posting));
   const constraints = constraintsFrom(ctx);
-  const input = buildTailorUserPrompt(profile, jd, constraints);
+  // The template decides how many characters the summary's lines hold, so the
+  // plan is written for the one it will be applied in.
+  const template = parseTemplate(str(ctx.flags.template));
+  const input = buildTailorUserPrompt(profile, jd, constraints, template);
   const p = q(str(ctx.flags.profile)!);
   const j = q(str(ctx.flags.posting)!);
+  const t = ctx.flags.template ? ` --template ${q(template.id)}` : '';
   return promptResult(
     ctx,
     {
@@ -282,7 +286,7 @@ export async function tailorPromptCommand(ctx: Ctx): Promise<Result> {
       schema: TAILOR_PLAN_JSON_SCHEMA,
     },
     `# Instructions\n\n${TAILOR_SYSTEM_PROMPT}\n\n# Input\n\n${input}\n\n# Output\n\nJSON matching \`sartor schema plan\`.`,
-    [`sartor tailor apply --profile ${p} --posting ${j} --plan plan.json --pages ${constraints.pageTarget} --out run.json`],
+    [`sartor tailor apply --profile ${p} --posting ${j} --plan plan.json --pages ${constraints.pageTarget}${t} --out run.json`],
   );
 }
 
@@ -303,6 +307,15 @@ async function finishRun(ctx: Ctx, file: RunFile, out: string, dropped: string[]
   }
   if (summary.changes.blocking) {
     warnings.push(`${summary.changes.blocking} change(s) contain a name or number the profile does not have. They block rendering until each is rejected or acknowledged.`);
+  }
+  const { lines, budget, over } = summary.summaryLength;
+  if (over) {
+    // Whose summary it is decides where it gets shorter.
+    const rewritten = file.run.changes.some((c) => c.kind === 'summary' && c.status === 'accepted');
+    warnings.push(
+      `The summary prints on ${lines} lines; a ${summary.pageTarget}-page resume allows ${budget}, and every line over is room a bullet could have had. ` +
+        (rewritten ? 'Write a shorter one in the plan and apply it again.' : 'It is the profile\'s own summary, so shorten it there.'),
+    );
   }
   const r = q(out);
   return {

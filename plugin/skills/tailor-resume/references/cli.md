@@ -63,8 +63,8 @@ Write a prompt to a file with `--out`, never with a shell redirect (`> file`). T
 | `sartor ingest prompt <resume> [--out]` | Instructions, resume text and schema for structuring a resume. `--out` writes them to a file. |
 | `sartor ingest apply <structured.json>` | Validates a structured resume and writes `--out profile.json`. |
 | `sartor ingest run <resume>` | Structures a resume with a provider API key. |
-| `sartor tailor prompt --profile --posting [--pages] [--tone] [--seniority] [--out]` | Instructions, input and schema for a tailoring plan. `--out` writes them to a file. |
-| `sartor tailor apply --profile --posting --plan [--pages] [--template] [--out run.json]` | Validates the plan, fits it to the page, checks it, writes a run file. |
+| `sartor tailor prompt --profile --posting [--pages] [--template] [--tone] [--seniority] [--out]` | Instructions, input and schema for a tailoring plan. `--out` writes them to a file. `--template` sets the summary's length in characters; pass the one you will apply with. |
+| `sartor tailor apply --profile --posting --plan [--pages] [--template] [--out run.json]` | Validates the plan, fits it to the page, checks it, writes a run file. Warns when the summary prints on more lines than the page target allows (3 on one page, 4 on two). |
 | `sartor tailor run --profile --posting [--pages] [--template] [--provider] [--model]` | The same, making the model call with a provider API key. |
 | `sartor review <run.json> [--accept] [--reject] [--acknowledge] [--accept-rest] [--detailed]` | Lists changes by number; records decisions in the run file. |
 | `sartor render <run.json> [--format pdf\|docx\|txt] [--template] [--out]` | Writes the resume. Refuses while an unverified change is accepted. |

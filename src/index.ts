@@ -135,6 +135,14 @@ export { runTailor, validatePlan, type RunOptions, type TailorOutcome } from './
  */
 export { fitToTarget, type FitResult } from './core/tailor/fit';
 
+/** How long the summary may print, and how long a given one does. */
+export {
+  measureSummary,
+  summaryCharacterBudget,
+  summaryLineBudget,
+  type SummaryLength,
+} from './core/tailor/summary';
+
 /* -- Job descriptions ----------------------------------------------------- */
 export {
   fromPaste,

@@ -22,7 +22,7 @@ The product's promise to the person is: **nothing invented, nothing silently rew
    - **A profile** (`profile.json`). If they only have a resume file, use the `import-resume` skill first.
    - **The job posting**, saved as a text file (`posting.txt`). Paste in the whole posting.
    - **The page target**: 1 or 2. Default to 1 if they have no preference.
-3. Optionally a template (default `classic`); `sartor templates` lists them. Denser ones (`compact`, `serif-compact`) hold more on one page.
+3. Optionally a template (default `classic`); `sartor templates` lists them. Denser ones (`compact`, `serif-compact`) hold more on one page. Pass the same `--template` to `tailor prompt` and `tailor apply`: it sets how long the summary may be.
 
 ## Steps
 
@@ -40,6 +40,7 @@ The product's promise to the person is: **nothing invented, nothing silently rew
    - List in `requested` any project that is an example of something the posting explicitly asks for — not one that merely shares a technology with it. Never set `include: false` on those.
    - Leave each bullet's `text` empty with `textSource: "canonical"` so the person's own wording is used. Reword only if the person asked for it; every rewording is flagged for their review.
    - Never add a skill, tool, employer, title, date, credential or number the profile lacks. If the posting asks for something the profile cannot support, say so in `notes` instead.
+   - Keep the summary within the length the constraints give: 3 printed lines on one page, 4 on two, stated in characters for the template. Every line over it is room a bullet could have had.
 
 3. **Apply it:**
 
