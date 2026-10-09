@@ -2,7 +2,7 @@
   "marginal-role": {
     "recall": 1,
     "requirementCoverage": 1,
-    "selectionAgreement": 0.9,
+    "selectionAgreement": 0.829,
     "entryRetention": 1
   },
   "platform-stretch": {

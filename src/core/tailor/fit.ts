@@ -402,6 +402,35 @@ export function fitToTarget(
   // Structured clone would drop nothing here, but the plan is plain data and
   // callers should not find their input mutated underneath them.
   let next: TailorPlan = materialise(JSON.parse(JSON.stringify(plan)), profile);
+
+  // What the fill may put back, decided from the plan as the model wrote it.
+  //
+  //   - First, bullets the plan included — the ones the trim had to cut — and
+  //     every bullet of an entry the plan never mentioned, which the renderer
+  //     keeps anyway.
+  //   - Then, bullets the plan left unmentioned in an entry it did mention, if
+  //     they are on topic for the posting.
+  //   - Never a bullet the plan set include:false. That is the model saying a
+  //     line is irrelevant, and the fill reading "room on the page" as licence
+  //     to print it put "Organised the office coffee rota" on a backend
+  //     engineer's one-page resume.
+  const excludedByPlan = new Set(
+    [...plan.work, ...plan.projects, ...plan.education].flatMap((e) => e.bullets.filter((b) => !b.include).map((b) => b.bulletId)),
+  );
+  const jdForFill = jdText?.trim() ? buildLexicon(jdText) : null;
+  const bulletText = new Map(
+    [...profile.work, ...profile.projects, ...profile.education].flatMap((e) => e.bullets.map((b) => [b.id, b.text] as const)),
+  );
+  const firstChoice = new Set(
+    [...next.work, ...next.projects, ...next.education].flatMap((e) => e.bullets.filter((b) => b.include).map((b) => b.bulletId)),
+  );
+  const unmentionedOnTopic = new Set(
+    [...next.work, ...next.projects, ...next.education]
+      .flatMap((e) => e.bullets.filter((b) => !b.include && !excludedByPlan.has(b.bulletId)).map((b) => b.bulletId))
+      .filter((id) => jdForFill !== null && relevanceTo(jdForFill, '', bulletText.get(id) ?? '') >= REINSTATE_THRESHOLD),
+  );
+  let fillUnmentioned = false;
+  const fillable = (id: string) => firstChoice.has(id) || (fillUnmentioned && unmentionedOnTopic.has(id));
   const dropped: string[] = [];
   const droppedEntries: string[] = [];
   const ranking = jdText?.trim() ? projectsByRelevance(plan, profile, jdText) : null;
@@ -611,7 +640,7 @@ export function fitToTarget(
       const isRole = new Set(next.work.map((e) => e.id));
       const age = (e: PlannedEntry) => (recent.has(e.id) ? 0 : 1);
       const candidates = [...next.work, ...next.projects]
-        .filter((e) => e.include && e.bullets.some((b) => !b.include && !tooBig.has(b.bulletId)))
+        .filter((e) => e.include && e.bullets.some((b) => !b.include && !tooBig.has(b.bulletId) && fillable(b.bulletId)))
         .filter((e) => roleFloor === undefined || (isRole.has(e.id) && rank(e) < roleFloor))
         .filter((e) => !isRole.has(e.id) || rank(e) < roleCap)
         .sort(
@@ -635,7 +664,7 @@ export function fitToTarget(
       let placed = false;
       for (const entry of candidates) {
         const offered = [...entry.bullets]
-          .filter((b) => !b.include && !tooBig.has(b.bulletId))
+          .filter((b) => !b.include && !tooBig.has(b.bulletId) && fillable(b.bulletId))
           .sort((a, b) => a.order - b.order);
         for (const bullet of offered) {
           bullet.include = true;
@@ -671,7 +700,7 @@ export function fitToTarget(
   const secureFloors = () => {
   for (const role of next.work.filter((e) => e.include && recent.has(e.id)).sort((a, b) => byRecency(roleOf(a.id), roleOf(b.id)))) {
     if (keptBullets(role).length >= PROTECTED_PROJECT_BULLETS) continue;
-    const offered = [...role.bullets].filter((b) => !b.include).sort((a, b) => a.order - b.order);
+    const offered = [...role.bullets].filter((b) => !b.include && fillable(b.bulletId)).sort((a, b) => a.order - b.order);
     if (!offered.length) continue;
 
     const beyondFirst = (e: PlannedEntry) => keptBullets(e).slice(1).reverse();
@@ -768,6 +797,12 @@ export function fitToTarget(
   restoreSkills();
   grow();
 
+  // Then what the plan did not mention but the posting is about, if there is
+  // still room. Last, because the model saw these lines and chose others.
+  fillUnmentioned = true;
+  grow(PROTECTED_PROJECT_BULLETS);
+  secureFloors();
+  grow();
 
   return {
     plan: next,
