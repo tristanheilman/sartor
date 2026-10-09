@@ -99,6 +99,12 @@ export interface FitResult {
   emptyRolesFilled: Array<{ roleId: string; bulletId: string }>;
   /** Whether it fits now. False means it is as small as this will make it. */
   fits: boolean;
+  /**
+   * The rationale for each change the fit made, by change id, for
+   * `buildChanges` to show in place of the plan's. A change the plan made
+   * itself has none here and keeps the plan's own.
+   */
+  reasons: Record<string, string>;
 }
 
 /** Bullets still switched on for an entry, in the model's own order. */
@@ -150,20 +156,40 @@ function relevanceTo(jdLexicon: Set<string>, name: string, bulletText: string): 
 function evidenceWorth(
   jdText: string,
   summary: string,
-): (text: string, restOfPage: string, only?: 'unshown') => number {
-  const posting = new Map<string, number>();
-  for (const t of extractRequirements(jdText)) posting.set(t.norm, t.emphasised ? 2 : 1);
-  const claimed = extractRequirements(summary).map((t) => t.norm);
+): (text: string, restOfPage: string, only?: 'unshown') => { worth: number; terms: string[] } {
+  const posting = new Map<string, { term: string; weight: number }>();
+  for (const t of extractRequirements(jdText)) posting.set(t.norm, { term: t.term, weight: t.emphasised ? 2 : 1 });
+  const claimed = extractRequirements(summary);
   // `unshown`: only what nothing else on the page shows — what the page would
-  // lose with this line.
+  // lose with this line. The terms counted come back too, so a review can say
+  // what a line was kept or cut for.
   return (text, restOfPage, only) => {
     let worth = 0;
-    for (const [norm, weight] of posting) {
-      if (mentionsTerm(norm, text) && (only !== 'unshown' || !mentionsTerm(norm, restOfPage))) worth += weight;
+    const terms = new Set<string>();
+    for (const [norm, { term, weight }] of posting) {
+      if (mentionsTerm(norm, text) && (only !== 'unshown' || !mentionsTerm(norm, restOfPage))) {
+        worth += weight;
+        terms.add(term);
+      }
     }
-    for (const norm of claimed) if (mentionsTerm(norm, text) && !mentionsTerm(norm, restOfPage)) worth += 2;
-    return worth;
+    for (const t of claimed) {
+      if (mentionsTerm(t.norm, text) && !mentionsTerm(t.norm, restOfPage)) {
+        worth += 2;
+        terms.add(t.term);
+      }
+    }
+    return { worth, terms: [...terms] };
   };
+}
+
+/** "AWS", "AWS and Firebase", "AWS, Firebase and Kotlin". */
+function listOf(terms: string[]): string {
+  return terms.length < 2 ? (terms[0] ?? '') : `${terms.slice(0, -1).join(', ')} and ${terms[terms.length - 1]}`;
+}
+
+/** A line, short enough to quote in a sentence about it. */
+function quote(text: string): string {
+  return `"${text.length > 70 ? `${text.slice(0, 67).trimEnd()}…` : text}"`;
 }
 
 /** Everything the page prints but the summary and the one line being weighed. */
@@ -498,7 +524,7 @@ export function fitToTarget(
     if (!worthOf) return [...groups].reverse().map((g) => ({ g, worth: 0 }));
     const doc = pageNow();
     return groups
-      .map((g, i) => ({ g, worth: worthOf(g.keywords.join(', '), restOfPage(doc, { group: g.id })), i }))
+      .map((g, i) => ({ g, worth: worthOf(g.keywords.join(', '), restOfPage(doc, { group: g.id })).worth, i }))
       .sort((a, b) => a.worth - b.worth || b.g.order - a.g.order || b.i - a.i)
       .map(({ g, worth }) => ({ g, worth }));
   };
@@ -507,6 +533,20 @@ export function fitToTarget(
   // two bullets ahead of an old role's second and a project's second.
   const recent = recentRoles(profile.work);
   const roleOf = (id: string) => profile.work.find((w) => w.id === id)!;
+
+  // Why the fit made each change it made, by change id. A drop the plan made
+  // keeps the plan's own rationale. One the fit made gets its own: the plan's
+  // rationale for a line it *included* argues for keeping that line, and
+  // review was showing it beside the fit's decision to cut it.
+  const reasons: Record<string, string> = {};
+  const nameOf = (id: string) => {
+    const role = profile.work.find((w) => w.id === id);
+    if (role) return [role.position, role.name].filter(Boolean).join(', ');
+    return profile.projects.find((p) => p.id === id)?.name ?? id;
+  };
+  const groupName = (id: string) => profile.skills.find((g) => g.id === id)?.name ?? id;
+  const lineText = (doc: ResumeDocument, bulletId: string) =>
+    doc.sections.flatMap((sec) => sec.entries ?? []).flatMap((e) => e.bullets).find((b) => b.sourceId === bulletId)?.text ?? '';
 
   // The ranking can only order what the plan kept. Across runs of one profile
   // against one posting the model sometimes kept `react-native-island` and
@@ -575,6 +615,8 @@ export function fitToTarget(
     if (entry.include && entry.bullets.every((b) => !b.include)) {
       entry.include = false;
       droppedEntries.push(entry.id);
+      reasons[`entry-drop:${entry.id}`] =
+        `The plan kept ${nameOf(entry.id)} but left out every line under it, so the heading was taken off rather than printed with nothing beneath it.`;
     }
   }
 
@@ -607,6 +649,8 @@ export function fitToTarget(
     for (const b of keptBullets(entry).slice(roleCap)) {
       b.include = false;
       dropped.push(b.bulletId);
+      reasons[`bullet-drop:${b.bulletId}`] =
+        `Cut at ${ROLE_BULLET_CAP} lines for ${nameOf(entry.id)}: the plan ranked it below ${ROLE_BULLET_CAP} others there, and past that each line is weaker than the last.`;
     }
   }
 
@@ -638,6 +682,9 @@ export function fitToTarget(
   // name AWS makes the other the only one that does.
   for (let spare = spareGroup(); spare && (!worthOf || spare.worth === 0) && overflows(); spare = spareGroup()) {
     spare.g.include = false;
+    reasons[`skills:${spare.g.id}`] = worthOf
+      ? 'Cut to fit the page. It names nothing the posting asks for or the summary claims, so it went before any bullet.'
+      : `Cut to fit the page. With no posting to weigh skills against, groups after the first ${MIN_SKILL_GROUPS} go before any bullet, last first.`;
   }
 
   /**
@@ -671,14 +718,55 @@ export function fitToTarget(
    * not all a bullet is for. The group earns its place over a bullet when the
    * page would otherwise lose something.
    */
-  const groupGivesWay = (group: TailorPlan['skills'][number], cut: NonNullable<ReturnType<typeof nextCut>>) => {
-    if (cut.free) return false;
-    if (keptBullets(cut.entry).length <= PROTECTED_PROJECT_BULLETS) return true;
+  const weigh = (
+    group: TailorPlan['skills'][number],
+    cut: NonNullable<ReturnType<typeof nextCut>>,
+  ): { groupGoes: boolean; why: string } => {
+    const entry = nameOf(cut.entry.id);
+    if (cut.free) return { groupGoes: false, why: '' };
+    if (keptBullets(cut.entry).length <= PROTECTED_PROJECT_BULLETS) {
+      return {
+        groupGoes: true,
+        why: `Cut to fit the page. The alternative was taking ${entry} below two lines, and an entry's second line outranks a skills group.`,
+      };
+    }
     const doc = pageNow();
-    const bullet = doc.sections.flatMap((sec) => sec.entries ?? []).flatMap((e) => e.bullets).find((b) => b.sourceId === cut.bulletId)?.text ?? '';
+    const bullet = lineText(doc, cut.bulletId);
     const groupAlone = worthOf!(group.keywords.join(', '), restOfPage(doc, { group: group.id }), 'unshown');
     const bulletAlone = worthOf!(bullet, restOfPage(doc, { bullet: cut.bulletId }), 'unshown');
-    return groupAlone <= bulletAlone;
+    if (groupAlone.worth <= bulletAlone.worth) {
+      return {
+        groupGoes: true,
+        why: groupAlone.terms.length
+          ? `Cut to fit the page. It is the page's only mention of ${listOf(groupAlone.terms)}, but the line the trim would have taken instead, ${quote(bullet)}, is the only mention of ${listOf(bulletAlone.terms)}.`
+          : `Cut to fit the page. Everything it names is shown elsewhere on the page, so it added less than the line the trim would have taken instead: ${quote(bullet)}.`,
+      };
+    }
+    return {
+      groupGoes: false,
+      why: ` The ${groupName(group.id)} skills line stayed instead: it is the page's only mention of ${listOf(groupAlone.terms)}${bulletAlone.terms.length ? `, which outweighs this line's ${listOf(bulletAlone.terms)}` : ''}.`,
+    };
+  };
+
+  /** Why the trim took this line, from where it stood when it was taken. */
+  const cutReason = (cut: NonNullable<ReturnType<typeof nextCut>>, keptBefore: number): string => {
+    const entry = nameOf(cut.entry.id);
+    const ranked = `the plan ranked this line last of the ${keptBefore} still under it`;
+    if (cut.free) return `Cut to fit the page. Of the projects the posting did not ask for, ${entry} ranks lowest, so its lines go before any role's or skills; ${ranked}.`;
+    if (cut.kind === 'project') return 'Cut to fit the page. Nothing else was left to take.';
+    if (cut.kind === 'held') {
+      const why = requested.has(cut.entry.id) ? `The posting asks for ${entry}, which` : `${entry} is the project closest to the posting, and`;
+      return keptBefore > PROTECTED_PROJECT_BULLETS
+        ? `Cut to fit the page. ${why} keeps the ${PROTECTED_PROJECT_BULLETS} lines the plan ranked first; this one ranked below them.`
+        : `Cut to fit the page. With every role down to two lines it still did not fit, so ${entry} keeps only the line the plan ranked first.`;
+    }
+    if (keptBefore > PROTECTED_PROJECT_BULLETS) {
+      return `Cut to fit the page. ${entry} had the most lines on the page, and ${ranked}; every role keeps two before any goes below that.`;
+    }
+    const floor = 'Cut to fit the page. With every project down to one line and every role down to two, it still did not fit';
+    return recent.has(cut.entry.id)
+      ? `${floor}; ${entry} gave up its second line only after the older roles had.`
+      : `${floor}, and an older role gives up its second line before a recent one; ${entry} keeps the line the plan ranked first.`;
   };
 
   // Bounded by the number of bullets, and every iteration switches one off, so
@@ -694,16 +782,20 @@ export function fitToTarget(
   for (let i = 0; i < limit && overflows(); i++) {
     const cut = nextCut(next, profile, ranking, requested, recent);
     const spare = spareGroup();
-    if (spare && (!cut || groupGivesWay(spare.g, cut))) {
+    const verdict = spare && cut ? weigh(spare.g, cut) : null;
+    if (spare && (!cut || verdict!.groupGoes)) {
       spare.g.include = false;
+      reasons[`skills:${spare.g.id}`] = verdict?.why ?? 'Cut to fit the page, once there was no bullet left to take.';
       continue;
     }
     if (!cut) break;
 
+    const keptBefore = keptBullets(cut.entry).length;
     for (const b of cut.entry.bullets) {
       if (b.bulletId === cut.bulletId) b.include = false;
     }
     dropped.push(cut.bulletId);
+    reasons[`bullet-drop:${cut.bulletId}`] = cutReason(cut, keptBefore) + (verdict?.why ?? '');
 
     // A project reduced to one line is three lines of page — heading, dates
     // and the bullet — for something the reader will not remember. Take the
@@ -712,6 +804,8 @@ export function fitToTarget(
       for (const b of cut.entry.bullets) b.include = false;
       cut.entry.include = false;
       droppedEntries.push(cut.entry.id);
+      reasons[`entry-drop:${cut.entry.id}`] =
+        `Cut to fit the page. The trim had taken ${nameOf(cut.entry.id)} down to one line, and a heading with one line costs three lines of page for something a reader will not remember.`;
     }
   }
 
@@ -787,6 +881,7 @@ export function fitToTarget(
             continue;
           }
           added.push(bullet.bulletId);
+          delete reasons[`bullet-drop:${bullet.bulletId}`];
           placed = true;
           break;
         }
@@ -815,15 +910,22 @@ export function fitToTarget(
     const offered = [...role.bullets].filter((b) => !b.include && fillable(b.bulletId)).sort((a, b) => a.order - b.order);
     if (!offered.length) continue;
 
-    const beyondFirst = (e: PlannedEntry) => keptBullets(e).slice(1).reverse();
+    // Each donor with what it is, for the review: a recent role's second
+    // line outranks it.
+    const what = new Map<object, string>();
+    const beyondFirst = (kind: string) => (e: PlannedEntry) =>
+      keptBullets(e)
+        .slice(1)
+        .reverse()
+        .map((b) => (what.set(b, `a later line of ${kind} ${nameOf(e.id)}`), b));
     const projectOrder = (ranking ?? next.projects.map((e) => e.id)).map((id) => next.projects.find((e) => e.id === id)!).filter(Boolean);
     const donors = [
-      ...projectOrder.filter((e) => e.include && !requested.has(e.id)).flatMap(beyondFirst),
-      ...projectOrder.filter((e) => e.include && requested.has(e.id)).flatMap(beyondFirst),
+      ...projectOrder.filter((e) => e.include && !requested.has(e.id)).flatMap(beyondFirst('the project')),
+      ...projectOrder.filter((e) => e.include && requested.has(e.id)).flatMap(beyondFirst('the project')),
       ...next.work
         .filter((e) => e.include && !recent.has(e.id))
         .sort((a, b) => byRecency(roleOf(b.id), roleOf(a.id)))
-        .flatMap(beyondFirst),
+        .flatMap(beyondFirst('the older role')),
     ];
 
     // Then skill groups beyond the two a resume always keeps, least relevant
@@ -835,7 +937,7 @@ export function fitToTarget(
       Math.max(0, next.skills.filter((g) => g.include).length - MIN_SKILL_GROUPS),
     );
 
-    const given: Array<{ include: boolean; bulletId?: string }> = [];
+    const given: Array<{ include: boolean; bulletId?: string; id?: string }> = [];
     let placed: (typeof offered)[number] | undefined;
     for (const donor of [...donors, ...spareGroups]) {
       donor.include = false;
@@ -851,7 +953,14 @@ export function fitToTarget(
 
     if (placed) {
       added.push(placed.bulletId);
+      delete reasons[`bullet-drop:${placed.bulletId}`];
       dropped.push(...given.flatMap((d) => (d.bulletId ? [d.bulletId] : [])));
+      const why = (of: string) =>
+        `Cut so ${nameOf(role.id)}, a recent role, could keep a second line on the page: that outranks ${of}.`;
+      for (const d of given) {
+        if (d.bulletId) reasons[`bullet-drop:${d.bulletId}`] = why(what.get(d) ?? 'it');
+        else reasons[`skills:${d.id}`] = why(`a skills group beyond the first ${MIN_SKILL_GROUPS}`);
+      }
     } else {
       for (const d of given) d.include = true;
     }
@@ -888,6 +997,13 @@ export function fitToTarget(
         continue;
       }
       if (!restoredSkills.includes(g.id)) restoredSkills.push(g.id);
+      // Back as the plan had it, if the plan kept it; otherwise this is the
+      // fit's own change, and says so.
+      if (plan.skills.find((x) => x.id === g.id)?.include ?? true) delete reasons[`skills:${g.id}`];
+      else {
+        const { terms } = worthOf(g.keywords.join(', '), '');
+        reasons[`skills:${g.id}`] = `The plan left this group out; it was put back because the page had room and it names ${listOf(terms)}.`;
+      }
     }
   };
 
@@ -921,6 +1037,7 @@ export function fitToTarget(
     restoredSkills,
     droppedEntries,
     emptyRolesFilled,
+    reasons,
     // Against the page itself, not the trim budget — growth deliberately fills
     // past that, so measuring against it would report a full page as a failure.
     fits: heightNow() <= pageHeight(metrics) * pageTarget,

@@ -105,7 +105,16 @@ export function plannedText(pb: PlannedBullet, bullet: Bullet): string {
  * moment it is created, scoped to its own ID so violations stay attached to the
  * change that produced them.
  */
-export function buildChanges(profile: Profile, plan: TailorPlan): Change[] {
+export function buildChanges(
+  profile: Profile,
+  plan: TailorPlan,
+  /**
+   * Rationales for the changes the fit pass made, by change id
+   * (`FitResult.reasons`). Without them a bullet the fit cut showed the plan's
+   * rationale for *including* it.
+   */
+  reasons: Record<string, string> = {},
+): Change[] {
   const lexicon = profileLexicon(profile);
   const bullets = bulletMap(profile);
   const changes: Change[] = [];
@@ -114,7 +123,7 @@ export function buildChanges(profile: Profile, plan: TailorPlan): Change[] {
     // Only the *new* text is checked. Original profile text is by definition
     // grounded — checking it would produce violations the user cannot act on.
     const violations = c.after.trim() ? checkText(c.after, lexicon, c.id).violations : [];
-    changes.push({ ...c, status: 'accepted', reviewed: false, violations, acknowledged: [] });
+    changes.push({ ...c, rationale: reasons[c.id] ?? c.rationale, status: 'accepted', reviewed: false, violations, acknowledged: [] });
   };
 
   // --- Summary -------------------------------------------------------------
@@ -165,7 +174,7 @@ export function buildChanges(profile: Profile, plan: TailorPlan): Change[] {
           sourceId: entry.id,
           before: entryLabel,
           after: '',
-          rationale: 'Dropped from this version.',
+          rationale: 'The plan left this out.',
         });
         continue;
       }
@@ -184,7 +193,7 @@ export function buildChanges(profile: Profile, plan: TailorPlan): Change[] {
             sourceId: pb.bulletId,
             before: found.bullet.text,
             after: '',
-            rationale: pb.rationale || 'Dropped from this version.',
+            rationale: pb.rationale || 'The plan left this out.',
           });
           continue;
         }
@@ -221,7 +230,7 @@ export function buildChanges(profile: Profile, plan: TailorPlan): Change[] {
         sourceId: group.id,
         before,
         after,
-        rationale: group.include ? 'Reordered and filtered for this posting.' : 'Dropped from this version.',
+        rationale: group.include ? 'Reordered and filtered for this posting.' : 'The plan left this group out.',
       });
     }
   }

@@ -156,7 +156,7 @@ export async function runTailor(
   // switched off, which the review screen already shows as changes the user can
   // put back one at a time.
   const fitted = fitToTarget(profile, plan, constraints.pageTarget, opts.template, jd.text);
-  const changes = buildChanges(profile, fitted.plan);
+  const changes = buildChanges(profile, fitted.plan, fitted.reasons);
 
   return {
     run: {
