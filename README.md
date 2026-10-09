@@ -252,6 +252,21 @@ claude plugin marketplace add tristanheilman/sartor
 claude plugin install sartor@sartor
 ```
 
+The skills pre-approve their own `sartor` commands with `allowed-tools:
+Bash(sartor *)`, but Claude Code currently drops that grant when a skill is
+invoked with arguments or while in `acceptEdits` mode — so you will be asked to
+approve every `sartor` command. To stop that, allow the command yourself in your
+Claude Code settings (`~/.claude/settings.json`, or `.claude/settings.json` in a
+project):
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(sartor *)"]
+  }
+}
+```
+
 Every command, flag, output field and exit code is in
 [the CLI reference](plugin/skills/tailor-resume/references/cli.md).
 
