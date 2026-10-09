@@ -359,6 +359,16 @@ describe('a summary the fitted page no longer backs', () => {
     expect(check.json.data.problems.join(' ')).not.toMatch(/4x/);
   });
 
+  it('gives the cut its own reason in review, not the plan’s case for keeping the line', async () => {
+    await cited('roomy');
+    const plan01 = JSON.parse(readFileSync(plan, 'utf8'));
+    const kept = plan01.work.flatMap((w: { bullets: Array<{ bulletId: string; rationale: string }> }) => w.bullets).find((b: { bulletId: string }) => b.bulletId === 'blt_go_rewrite');
+    const review = await sartor(['review', 'run.json', '--detailed']);
+    const cut = review.json.data.changes.find((c: { change: string; kind: string }) => c.kind === 'bullet-drop' && /4x/.test(c.change));
+    expect(cut.rationale).toMatch(/^Cut to fit the page\. Senior Backend Engineer, Harbor Freight Systems had the most lines on the page/);
+    if (kept?.rationale) expect(cut.rationale).not.toContain(kept.rationale);
+  });
+
   it('is not reported when the page keeps the bullet', async () => {
     const r = await cited('classic');
     expect(r.json.data.summaryUnsupported).toEqual([]);

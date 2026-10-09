@@ -1644,3 +1644,105 @@ describe('a skill group weighed against the bullets the plan over-supplied', () 
     expect(out.fits).toBe(true);
   });
 });
+
+describe('saying why the fit changed something', () => {
+  /**
+   * Review showed six or seven "leave out" changes a run, each with a
+   * rationale arguing the line answered the posting — the plan's reason for
+   * *including* it, shown beside the fit's decision to cut it. Skill groups
+   * and entries the fit dropped said only "Dropped from this version."
+   */
+  const jd = 'Mobile Engineer\n\nYou have experience with TypeScript and Kotlin.\n';
+  const p = profileSchema.parse({
+    ...profile,
+    basics: { ...profile.basics, summary: '' },
+    work: [
+      { ...profile.work[0], bullets: bullets(16, 'a') },
+      { ...profile.work[1], bullets: bullets(16, 'b') },
+    ],
+    // The library is the project closest to the posting, so the trim holds
+    // it; the timer is the one it takes first.
+    projects: [
+      { id: 'prj_lib', name: 'kotlin-client', bullets: [{ id: 'l0', text: 'A Kotlin and TypeScript client library.' }] },
+      { id: 'prj_side', name: 'Sourdough timer', bullets: bullets(3, 's') },
+    ],
+    skills: [
+      { id: 'k_lang', name: 'Languages', keywords: ['TypeScript', 'Kotlin'] },
+      { id: 'k_other', name: 'Other', keywords: ['Kubernetes'] },
+      { id: 'k_hobby', name: 'Hobbies', keywords: ['Origami', 'Beekeeping'] },
+    ],
+  });
+  const plan = (): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        // The plan's own drop, and a line it never listed.
+        bullets: w.bullets.slice(0, 15).map((b, j) => ({
+          bulletId: b.id, include: !(i === 0 && j === 14), order: j,
+          rationale: i === 0 && j === 14 ? 'Not relevant to a mobile posting.' : 'Answers the posting directly.',
+        })),
+      })),
+      projects: p.projects.map((x, i) => ({ id: x.id, include: true, order: i, bullets: x.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j, rationale: 'Shows range.' })) })),
+      skills: p.skills.map((g, i) => ({ id: g.id, include: true, order: i, keywords: g.keywords })),
+    });
+
+  const reviewed = () => {
+    const fitted = fitToTarget(p, plan(), 1, undefined, jd);
+    return { fitted, changes: buildChanges(p, fitted.plan, fitted.reasons) };
+  };
+  const change = (id: string) => reviewed().changes.find((c) => c.id === id)!;
+
+  it('gives a line the fit cut its own reason, not the plan’s case for keeping it', () => {
+    const { fitted, changes } = reviewed();
+    const cut = fitted.dropped.filter((id) => id.startsWith('a') || id.startsWith('b'));
+    expect(cut.length).toBeGreaterThan(0);
+    for (const id of cut) {
+      const c = changes.find((x) => x.id === `bullet-drop:${id}`);
+      if (!c) continue; // put back by the fill afterwards
+      expect(c.rationale).toMatch(/^Cut to fit the page\./);
+      expect(c.rationale).not.toMatch(/Answers the posting/);
+      // What outranked it: the lines the plan put above it.
+      expect(c.rationale).toMatch(/ranked this line last of the \d+ still under it/);
+    }
+  });
+
+  it('keeps the plan’s rationale for a drop the plan made', () => {
+    expect(change('bullet-drop:a14').rationale).toBe('Not relevant to a mobile posting.');
+  });
+
+  it('says a line the plan never listed was the plan’s omission', () => {
+    expect(change('bullet-drop:a15').rationale).toBe('The plan left this out.');
+  });
+
+  it('says why a skills group went before any bullet', () => {
+    expect(change('skills:k_hobby').rationale).toMatch(/^Cut to fit the page\. It names nothing the posting asks for/);
+  });
+
+  it('says why a project left as a stub was taken off', () => {
+    expect(change('entry-drop:prj_side').rationale).toMatch(/^Cut to fit the page\. The trim had taken Sourdough timer down to one line/);
+  });
+
+  it('says a role was capped at six lines, on two pages', () => {
+    const fitted = fitToTarget(p, plan(), 2, undefined, jd);
+    const c = buildChanges(p, fitted.plan, fitted.reasons).find((x) => x.id === 'bullet-drop:a13')!;
+    expect(c.rationale).toMatch(/^Cut at 6 lines for Native App Developer, Formedics/);
+  });
+
+  it('says it put back a group the plan had left out', () => {
+    const roomy = profileSchema.parse({ ...p, work: [{ ...p.work[0], bullets: bullets(2, 'a') }], projects: [] });
+    const left = tailorPlanSchema.parse({
+      summary: { text: '', rationale: '' },
+      work: roomy.work.map((w) => ({ id: w.id, include: true, order: 0, bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })) })),
+      skills: [
+        { id: 'k_lang', include: false, order: 0, keywords: ['Kotlin'] },
+        { id: 'k_other', include: true, order: 1, keywords: ['Kubernetes'] },
+        { id: 'k_hobby', include: true, order: 2, keywords: ['Origami', 'Beekeeping'] },
+      ],
+    });
+    const fitted = fitToTarget(roomy, left, 1, undefined, jd);
+    expect(fitted.restoredSkills).toContain('k_lang');
+    const c = buildChanges(roomy, fitted.plan, fitted.reasons).find((x) => x.id === 'skills:k_lang')!;
+    expect(c.rationale).toBe('The plan left this group out; it was put back because the page had room and it names Kotlin.');
+  });
+});

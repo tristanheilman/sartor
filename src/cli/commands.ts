@@ -366,7 +366,7 @@ export async function tailorApplyCommand(ctx: Ctx): Promise<Result> {
     jd,
     constraints,
     plan: fitted.plan,
-    changes: buildChanges(profile, fitted.plan),
+    changes: buildChanges(profile, fitted.plan, fitted.reasons),
     notes: plan.notes,
   };
   const file: RunFile = { format: RUN_FORMAT, template: template.id, profile, run, modelPlan: plan, fit: summarizeFit(fitted) };
