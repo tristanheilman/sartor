@@ -32,7 +32,7 @@ The product's promise to the person is: **nothing invented, nothing silently rew
    sartor tailor prompt --profile profile.json --posting posting.txt --pages 1 --out tailor-prompt.json
    ```
 
-   The file has `task`, `instructions`, `input` (the profile and posting) and `schema`. Use `--out` rather than a shell redirect: a redirect is not covered by the skill's permission to run `sartor`.
+   The file has `task`, `instructions`, `input` (the profile and posting), `schema`, and `next` — the command to run once you have written the plan. Use `--out` rather than a shell redirect: a redirect is not covered by the skill's permission to run `sartor`.
 
 2. **Write the plan** to `plan.json`: JSON matching the file's `schema` exactly, following its `instructions`. In particular:
    - Select and order only. Every `bulletId` and entry `id` must come from the profile.

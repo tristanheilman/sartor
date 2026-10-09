@@ -55,7 +55,7 @@ Branch on `error.code`, not on the message.
 
 Any file argument may be `-` to read stdin.
 
-Write a prompt to a file with `--out`, never with a shell redirect (`> file`). The prompt file holds the payload itself — `task`, `instructions`, `input`, `schema` — and stdout reports where it went. A redirect makes the command more than a `sartor` call, so a `Bash(sartor *)` permission does not cover it and the agent is asked to approve it.
+Write a prompt to a file with `--out`, never with a shell redirect (`> file`). The prompt file holds the payload itself — `task`, `instructions`, `input`, `schema`, and `next`, the command to run on what you write — and stdout reports where it went. A redirect makes the command more than a `sartor` call, so a `Bash(sartor *)` permission does not cover it and the agent is asked to approve it.
 
 | Command | What it does |
 |---|---|
