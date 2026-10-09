@@ -236,3 +236,70 @@ describe('matching a requirement to evidence', () => {
     expect(report.missing.map((t) => t.norm)).toContain('docker');
   });
 });
+
+describe('reading a posting written as prose', () => {
+  /**
+   * Postings written as paragraphs state their requirements without any of
+   * the list cues: "We want an engineer who…", "You're comfortable going
+   * below…", "ideally you've maintained…", "You can also work…". Against one
+   * of those every term came back unemphasised, so the coverage report — and
+   * `sartor check` — had nothing to say about it. Pasted from an email or a
+   * PDF, the paragraphs are hard-wrapped too, so a requirement's terms often
+   * sit on the line after its cue.
+   */
+  const PROSE = `Senior Data Engineer
+
+We want an engineer who has run streaming pipelines in production
+on Spark or Flink at billions of events a day, and owned them end
+to end: ingestion, modelling and alerting.
+
+You're comfortable going below the framework when it matters, and
+tuning Kafka consumers is familiar ground. Ideally you've maintained
+a Debezium connector that other teams depend on.
+
+You can work the warehouse side as well, with
+dbt, Snowflake and Airflow, and you know Python and SQL well enough
+to review a colleague's change in either.
+
+The team is eight people. We run on AWS today.
+`;
+
+  const emphasised = (text: string) =>
+    extractRequirements(text)
+      .filter((t) => t.emphasised)
+      .map((t) => t.norm);
+
+  it('finds the requirements a paragraph states', () => {
+    expect(emphasised(PROSE)).toEqual(expect.arrayContaining(['debezium', 'python', 'sql']));
+  });
+
+  it('reads a requirement across the lines a paste wraps it onto', () => {
+    // Each of these is on a line with no cue of its own; the cue is on the
+    // line before, in the same sentence.
+    expect(emphasised(PROSE)).toEqual(expect.arrayContaining(['spark', 'flink', 'kafka', 'snowflake', 'airflow']));
+  });
+
+  it('does not read the opening of a prose requirement as a skill', () => {
+    // "You're" and "You’re" are capitalised and sit inside a requirement clause.
+    const curly = PROSE.replace("You're", 'You’re');
+    for (const text of [PROSE, curly]) {
+      expect(extractRequirements(text).map((t) => t.term)).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/^(?:You|We)/)]),
+      );
+    }
+  });
+
+  it('does not treat every paragraph as a requirement', () => {
+    // A statement about the team, not about the candidate.
+    expect(extractRequirements(PROSE).map((t) => t.norm)).toContain('aws');
+    expect(emphasised(PROSE)).not.toContain('aws');
+  });
+
+  it('keeps an unbulleted list line from lending its cue to the next', () => {
+    // No bullet markers, so the lines are only told apart by where they end.
+    const list = 'Backend Engineer\n\nExperience with Go\nRedis Enterprise licences are provided\niOS release tooling is ours\n';
+    expect(emphasised(list)).toContain('go');
+    expect(emphasised(list)).not.toContain('redis');
+    expect(emphasised(list)).not.toContain('ios');
+  });
+});

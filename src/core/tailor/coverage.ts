@@ -43,9 +43,22 @@ export interface CoverageReport {
   missing: CoverageTerm[];
 }
 
+/** How a bulleted list marks a line as a stated requirement. */
+const LIST_CUES =
+  /experience (?:with|in|using)|proficien(?:t|cy) (?:with|in)|knowledge of|familiar(?:ity)? with|expertise in|background in|skilled in|working with|must have|required|requirements?|you (?:will )?(?:have|need|bring)|strong/;
+
+/**
+ * How a posting written as paragraphs says the same thing: "We want an
+ * engineer who…", "You're comfortable going below…", "ideally you've
+ * shipped…". None of these matched a list cue, so a prose posting came back
+ * with no requirements at all. Apostrophes may be straight or curly: postings
+ * are pasted from everywhere.
+ */
+const PROSE_CUES =
+  /we (?:want|need|expect)|looking for|you(?:['’]re| are) (?:an? )?(?:experienced|fluent|familiar|proficient|skilled|confident|at home)|comfortable|you['’]ve|you['’]ll (?:have|need|bring)|you bring|you can|you know|ideally|fluent in|hands-on|track record|understanding of/;
+
 /** Phrases that mark what follows as a stated requirement. */
-const CUE_RE =
-  /\b(?:experience (?:with|in|using)|proficien(?:t|cy) (?:with|in)|knowledge of|familiar(?:ity)? with|expertise in|background in|skilled in|working with|must have|required|requirements?|you (?:will )?(?:have|need)|strong)\b/gi;
+const CUE_RE = new RegExp(`\\b(?:${LIST_CUES.source}|${PROSE_CUES.source})\\b`, 'gi');
 
 /** Words that never constitute a "requirement" on their own. */
 const NOISE = new Set([
@@ -204,6 +217,16 @@ const NOISE = new Set([
 ]);
 
 /**
+ * "You're", "We've", "Don't": capitalised at the start of a prose requirement,
+ * and never one themselves.
+ */
+const CONTRACTION_RE = /['’](?:re|ve|ll|d|m|t)$/;
+
+function isNoise(norm: string): boolean {
+  return NOISE.has(norm) || CONTRACTION_RE.test(norm);
+}
+
+/**
  * Is this token plausibly a named skill, tool, or technology?
  *
  * Shape alone is not enough. `PostgreSQL`, `gRPC`, and `AWS` announce
@@ -218,7 +241,7 @@ const NOISE = new Set([
  * imperative-verb lists, which is what keeps "Design", "Build", and "We" out.
  */
 function looksLikeSkill(raw: string, norm: string): boolean {
-  if (NOISE.has(norm)) return false;
+  if (isNoise(norm)) return false;
   if (norm.length < 2) return false;
 
   // Acronyms, internal capitals, versioned or punctuated tech names.
@@ -274,6 +297,50 @@ function headerEnd(jdText: string): number {
   return firstBreak;
 }
 
+/** A list item, which starts a line of its own however the line above ends. */
+const LIST_MARKER_RE = /^\s*(?:[-•*▪◦‣–]|\d+[.)])\s/;
+
+/**
+ * A plain lowercase word: the rest of a sentence, not the start of a new one.
+ * Requires the whole word to be lowercase so a list item that opens with a
+ * product name ("iOS release tooling") is not read as a continuation.
+ */
+const LOWERCASE_START_RE = /^\s*[a-z][a-z'’-]*(?![\w.+#])/;
+
+/** A line ending on a comma or a word that cannot end a sentence. Case-sensitive: "Go" is not "go". */
+const DANGLING_END_RE =
+  /(?:,|\b(?:and|or|but|the|a|an|of|in|to|with|for|on|at|by|from|into|across|that|which|who|as|like|including|such|both|either|than|is|are|be|been|has|have))\s*$/;
+
+/**
+ * Whether `line` carries on the sentence `prev` started, in a hard-wrapped
+ * paste.
+ *
+ * Only on clear signs: a blank line or a list marker always starts afresh, and
+ * otherwise the new line must open lowercase or the previous one must stop
+ * mid-clause. A list written without markers ("Experience with Go" over "Redis
+ * Enterprise licences are provided") shows neither sign, so its lines stay
+ * separate and one item's cue does not spill onto the next.
+ */
+function continuesLine(prev: string, line: string): boolean {
+  if (!prev.trim() || !line.trim() || LIST_MARKER_RE.test(line)) return false;
+  return LOWERCASE_START_RE.test(line) || DANGLING_END_RE.test(prev);
+}
+
+/** [start, end) offsets of each line as written, joining a hard wrap's pieces. */
+function writtenLines(jdText: string): Array<[number, number]> {
+  const lines: Array<[number, number]> = [];
+  let start = 0;
+  let prev: string | undefined;
+  for (const line of jdText.split('\n')) {
+    const end = start + line.length;
+    if (prev !== undefined && continuesLine(prev, line)) lines[lines.length - 1]![1] = end;
+    else lines.push([start, end]);
+    prev = line;
+    start = end + 1;
+  }
+  return lines;
+}
+
 export function extractRequirements(jdText: string, limit = 40): Array<{
   term: string;
   norm: string;
@@ -295,12 +362,15 @@ export function extractRequirements(jdText: string, limit = 40): Array<{
   // is how postings write half of their hard requirements ("Deep PostgreSQL
   // knowledge — required"). Whole lines handle both, and postings state
   // requirements one per line.
+  //
+  // "Line" means the line as written, not as pasted: a paragraph copied from
+  // an email or a PDF arrives hard-wrapped, with its cue on one line and the
+  // terms it governs on the next. See `continuesLine` for when two physical
+  // lines are one.
   const cueWindows: Array<[number, number]> = [];
-  let lineStart = 0;
-  for (const line of jdText.split('\n')) {
+  for (const [a, b] of writtenLines(jdText)) {
     CUE_RE.lastIndex = 0;
-    if (CUE_RE.test(line)) cueWindows.push([lineStart, lineStart + line.length]);
-    lineStart += line.length + 1;
+    if (CUE_RE.test(jdText.slice(a, b).replace(/\s+/g, ' '))) cueWindows.push([a, b]);
   }
   const inCueWindow = (i: number) => cueWindows.some(([a, b]) => i >= a && i <= b);
 
@@ -316,7 +386,7 @@ export function extractRequirements(jdText: string, limit = 40): Array<{
     // distinguishing shape (Go, R, Vue) without dragging in the surrounding
     // prose ("experience", "daily", "exposure").
     const inRequirementClause =
-      emphasised && !NOISE.has(t.norm) && t.norm.length >= 2 && /^[A-Z]/.test(t.raw);
+      emphasised && !isNoise(t.norm) && t.norm.length >= 2 && /^[A-Z]/.test(t.raw);
     if (!looksLikeSkill(t.raw, t.norm) && !inRequirementClause) continue;
     // Named only in the title: the employer, not a skill.
     if (!outsideHeader.has(t.norm)) continue;
