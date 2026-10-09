@@ -160,6 +160,23 @@ describe('the agent workflow', () => {
     expect(file.profile.basics.name).toBe('Riley Okafor');
   });
 
+  it('says exactly where a plan is wrong', async () => {
+    writeFileSync(join(cwd, 'bad.json'), JSON.stringify({ summary: 'not an object' }));
+    const r = await sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'bad.json']);
+    expect(r.code).toBe(3);
+    expect(r.json.error.code).toBe('invalid_plan');
+    expect(r.json.error.details.issues[0].path).toBe('summary');
+  });
+
+  it('drops plan entries that do not point at the profile, and says so', async () => {
+    const p = JSON.parse(readFileSync(plan, 'utf8'));
+    p.work.push({ id: 'wrk_invented', include: true, order: 9, bullets: [] });
+    writeFileSync(join(cwd, 'plan.json'), JSON.stringify(p));
+    const r = await sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'plan.json', '--out', 'run.json']);
+    expect(r.code).toBe(0);
+    expect(r.json.warnings.join(' ')).toMatch(/wrk_invented/);
+  });
+
   describe('a summary longer than the page allows', () => {
     // Ordinary words only, so the guard has nothing to say about it and the
     // length is the only thing wrong.
@@ -206,23 +223,6 @@ describe('the agent workflow', () => {
       return Number(r.json.data.input.match(/about (\d+) characters/)[1]);
     };
     expect(await chars('roomy')).toBeLessThan(await chars('compact'));
-  });
-
-  it('says exactly where a plan is wrong', async () => {
-    writeFileSync(join(cwd, 'bad.json'), JSON.stringify({ summary: 'not an object' }));
-    const r = await sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'bad.json']);
-    expect(r.code).toBe(3);
-    expect(r.json.error.code).toBe('invalid_plan');
-    expect(r.json.error.details.issues[0].path).toBe('summary');
-  });
-
-  it('drops plan entries that do not point at the profile, and says so', async () => {
-    const p = JSON.parse(readFileSync(plan, 'utf8'));
-    p.work.push({ id: 'wrk_invented', include: true, order: 9, bullets: [] });
-    writeFileSync(join(cwd, 'plan.json'), JSON.stringify(p));
-    const r = await sartor(['tailor', 'apply', '--profile', profile, '--posting', posting, '--plan', 'plan.json', '--out', 'run.json']);
-    expect(r.code).toBe(0);
-    expect(r.json.warnings.join(' ')).toMatch(/wrk_invented/);
   });
 });
 
