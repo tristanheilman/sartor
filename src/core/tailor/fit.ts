@@ -103,6 +103,12 @@ export interface FitResult {
   restoredSkills: string[];
   /** Project entry ids switched off entirely. */
   droppedEntries: string[];
+  /**
+   * Roles the plan kept with every bullet excluded, and the bullet — the one it
+   * ranked first — put back so the job is not a bare heading. Reported because
+   * it overrides the plan: a line the model left out appears on the page.
+   */
+  emptyRolesFilled: Array<{ roleId: string; bulletId: string }>;
   /** Whether it fits now. False means it is as small as this will make it. */
   fits: boolean;
 }
@@ -521,10 +527,14 @@ export function fitToTarget(
   //
   // Only for a role the plan *kept*. Excluding an entry is a decision;
   // emptying one is an oversight.
+  const emptyRolesFilled: FitResult['emptyRolesFilled'] = [];
   for (const entry of next.work) {
     if (!entry.include || entry.bullets.some((b) => b.include)) continue;
     const first = [...entry.bullets].sort((a, b) => a.order - b.order)[0];
-    if (first) first.include = true;
+    if (first) {
+      first.include = true;
+      emptyRolesFilled.push({ roleId: entry.id, bulletId: first.bulletId });
+    }
   }
 
   // Two pages only. On one, the page is the cap: the trim already weighs a
@@ -811,6 +821,7 @@ export function fitToTarget(
     added,
     restoredSkills,
     droppedEntries,
+    emptyRolesFilled,
     // Against the page itself, not the trim budget — growth deliberately fills
     // past that, so measuring against it would report a full page as a failure.
     fits: heightNow() <= pageHeight(metrics) * pageTarget,

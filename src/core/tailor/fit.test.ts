@@ -1081,6 +1081,19 @@ describe('a role the model kept but emptied', () => {
     expect(kept[0]!.order).toBe(0);
   });
 
+  it('reports the bullet it put back, and for which role', () => {
+    // The rule overrides the plan, so it has to say so: a line the model
+    // excluded appears on the page, and nothing said why.
+    const { plan, emptyRolesFilled } = fitToTarget(profile, emptiedRole(), 1);
+    const restored = plan.work[1]!;
+    const top = [...restored.bullets].sort((a, b) => a.order - b.order)[0]!;
+    expect(emptyRolesFilled).toEqual([{ roleId: restored.id, bulletId: top.bulletId }]);
+  });
+
+  it('reports nothing when no kept role was empty', () => {
+    expect(fitToTarget(profile, keepAll(), 1).emptyRolesFilled).toEqual([]);
+  });
+
   it('still keeps the role, rather than dropping it to save the space', () => {
     const { plan } = fitToTarget(profile, emptiedRole(), 1);
     expect(plan.work.every((w) => w.include)).toBe(true);
