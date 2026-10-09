@@ -1,3 +1,5 @@
+import { equivalentForms } from './lexicon';
+
 /**
  * Words that may legitimately appear capitalised at the start of a sentence
  * without being a proper noun.
@@ -117,6 +119,23 @@ export const GENERIC_TERMS = new Set(
     .trim()
     .split(/\s+/),
 );
+
+/**
+ * Acronyms that name a kind of thing rather than a particular one.
+ *
+ * "Bridging native iOS APIs" describes the work; there is no "APIs" to have or
+ * to lack, and no evidence of it for a reader to look for. So these are not
+ * posting requirements, and not summary claims the page has to back. The
+ * fabrication guard still holds them to the profile like any other token.
+ *
+ * Not UX: that names a discipline, which a design posting requires and a
+ * summary claims.
+ */
+const KINDS_OF_THING = new Set(['api', 'sdk', 'ui', 'gui', 'cli', 'ide', 'os']);
+
+export function isKindOfThing(norm: string): boolean {
+  return equivalentForms(norm).some((f) => KINDS_OF_THING.has(f));
+}
 
 /**
  * Regular past-tense verbs, without having to list every one.

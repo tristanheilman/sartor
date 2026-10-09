@@ -1,7 +1,8 @@
 import type { Profile } from '../schema';
 import { buildDocument, type Change } from './apply';
 import { checkText, profileLexicon } from './guard';
-import { buildLexicon, collectStrings, equivalentForms, isGrounded } from './lexicon';
+import { buildLexicon, collectStrings, isGrounded } from './lexicon';
+import { isKindOfThing } from './stopwords';
 import type { TailorPlan } from './plan';
 
 export interface UnsupportedTerm {
@@ -14,13 +15,6 @@ export interface UnsupportedTerm {
    */
   restoredBy: string[];
 }
-
-/**
- * Acronyms that name a kind of thing rather than a particular one. "Bridging
- * native iOS APIs" describes the work; there is no evidence of "APIs" for a
- * reader to look for. The guard still holds them to the profile.
- */
-const KINDS_OF_THING = new Set(['api', 'sdk', 'ui', 'ux', 'gui', 'cli', 'ide', 'os']);
 
 /** "8 years", "10+ yrs": vouched for by the dates on the page, not by a token. */
 const YEARS_AFTER_RE = /^\+?\s*(?:years?|yrs?)\b/i;
@@ -55,7 +49,7 @@ export function unsupportedSummaryTerms(profile: Profile, plan: TailorPlan, chan
   return checkText(summary, page, 'summary-support')
     .violations.filter((v) => v.kind !== 'unverified-capital')
     .filter((v) => isGrounded(v.norm, known))
-    .filter((v) => !equivalentForms(v.norm).some((f) => KINDS_OF_THING.has(f)))
+    .filter((v) => !isKindOfThing(v.norm))
     .filter((v) => !(v.kind === 'number' && YEARS_AFTER_RE.test(summary.slice(v.index + v.token.length))))
     .map((v) => ({
       // "40%" reads as the claim it is; the tokeniser keeps only the 40.

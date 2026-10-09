@@ -80,7 +80,7 @@ export function documentToSlices(doc: ResumeDocument): ResumeSlice[] {
 
   for (const section of doc.sections) {
     if (section.kind === 'summary' && section.summary) {
-      slices.push({ label: 'Summary', text: section.summary });
+      slices.push({ label: 'Summary', text: section.summary, summary: true });
     }
     if (section.kind === 'skills' && section.skills) {
       for (const g of section.skills) {

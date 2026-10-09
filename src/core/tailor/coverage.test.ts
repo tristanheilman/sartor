@@ -303,3 +303,75 @@ The team is eight people. We run on AWS today.
     expect(emphasised(list)).not.toContain('ios');
   });
 });
+
+describe('a name of more than one word', () => {
+  /**
+   * "React Native" was counted as "React" and "Native": two requirements
+   * where the posting made one, and the React half credited to a resume that
+   * only used React for the web.
+   */
+  const POSTING = 'Mobile Engineer\n\nStrong experience with React Native and TypeScript.\nYou ship with GitHub Actions, Fastlane and Sentry.\n';
+  const norms = () => extractRequirements(POSTING).map((t) => t.norm);
+
+  it('is one term', () => {
+    expect(norms()).toEqual(expect.arrayContaining(['react native', 'github actions']));
+    for (const half of ['react', 'native', 'github', 'actions']) expect(norms()).not.toContain(half);
+    expect(extractRequirements(POSTING).find((t) => t.norm === 'react native')).toMatchObject({ term: 'React Native', emphasised: true });
+  });
+
+  it('is not made out of a list', () => {
+    const list = extractRequirements('Backend Engineer\n\nYou know Go, Kafka. Rust and Python\nTerraform\nAnsible matters too.\n').map((t) => t.norm);
+    expect(list).toEqual(expect.arrayContaining(['go', 'kafka', 'rust', 'python', 'terraform', 'ansible']));
+    expect(list.filter((n) => n.includes(' '))).toEqual([]);
+  });
+
+  it('is still the employer when only the title names it', () => {
+    const titled = extractRequirements('Senior React Native Engineer — Harbor Lane\n\nYou have shipped React Native apps to both stores.\n').map((t) => t.norm);
+    expect(titled).toContain('react native');
+    expect(titled).not.toContain('harbor lane');
+  });
+
+  const slicesSaying = (text: string) => [{ label: 'Experience · Acme Robotics', text }];
+
+  it('is on the page only when the page says the whole of it', () => {
+    const status = (text: string) =>
+      buildCoverage(POSTING, slicesSaying(text), profile).terms.find((t) => t.norm === 'react native')!.status;
+    expect(status('Shipped the React Native app to both stores.')).toBe('present');
+    expect(status('Maintains react-native-island, a public library.')).toBe('present');
+    // React for the web is not React Native.
+    expect(status('Built the dashboard in React; wrote native modules in Swift.')).not.toBe('present');
+  });
+});
+
+describe('a kind of thing, rather than a particular one', () => {
+  it('is not a requirement', () => {
+    // There is no "APIs" to have or lack. The summary check (`support.ts`)
+    // does not ask the page to show them either.
+    const norms = extractRequirements('Backend Engineer\n\nYou have designed REST APIs and SDKs used by other teams.\n').map((t) => t.norm);
+    expect(norms).toContain('rest');
+    for (const kind of ['apis', 'api', 'sdks', 'sdk']) expect(norms).not.toContain(kind);
+  });
+});
+
+describe('a term only the summary names', () => {
+  /**
+   * The summary claims; the rest of the page shows. Counting a summary-only
+   * term as on the page reported AWS as covered on the same page where the
+   * summary check said nothing backed it.
+   */
+  const POSTING = 'Platform Engineer\n\nExperience with AWS and Terraform is required.\n';
+  const own = profileSchema.parse({ ...profile, skills: [{ id: 'skl_1', name: 'Infra', keywords: ['Terraform', 'AWS'] }] });
+
+  it('is not counted as on the page, though the summary is still listed as naming it', () => {
+    const report = buildCoverage(
+      POSTING,
+      [
+        { label: 'Summary', text: 'Platform engineer who runs AWS and Terraform.', summary: true },
+        { label: 'Skills · Infra', text: 'Terraform' },
+      ],
+      own,
+    );
+    expect(report.terms.find((t) => t.norm === 'aws')).toMatchObject({ status: 'in-profile', locations: ['Summary'] });
+    expect(report.terms.find((t) => t.norm === 'terraform')).toMatchObject({ status: 'present', locations: ['Summary', 'Skills · Infra'] });
+  });
+});

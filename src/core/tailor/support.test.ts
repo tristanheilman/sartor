@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { profileSchema, type Profile } from '../schema';
 import { tailorPlanSchema, type TailorPlan } from './plan';
-import { buildChanges, type Change } from './apply';
+import { buildChanges, buildDocument, type Change } from './apply';
 import { unsupportedSummaryTerms } from './support';
+import { buildCoverage } from './coverage';
+import { documentToSlices } from '../render/model';
 
 /**
  * The summary is written with the whole profile in view; the fit pass decides
@@ -127,3 +129,36 @@ describe('a summary checked against the page it ends up on', () => {
     expect(check(plan('', { without: ['blt_1'] }))).toEqual([]);
   });
 });
+
+describe('coverage, on the same page', () => {
+  // Two reports on one page must not disagree: coverage called a term the
+  // summary alone named "in your resume" while this check said nothing on the
+  // page showed it.
+  const posting = 'Backend Engineer\n\nExperience with Kafka and PostgreSQL is required. You have designed APIs.\n';
+  const summary = 'Backend engineer who moved order events onto Kafka and designs APIs.';
+
+  const both = (p: TailorPlan) => {
+    const changes = buildChanges(profile, p);
+    const coverage = buildCoverage(posting, documentToSlices(buildDocument(profile, p, changes)), profile);
+    return { coverage, unsupported: unsupportedSummaryTerms(profile, p, changes).map((t) => t.term) };
+  };
+
+  it('agrees that a term only the summary names is not shown', () => {
+    const { coverage, unsupported } = both(plan(summary, { without: ['blt_1'] }));
+    expect(unsupported).toContain('Kafka');
+    expect(coverage.terms.find((t) => t.norm === 'kafka')!.status).not.toBe('present');
+  });
+
+  it('agrees that it is shown once a bullet says it', () => {
+    const { coverage, unsupported } = both(plan(summary));
+    expect(unsupported).not.toContain('Kafka');
+    expect(coverage.terms.find((t) => t.norm === 'kafka')!.status).toBe('present');
+  });
+
+  it('agrees that a kind of thing is neither a requirement nor a claim to back', () => {
+    const { coverage, unsupported } = both(plan(summary, { without: ['blt_1'] }));
+    expect(unsupported).not.toContain('APIs');
+    expect(coverage.terms.map((t) => t.norm)).not.toContain('apis');
+  });
+});
+

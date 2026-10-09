@@ -455,7 +455,11 @@ function CoverageCard({ coverage }: { coverage: CoverageReport }) {
           tone="bg-amber-50 border-amber-200"
           empty="Nothing relevant was left behind."
           terms={coverage.inProfileOnly}
-          renderExtra={() => ' — reject a drop in Review to pull it back in'}
+          renderExtra={(t) =>
+            t.locations.length
+              ? ' — only the summary names it; reject a drop in Review to show it'
+              : ' — reject a drop in Review to pull it back in'
+          }
         />
         <TermGroup
           title={`Not anywhere in your profile (${coverage.missing.length})`}
