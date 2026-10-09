@@ -1456,3 +1456,91 @@ describe('putting back skill groups the page has room for', () => {
     expect(twice.restoredSkills).toEqual([]);
   });
 });
+
+describe('which skill groups the page keeps', () => {
+  /**
+   * Groups were ranked by the share of their words the posting also used. A
+   * group that spells out a technology is diluted by its own detail: "Cloud
+   * Services" — AWS, then ten AWS services in parentheses, Firebase,
+   * authentication — scored 0.18 and was cut, while a group matching only on
+   * "development", "app" and "store" scored 0.33 and stayed.
+   */
+  const crowded = (skills: Profile['skills'], first = 'Owned a specific and checkable piece of work that took real effort to do.') =>
+    profileSchema.parse({
+      ...profile,
+      basics: { ...profile.basics, summary: '' },
+      work: [
+        { ...profile.work[0], bullets: [{ id: 'a0', text: first }, ...bullets(19, 'a').slice(1)] },
+        { ...profile.work[1], bullets: bullets(20, 'b') },
+      ],
+      projects: [],
+      skills,
+    });
+
+  const planFor = (p: Profile, summary = ''): TailorPlan =>
+    tailorPlanSchema.parse({
+      summary: { text: summary, rationale: '' },
+      work: p.work.map((w, i) => ({
+        id: w.id, include: true, order: i,
+        bullets: w.bullets.map((b, j) => ({ bulletId: b.id, include: true, order: j })),
+      })),
+      skills: p.skills.map((s, i) => ({ id: s.id, include: true, order: i, keywords: s.keywords })),
+    });
+
+  const kept = (p: Profile, plan: TailorPlan, jd: string) =>
+    fitToTarget(p, plan, 1, undefined, jd).plan.skills.filter((s) => s.include).map((s) => s.id);
+
+  it('keeps a detailed group that carries the posting’s terms over one that shares only its words', () => {
+    const p = crowded([
+      { id: 'k_lang', name: 'Languages', keywords: ['TypeScript', 'Kotlin', 'Swift'] },
+      {
+        id: 'k_cloud',
+        name: 'Cloud Services',
+        keywords: ['AWS (EC2, S3, Lambda, RDS, CloudFront, Cognito, SQS, SNS, DynamoDB, IAM)', 'Firebase', 'Authentication'],
+      },
+      { id: 'k_generic', name: 'Mobile', keywords: ['App Development', 'Store Deployment', 'Development Tools', 'Release Management'] },
+    ]);
+    const jd =
+      'Senior Mobile Engineer\n\nYou have shipped apps in TypeScript and Kotlin, with experience in AWS and Firebase authentication.\nYou will own app development end to end, from build to store release, and improve our development tools.\n';
+
+    expect(kept(p, planFor(p), jd)).toEqual(['k_lang', 'k_cloud']);
+  });
+
+  describe('a group that is the summary’s only evidence', () => {
+    // Kafka and Kubernetes are each one stated requirement, so the two groups
+    // carry the same; the plan ranked the data group lower. Each is long
+    // enough that the page has no room to put it back once it is cut.
+    const skills = [
+      { id: 'k_lang', name: 'Languages', keywords: ['TypeScript', 'Kotlin', 'Swift'] },
+      {
+        id: 'k_infra',
+        name: 'Infrastructure',
+        keywords: ['Kubernetes', 'Datadog', 'Helm', 'Argo CD', 'Prometheus', 'Grafana', 'Istio', 'Vault', 'Consul', 'Nomad', 'Packer', 'Pulumi'],
+      },
+      {
+        id: 'k_data',
+        name: 'Data',
+        keywords: ['Kafka', 'Snowflake', 'Flink', 'Spark', 'Airflow', 'Debezium', 'Trino', 'Iceberg', 'Hudi', 'Presto', 'Beam', 'Pinot'],
+      },
+    ];
+    const jd = 'Backend Engineer\n\nYou have experience with TypeScript, Kafka and Kubernetes.\n';
+    const summary = 'Backend engineer who models event data in Snowflake.';
+
+    it('is kept, though the plan ranked it lower', () => {
+      const p = crowded(skills);
+      expect(kept(p, planFor(p, summary), jd)).toEqual(['k_lang', 'k_data']);
+    });
+
+    it('is not, when a bullet on the page shows the same thing', () => {
+      const p = crowded(skills, 'Moved the reporting warehouse onto Snowflake.');
+      expect(kept(p, planFor(p, summary), jd)).toEqual(['k_lang', 'k_infra']);
+    });
+
+    it('and the summary is not left naming something the page does not show', () => {
+      const p = crowded(skills);
+      const { plan } = fitToTarget(p, planFor(p, summary), 1, undefined, jd);
+      const page = JSON.stringify(buildDocument(p, plan, buildChanges(p, plan)).sections.filter((s) => s.kind !== 'summary'));
+      expect(page).toMatch(/Snowflake/);
+    });
+  });
+});

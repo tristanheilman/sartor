@@ -1,7 +1,8 @@
 import type { Profile } from '../schema';
 import { buildChanges, buildDocument } from './apply';
 import { DEFAULT_PAGE_METRICS, estimateHeight, pageHeight, type PageMetrics } from '../render/model';
-import { buildLexicon, tokenize } from './lexicon';
+import { buildLexicon, collectStrings, tokenize } from './lexicon';
+import { extractRequirements, mentionsTerm } from './coverage';
 import { isCommonSentenceOpener } from './stopwords';
 import { byRecency, recentRoles } from '../dates';
 import type { TailorPlan, PlannedEntry } from './plan';
@@ -124,6 +125,37 @@ function relevanceTo(jdLexicon: Set<string>, name: string, bulletText: string): 
   let hits = 0;
   for (const term of terms) if (jdLexicon.has(term)) hits++;
   return hits / terms.size;
+}
+
+/**
+ * What a skill group is worth to this posting: the posting's terms it names.
+ *
+ * Not a proportion, which is what projects and bullets are scored by. A group
+ * that spells out a technology — AWS, then ten AWS services in parentheses —
+ * carried the posting's terms and scored 0.18, diluted by its own detail,
+ * while a group that matched on "development", "app" and "store" scored 0.33
+ * and stayed. A reader scans a skills line for the posting's terms, not for
+ * words in common with it.
+ *
+ * So a group is worth the coverage terms it carries, a requirement the
+ * posting stated counting double. And it is worth as much again for each term
+ * the summary names that nothing else on the page shows: then the group is the
+ * summary's only evidence, and cutting it leaves the summary claiming
+ * something the page does not back. Two groups carrying two stated
+ * requirements each are otherwise equal; the one holding the only mention of
+ * AWS that the summary leads with is not.
+ */
+function skillWorth(jdText: string, summary: string): (keywords: string[], restOfPage: string) => number {
+  const posting = new Map<string, number>();
+  for (const t of extractRequirements(jdText)) posting.set(t.norm, t.emphasised ? 2 : 1);
+  const claimed = extractRequirements(summary).map((t) => t.norm);
+  return (keywords, restOfPage) => {
+    const text = keywords.join(', ');
+    let worth = 0;
+    for (const [norm, weight] of posting) if (mentionsTerm(norm, text)) worth += weight;
+    for (const norm of claimed) if (mentionsTerm(norm, text) && !mentionsTerm(norm, restOfPage)) worth += 2;
+    return worth;
+  };
 }
 
 /**
@@ -427,6 +459,34 @@ export function fitToTarget(
   const dropped: string[] = [];
   const droppedEntries: string[] = [];
   const ranking = jdText?.trim() ? projectsByRelevance(plan, profile, jdText) : null;
+  // The summary that will print: the plan's, or the profile's own when the
+  // plan wrote none.
+  const worthOf = jdText?.trim() ? skillWorth(jdText, plan.summary.text.trim() || profile.basics.summary) : null;
+  /**
+   * Skill groups in the order the trim gives them up, with what each is
+   * worth: least worth first, and
+   * between equals, the one the plan ranked lower. Without a posting the
+   * profile's own order stands, trailing groups first.
+   *
+   * Worth depends on what else the page shows, so it is measured against the
+   * page as it stands, each time.
+   */
+  const byWorth = (groups: TailorPlan['skills']): Array<{ g: TailorPlan['skills'][number]; worth: number }> => {
+    if (!worthOf) return [...groups].reverse().map((g) => ({ g, worth: 0 }));
+    const doc = buildDocument(profile, next, buildChanges(profile, next));
+    const without = (id: string) =>
+      collectStrings({
+        ...doc,
+        sections: doc.sections
+          .filter((sec) => sec.kind !== 'summary')
+          .map((sec) => (sec.kind === 'skills' ? { ...sec, skills: sec.skills?.filter((x) => x.sourceId !== id) } : sec)),
+      }).join('\n');
+    return groups
+      .map((g, i) => ({ g, worth: worthOf(g.keywords, without(g.id)), i }))
+      .sort((a, b) => a.worth - b.worth || b.g.order - a.g.order || b.i - a.i)
+      .map(({ g, worth }) => ({ g, worth }));
+  };
+  const leastWorthFirst = (groups: TailorPlan['skills']) => byWorth(groups).map(({ g }) => g);
   // The current role and any that ended within three years of it. These keep
   // two bullets ahead of an old role's second and a project's second.
   const recent = recentRoles(profile.work);
@@ -550,24 +610,14 @@ export function fitToTarget(
   // asked for was sacrificed to keep them. A group nobody reads is the cheapest
   // thing on a resume to lose.
   {
-    // With a posting, least relevant first. Without one there is nothing to be
+    // With a posting, least worth first. Without one there is nothing to be
     // relevant to, so the profile's own order stands and the trailing groups
     // go first — which is still better than not cutting skills at all and
     // taking the difference out of someone's employment history.
-    const jdLexicon = ranking ? buildLexicon(jdText!) : null;
-    const order = jdLexicon
-      ? (g: { keywords: string[] }) => relevanceTo(jdLexicon, '', g.keywords.join(' '))
-      : (_g: unknown, i: number) => -i;
-
-    const scored = next.skills
-      .filter((g) => g.include)
-      .map((g, i) => ({ g, score: order(g, i) }))
-      .sort((a, b) => a.score - b.score);
-
-    for (const { g } of scored) {
-      if (!overflows()) break;
-      if (next.skills.filter((x) => x.include).length <= MIN_SKILL_GROUPS) break;
-      g.include = false;
+    // One at a time, re-ranked after each: cutting one of two groups that
+    // both name AWS makes the other the only one that does.
+    while (overflows() && next.skills.filter((x) => x.include).length > MIN_SKILL_GROUPS) {
+      leastWorthFirst(next.skills.filter((x) => x.include))[0]!.include = false;
     }
   }
 
@@ -715,13 +765,10 @@ export function fitToTarget(
     // first: a group of keywords is the cheapest thing on the page, and a
     // posting that asks for payments is answered by the bullet about the
     // payments integration more than by a third line of tool names.
-    const jdForSkills = ranking ? buildLexicon(jdText!) : null;
-    const spareGroups = next.skills
-      .filter((g) => g.include)
-      .map((g, i) => ({ g, score: jdForSkills ? relevanceTo(jdForSkills, '', g.keywords.join(' ')) : -i }))
-      .sort((a, b) => a.score - b.score)
-      .slice(0, Math.max(0, next.skills.filter((g) => g.include).length - MIN_SKILL_GROUPS))
-      .map(({ g }) => g);
+    const spareGroups = leastWorthFirst(next.skills.filter((g) => g.include)).slice(
+      0,
+      Math.max(0, next.skills.filter((g) => g.include).length - MIN_SKILL_GROUPS),
+    );
 
     const given: Array<{ include: boolean; bulletId?: string }> = [];
     let placed: (typeof offered)[number] | undefined;
@@ -761,15 +808,15 @@ export function fitToTarget(
   // but after every job has two, which is the line above.
   const restoredSkills: string[] = [];
   const restoreSkills = () => {
-    if (!ranking) return;
-    const jdLexicon = buildLexicon(jdText!);
-    const candidates = next.skills
-      .filter((g) => !g.include)
-      .map((g) => ({ g, score: relevanceTo(jdLexicon, '', g.keywords.join(' ')) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score);
+    if (!worthOf) return;
+    // Most worth first; only a group carrying something the posting names, or
+    // something the summary says that nothing on the page shows.
+    const candidates = byWorth(next.skills.filter((g) => !g.include))
+      .reverse()
+      .filter(({ worth }) => worth > 0)
+      .map(({ g }) => g);
 
-    for (const { g } of candidates) {
+    for (const g of candidates) {
       g.include = true;
       if (overflows()) {
         g.include = false;
