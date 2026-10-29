@@ -14,6 +14,18 @@ npm link        # puts `sartor` on PATH
 
 Requires Node 20.19 or later. A clone has everything rendering and PDF reading need.
 
+An install from npm has only `zod`. Each command loads the engine it needs on demand, so the optional peers go next to `sartor`, and only for the commands you will run. A command whose peer is missing exits 3 with `error.code` `missing_dependency` and the install line in `error.hint`.
+
+| Command | Needs |
+|---|---|
+| `sartor extract`, `sartor ingest prompt`, `sartor ingest run` on a PDF | `pdfjs-dist` |
+| `sartor extract`, `sartor ingest prompt`, `sartor ingest run` on a DOCX | `mammoth` |
+| `sartor render --format pdf` | `react @react-pdf/renderer` |
+| `sartor render --format docx` | `docx` |
+| `sartor ingest run`, `sartor tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` |
+
+Everything else — `ingest apply`, `tailor prompt`, `tailor apply`, `review`, `check`, `schema`, `templates`, a `.txt` resume and `--format txt` — needs nothing beyond `sartor` itself.
+
 ## Output
 
 Every command prints one JSON envelope on stdout when stdout is not a terminal (or with `--json`), and text at a terminal (or with `--human`). Progress and diagnostics go to stderr.
