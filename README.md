@@ -134,9 +134,11 @@ document.
    model, so the two can never disagree. The built-in templates differ in
    typeface, size and spacing; the denser ones hold more on a page.
 
-The same five steps run from the command line, where each one is a `sartor`
+The same pipeline runs from the command line, where each step is a `sartor`
 command and the model's part can be done by the calling agent instead of an API
-key. See [Using it from an agent](#using-it-from-an-agent).
+key. The one difference is step 2: the CLI reads the posting as text from a file
+or stdin and does not fetch links. See
+[Using it from an agent](#using-it-from-an-agent).
 
 Accepted rephrasings are written back into your master profile as *variants* —
 alternate wordings of the same underlying fact. Your original text is never
@@ -227,17 +229,20 @@ yet; from a clone, `npm run build:lib && npm link` puts it on your PATH.
 
 A clone has every optional peer installed. An install from npm has only `zod`,
 and each command loads the engine it needs on demand, so install the ones for
-the commands you will run next to `sartor`. A command whose peer is missing
-exits 3 with the error code `missing_dependency` and the install line in its
-hint.
+the commands you will run next to `sartor`.
 
-| Command | Needs |
-| --- | --- |
-| `extract`, `ingest prompt`, `ingest run` on a PDF | `pdfjs-dist` |
-| `extract`, `ingest prompt`, `ingest run` on a DOCX | `mammoth` |
-| `render --format pdf` | `react @react-pdf/renderer` |
-| `render --format docx` | `docx` |
-| `ingest run`, `tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` |
+| Command | Needs | If it is missing |
+| --- | --- | --- |
+| `extract`, `ingest prompt`, `ingest run` on a PDF | `pdfjs-dist` | exit 3, `missing_dependency`, install line in the hint |
+| `extract`, `ingest prompt`, `ingest run` on a DOCX | `mammoth` | exit 3, `extract_failed`, message names `mammoth` |
+| `render --format pdf` | `react @react-pdf/renderer` | exit 3, `missing_dependency`, install line in the hint |
+| `render --format docx` | `docx` | exit 3, `missing_dependency`, install line in the hint |
+| `ingest run`, `tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` | exit 1, `internal_error`, message names the package |
+
+Only the PDF reader and the two renderers are checked up front. A missing
+`mammoth` or provider SDK is caught later, so the error code is the generic one
+for that stage; the message still says which package could not be found, and
+the fix is the same: `npm install <package>` next to `sartor`.
 
 Everything else — `ingest apply`, `tailor prompt`, `tailor apply`, `review`,
 `check`, `schema`, `templates`, reading a `.txt` resume and `render --format
