@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "id": "prf_example_avery",
+  "label": "Avery Lindqvist (sample)",
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "basics": {
+    "name": "Avery Lindqvist",
+    "label": "Full-stack Engineer",
+    "email": "avery.lindqvist@example.com",
+    "phone": "(555) 010-4471",
+    "url": "https://averylindqvist.example.com",
+    "summary": "Full-stack engineer with seven years building web products in TypeScript, React and Node.js. Cares about accessible interfaces and the APIs behind them.",
+    "location": { "city": "Portland", "region": "OR" },
+    "profiles": [
+      { "network": "GitHub", "username": "averylindqvist", "url": "https://github.com/averylindqvist-example" }
+    ]
+  },
+  "work": [
+    {
+      "id": "wrk_tidewater",
+      "name": "Tidewater Health",
+      "position": "Senior Full-stack Engineer",
+      "location": "Portland, OR",
+      "startDate": "2022-03",
+      "endDate": "",
+      "summary": "",
+      "bullets": [
+        {
+          "id": "blt_scheduler",
+          "text": "Rebuilt the appointment scheduling flow in React and TypeScript, cutting the median time to book from 6 minutes to 90 seconds.",
+          "tags": ["react", "typescript", "product"],
+          "variants": []
+        },
+        {
+          "id": "blt_design_system",
+          "text": "Led the design system shared by four product teams: 60 accessible components, documented in Storybook and adopted in every new screen.",
+          "tags": ["design-system", "accessibility", "react"],
+          "variants": []
+        },
+        {
+          "id": "blt_billing_api",
+          "text": "Designed the Node.js billing API on PostgreSQL that processes 40,000 claims a month, with p95 latency under 200ms.",
+          "tags": ["node", "postgres", "performance"],
+          "variants": []
+        },
+        {
+          "id": "blt_wcag",
+          "text": "Brought the patient portal to WCAG 2.1 AA, closing 140 audit findings over two quarters.",
+          "tags": ["accessibility"],
+          "variants": []
+        },
+        {
+          "id": "blt_oncall",
+          "text": "Ran the frontend on-call rotation and cut pages by 70% by replacing noisy alerts with error budgets.",
+          "tags": ["reliability"],
+          "variants": []
+        },
+        {
+          "id": "blt_lunch_learn",
+          "text": "Hosted the monthly engineering lunch-and-learn series.",
+          "tags": ["side"],
+          "variants": []
+        }
+      ],
+      "tags": []
+    },
+    {
+      "id": "wrk_brightline",
+      "name": "Brightline Commerce",
+      "position": "Software Engineer",
+      "location": "Remote",
+      "startDate": "2019-06",
+      "endDate": "2022-02",
+      "summary": "",
+      "bullets": [
+        {
+          "id": "blt_checkout",
+          "text": "Shipped the checkout redesign in React that raised conversion 12% across 300 merchant storefronts.",
+          "tags": ["react", "product"],
+          "variants": []
+        },
+        {
+          "id": "blt_ts_migration",
+          "text": "Migrated the storefront from a jQuery codebase to TypeScript and React over nine months, with no customer-facing downtime.",
+          "tags": ["typescript", "react", "migration"],
+          "variants": []
+        },
+        {
+          "id": "blt_playwright",
+          "text": "Introduced Playwright end-to-end tests that caught 35 regressions before release in their first year.",
+          "tags": ["testing"],
+          "variants": []
+        },
+        {
+          "id": "blt_search",
+          "text": "Built the product search service in Node.js on PostgreSQL full-text search, replacing a third-party vendor.",
+          "tags": ["node", "postgres"],
+          "variants": []
+        },
+        {
+          "id": "blt_hack_day",
+          "text": "Won the company hack day with a browser plugin that previewed storefront themes.",
+          "tags": ["side"],
+          "variants": []
+        }
+      ],
+      "tags": []
+    },
+    {
+      "id": "wrk_pineridge",
+      "name": "Pine Ridge College",
+      "position": "Junior Web Developer",
+      "location": "Eugene, OR",
+      "startDate": "2017-09",
+      "endDate": "2019-05",
+      "summary": "",
+      "bullets": [
+        {
+          "id": "blt_records_portal",
+          "text": "Maintained the student records portal in PHP and MySQL used by 9,000 students.",
+          "tags": ["php", "mysql"],
+          "variants": []
+        },
+        {
+          "id": "blt_wordpress",
+          "text": "Built department sites in WordPress and trained staff to edit them.",
+          "tags": ["side"],
+          "variants": []
+        }
+      ],
+      "tags": []
+    }
+  ],
+  "education": [
+    {
+      "id": "edu_cascadia",
+      "institution": "Cascadia Institute of Technology",
+      "area": "Computer Science",
+      "studyType": "BS",
+      "startDate": "2013",
+      "endDate": "2017",
+      "courses": [],
+      "bullets": []
+    }
+  ],
+  "projects": [
+    {
+      "id": "prj_formlift",
+      "name": "formlift",
+      "description": "Open-source React form library with accessibility built in.",
+      "url": "https://github.com/averylindqvist-example/formlift",
+      "startDate": "2021-01",
+      "endDate": "",
+      "bullets": [
+        {
+          "id": "blt_formlift_npm",
+          "text": "Published formlift to npm; it has 2,100 weekly downloads and 48 contributors.",
+          "tags": ["open-source", "react", "accessibility"],
+          "variants": []
+        },
+        {
+          "id": "blt_formlift_a11y",
+          "text": "Every field ships with ARIA labelling and keyboard navigation, tested against screen readers.",
+          "tags": ["accessibility"],
+          "variants": []
+        }
+      ],
+      "tags": ["open-source"]
+    },
+    {
+      "id": "prj_mealmap",
+      "name": "MealMap",
+      "description": "Meal-planning app for a local food bank.",
+      "startDate": "2020-04",
+      "endDate": "2020-11",
+      "bullets": [
+        {
+          "id": "blt_mealmap_stack",
+          "text": "Built with Next.js, PostgreSQL and Tailwind CSS; deployed on Vercel for 300 weekly users.",
+          "tags": ["react", "postgres"],
+          "variants": []
+        },
+        {
+          "id": "blt_mealmap_volunteers",
+          "text": "Coordinated six volunteer developers over a weekend build.",
+          "tags": ["side"],
+          "variants": []
+        }
+      ],
+      "tags": []
+    },
+    {
+      "id": "prj_trailhead",
+      "name": "Trailhead",
+      "description": "A Python script that turns GPX hiking tracks into printable maps.",
+      "startDate": "2018",
+      "endDate": "2018",
+      "bullets": [
+        {
+          "id": "blt_trailhead_maps",
+          "text": "Renders elevation profiles and trail maps from GPX files with Matplotlib.",
+          "tags": ["python", "side"],
+          "variants": []
+        }
+      ],
+      "tags": []
+    }
+  ],
+  "skills": [
+    { "id": "skl_lang", "name": "Languages", "keywords": ["TypeScript", "JavaScript", "SQL", "Python", "PHP"] },
+    { "id": "skl_front", "name": "Frontend", "keywords": ["React", "Next.js", "Tailwind CSS", "Storybook", "Playwright"] },
+    { "id": "skl_back", "name": "Backend", "keywords": ["Node.js", "PostgreSQL", "MySQL", "Redis", "REST APIs"] },
+    { "id": "skl_tools", "name": "Tools", "keywords": ["Git", "GitHub Actions", "Docker", "Vercel", "Figma"] }
+  ],
+  "certificates": [
+    {
+      "id": "crt_a11y",
+      "name": "Web Accessibility Specialist",
+      "issuer": "Open Accessibility Guild",
+      "date": "2023-05"
+    }
+  ],
+  "awards": [],
+  "languages": []
+}

@@ -1,0 +1,28 @@
+Senior Product Engineer — Lumen Fieldwork
+
+Lumen Fieldwork makes the data-collection tools that environmental scientists
+carry into the field: a web app for designing surveys, and the services that
+sync, validate and publish what comes back. The product team owns the whole
+slice, from the form a scientist fills in to the API that stores the answer.
+
+What you will do
+- Own features end to end: the React interface, the Node.js service behind it,
+  and the PostgreSQL schema underneath.
+- Keep the survey designer accessible. Our users include field staff who work
+  with screen readers, and WCAG 2.1 AA is a release requirement, not a goal.
+- Grow the shared design system that three product teams build on.
+- Make the test suite something people trust: fast end-to-end coverage of the
+  flows that matter, in Playwright or Cypress.
+
+What we need
+- Strong experience with TypeScript and React in production.
+- Experience building and running Node.js services on PostgreSQL.
+- A track record of shipping accessible interfaces.
+- Experience with GraphQL. Our public API is a GraphQL schema and you will be
+  evolving it.
+- Proficiency with Kubernetes. Every service we run is deployed on it.
+
+Nice to have
+- Published open-source libraries, especially in the React ecosystem.
+- Comfort working from Figma designs alongside a designer.
+- Experience with Rust for the sync engine.

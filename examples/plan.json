@@ -1,0 +1,251 @@
+{
+  "summary": {
+    "text": "Full-stack engineer with seven years building web products in TypeScript, React and Node.js on PostgreSQL. Most at home owning a feature end to end, from an accessible interface to the API behind it.",
+    "rationale": "Names the stack the posting asks for and the end-to-end ownership it describes, using only what the profile already says."
+  },
+  "sectionOrder": ["summary", "skills", "work", "projects", "education", "certificates", "awards"],
+  "work": [
+    {
+      "id": "wrk_tidewater",
+      "include": true,
+      "order": 1,
+      "bullets": [
+        {
+          "bulletId": "blt_scheduler",
+          "include": true,
+          "order": 1,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "React and TypeScript in production, with a measured outcome."
+        },
+        {
+          "bulletId": "blt_design_system",
+          "include": true,
+          "order": 2,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "The posting wants someone to grow a shared design system; this is the same work."
+        },
+        {
+          "bulletId": "blt_billing_api",
+          "include": true,
+          "order": 3,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "A Node.js service on PostgreSQL, which the posting names as a requirement."
+        },
+        {
+          "bulletId": "blt_wcag",
+          "include": true,
+          "order": 4,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "WCAG 2.1 AA is a release requirement in the posting."
+        },
+        {
+          "bulletId": "blt_oncall",
+          "include": true,
+          "order": 5,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Shows ownership of a running system, though the posting does not ask for on-call work."
+        },
+        {
+          "bulletId": "blt_lunch_learn",
+          "include": false,
+          "order": 6,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Not relevant to any requirement in the posting."
+        }
+      ]
+    },
+    {
+      "id": "wrk_brightline",
+      "include": true,
+      "order": 2,
+      "bullets": [
+        {
+          "bulletId": "blt_ts_migration",
+          "include": true,
+          "order": 1,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "A large TypeScript and React migration, shipped without downtime."
+        },
+        {
+          "bulletId": "blt_playwright",
+          "include": true,
+          "order": 2,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "The posting asks for trusted end-to-end coverage in Playwright or Cypress."
+        },
+        {
+          "bulletId": "blt_search",
+          "include": true,
+          "order": 3,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "A second Node.js service on PostgreSQL."
+        },
+        {
+          "bulletId": "blt_checkout",
+          "include": true,
+          "order": 4,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "React product work with a business outcome."
+        },
+        {
+          "bulletId": "blt_hack_day",
+          "include": false,
+          "order": 5,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Not relevant to the posting."
+        }
+      ]
+    },
+    {
+      "id": "wrk_pineridge",
+      "include": true,
+      "order": 3,
+      "bullets": [
+        {
+          "bulletId": "blt_records_portal",
+          "include": true,
+          "order": 1,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Keeps the role on the timeline with its one substantive line."
+        },
+        {
+          "bulletId": "blt_wordpress",
+          "include": false,
+          "order": 2,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Not relevant to the posting."
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "prj_formlift",
+      "include": true,
+      "order": 1,
+      "bullets": [
+        {
+          "bulletId": "blt_formlift_npm",
+          "include": true,
+          "order": 1,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "A published open-source React library, which the posting asks for by name."
+        },
+        {
+          "bulletId": "blt_formlift_a11y",
+          "include": true,
+          "order": 2,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Accessibility work in the React ecosystem."
+        }
+      ]
+    },
+    {
+      "id": "prj_mealmap",
+      "include": true,
+      "order": 2,
+      "bullets": [
+        {
+          "bulletId": "blt_mealmap_stack",
+          "include": true,
+          "order": 1,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "React and PostgreSQL, shipped to real users."
+        },
+        {
+          "bulletId": "blt_mealmap_volunteers",
+          "include": false,
+          "order": 2,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "Coordination, not engineering; the posting does not ask for it."
+        }
+      ]
+    },
+    {
+      "id": "prj_trailhead",
+      "include": false,
+      "order": 3,
+      "bullets": [
+        {
+          "bulletId": "blt_trailhead_maps",
+          "include": false,
+          "order": 1,
+          "text": "",
+          "textSource": "canonical",
+          "variantId": "",
+          "rationale": "A Python mapping script has nothing to do with this posting."
+        }
+      ]
+    }
+  ],
+  "education": [
+    {
+      "id": "edu_cascadia",
+      "include": true,
+      "order": 1,
+      "bullets": []
+    }
+  ],
+  "skills": [
+    {
+      "id": "skl_lang",
+      "include": true,
+      "order": 1,
+      "keywords": ["TypeScript", "JavaScript", "SQL", "Python"]
+    },
+    {
+      "id": "skl_front",
+      "include": true,
+      "order": 2,
+      "keywords": ["React", "Next.js", "Storybook", "Playwright", "Tailwind CSS"]
+    },
+    {
+      "id": "skl_back",
+      "include": true,
+      "order": 3,
+      "keywords": ["Node.js", "PostgreSQL", "REST APIs", "Redis"]
+    },
+    {
+      "id": "skl_tools",
+      "include": true,
+      "order": 4,
+      "keywords": ["GitHub Actions", "Docker", "Figma"]
+    }
+  ],
+  "requested": ["prj_formlift"],
+  "notes": "The posting requires GraphQL; the profile has no GraphQL work. It requires Kubernetes; the profile has no Kubernetes experience. Rust is listed as nice to have and does not appear in the profile either."
+}
