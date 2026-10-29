@@ -14,15 +14,17 @@ npm link        # puts `sartor` on PATH
 
 Requires Node 20.19 or later. A clone has everything rendering and PDF reading need.
 
-An install from npm has only `zod`. Each command loads the engine it needs on demand, so the optional peers go next to `sartor`, and only for the commands you will run. A command whose peer is missing exits 3 with `error.code` `missing_dependency` and the install line in `error.hint`.
+An install from npm has only `zod`. Each command loads the engine it needs on demand, so the optional peers go next to `sartor`, and only for the commands you will run.
 
-| Command | Needs |
-|---|---|
-| `sartor extract`, `sartor ingest prompt`, `sartor ingest run` on a PDF | `pdfjs-dist` |
-| `sartor extract`, `sartor ingest prompt`, `sartor ingest run` on a DOCX | `mammoth` |
-| `sartor render --format pdf` | `react @react-pdf/renderer` |
-| `sartor render --format docx` | `docx` |
-| `sartor ingest run`, `sartor tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` |
+| Command | Needs | If it is missing |
+|---|---|---|
+| `sartor extract`, `sartor ingest prompt`, `sartor ingest run` on a PDF | `pdfjs-dist` | exit 3, `error.code` `missing_dependency`, install line in `error.hint` |
+| `sartor extract`, `sartor ingest prompt`, `sartor ingest run` on a DOCX | `mammoth` | exit 3, `error.code` `extract_failed`, `error.message` names `mammoth` |
+| `sartor render --format pdf` | `react @react-pdf/renderer` | exit 3, `error.code` `missing_dependency`, install line in `error.hint` |
+| `sartor render --format docx` | `docx` | exit 3, `error.code` `missing_dependency`, install line in `error.hint` |
+| `sartor ingest run`, `sartor tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` | exit 1, `error.code` `internal_error`, `error.message` names the package |
+
+Only the PDF reader and the two renderers are checked up front. A missing `mammoth` or provider SDK is caught later, so the code is the generic one for that stage and the hint will not mention installing anything; read `error.message` for the package name. The fix is the same in every row: `npm install <package>` next to `sartor`.
 
 Everything else — `ingest apply`, `tailor prompt`, `tailor apply`, `review`, `check`, `schema`, `templates`, a `.txt` resume and `--format txt` — needs nothing beyond `sartor` itself.
 
