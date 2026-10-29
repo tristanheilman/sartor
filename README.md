@@ -122,12 +122,21 @@ document.
    is imperfect, and a silent error here would quietly poison every resume you
    ever tailor from it.
 2. **Paste a posting.** Or paste a Greenhouse, Lever, or Ashby link and it will
-   be fetched from their public JSON.
-3. **Tailor.** One call. The model returns a plan, not a document.
+   be fetched from their public JSON. Choose a page target, one page or two,
+   and a template.
+3. **Tailor.** One call. The model returns a plan, not a document. The plan is
+   then fitted to the page target using the chosen template's own measurements:
+   bullets are trimmed from the end of the plan's order when it runs long, and
+   put back from the profile when it runs short.
 4. **Review.** An inline word-level diff, change by change, each with its
    rationale. Accept or reject individually; rejecting never regenerates anything.
 5. **Export.** PDF and DOCX, rendered deterministically from the same document
-   model, so the two can never disagree.
+   model, so the two can never disagree. The built-in templates differ in
+   typeface, size and spacing; the denser ones hold more on a page.
+
+The same five steps run from the command line, where each one is a `sartor`
+command and the model's part can be done by the calling agent instead of an API
+key. See [Using it from an agent](#using-it-from-an-agent).
 
 Accepted rephrasings are written back into your master profile as *variants* —
 alternate wordings of the same underlying fact. Your original text is never
@@ -146,7 +155,7 @@ Requires Node 20.19+.
 ```sh
 npm install
 npm run dev          # http://localhost:5173
-npm test             # 161 tests
+npm test             # vitest
 npm run build:app    # static site  -> dist-app/
 npm run build:lib    # npm package  -> dist/
 ```
@@ -204,7 +213,7 @@ on either of ours. And `extractResumeText` needs you to pass `pdfWorkerSrc` — 
 portable way for a library to locate the pdf.js worker, so the bundler-specific
 incantation stays in your application code where it belongs.
 
-ESM only. Everything exported from the three entry points is covered by semver;
+ESM only. Everything exported from the four entry points is covered by semver;
 anything reachable by deep import into `dist/` is not.
 
 ---
@@ -215,6 +224,24 @@ The same pipeline is a command-line tool, `sartor`, built for an agent to drive:
 one JSON envelope per command on stdout, a stable error code and a hint on every
 failure, distinct exit codes, and nothing that ever prompts. It is not on npm
 yet; from a clone, `npm run build:lib && npm link` puts it on your PATH.
+
+A clone has every optional peer installed. An install from npm has only `zod`,
+and each command loads the engine it needs on demand, so install the ones for
+the commands you will run next to `sartor`. A command whose peer is missing
+exits 3 with the error code `missing_dependency` and the install line in its
+hint.
+
+| Command | Needs |
+| --- | --- |
+| `extract`, `ingest prompt`, `ingest run` on a PDF | `pdfjs-dist` |
+| `extract`, `ingest prompt`, `ingest run` on a DOCX | `mammoth` |
+| `render --format pdf` | `react @react-pdf/renderer` |
+| `render --format docx` | `docx` |
+| `ingest run`, `tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` |
+
+Everything else — `ingest apply`, `tailor prompt`, `tailor apply`, `review`,
+`check`, `schema`, `templates`, reading a `.txt` resume and `render --format
+txt` — needs nothing beyond `sartor` itself.
 
 The steps that need a language model can run two ways:
 
@@ -274,10 +301,23 @@ Every command, flag, output field and exit code is in
 
 ## Status
 
-Working end to end: profile management, resume import, tailoring, the
-fabrication guard, coverage signals, diff review with write-back, run history,
-and PDF/DOCX export. Greenhouse/Lever/Ashby URL loading works subject to their CORS policy,
-which changes without notice — paste always works and is the default.
+What ships in 0.1:
+
+- **The web app.** Profile management, resume import from PDF and DOCX,
+  tailoring with a page target and a choice of template, the fabrication guard,
+  coverage signals, diff review with write-back, run history, and PDF/DOCX
+  export. Greenhouse/Lever/Ashby URL loading works subject to their CORS policy,
+  which changes without notice — paste always works and is the default.
+- **The library.** Four entries: `sartor`, `sartor/parse`, `sartor/render/pdf`
+  and `sartor/render/docx`, as described in [Using it as a
+  library](#using-it-as-a-library).
+- **The CLI.** `sartor`, with the agent workflow (`ingest prompt` / `ingest
+  apply`, `tailor prompt` / `tailor apply`) and the bring-your-own-key workflow
+  (`ingest run`, `tailor run`), plus `extract`, `review`, `render`, `check`,
+  `schema` and `templates`. Not on npm yet; it installs from a clone.
+- **The Claude Code plugin.** The `import-resume` and `tailor-resume` skills in
+  `plugin/`, installed from this repository as described in
+  [Claude Code plugin](#claude-code-plugin).
 
 The browser extension is scaffolded but not implemented. See
 [`extension/README.md`](extension/README.md) for why that is the right answer for
