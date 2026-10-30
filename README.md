@@ -225,7 +225,8 @@ anything reachable by deep import into `dist/` is not.
 The same pipeline is a command-line tool, `sartor`, built for an agent to drive:
 one JSON envelope per command on stdout, a stable error code and a hint on every
 failure, distinct exit codes, and nothing that ever prompts. It is not on npm
-yet; from a clone, `npm run build:lib && npm link` puts it on your PATH.
+yet; from a clone, `npm install && npm run build:lib && npm link` puts it on
+your PATH (step 1 of [Claude Code plugin](#claude-code-plugin) spells it out).
 
 A clone has every optional peer installed. An install from npm has only `zod`,
 and each command loads the engine it needs on demand, so install the ones for
@@ -277,30 +278,67 @@ accepted; the person can reject it, or vouch for it.
 
 `plugin/` holds two skills built on the CLI — `import-resume` and
 `tailor-resume` — written to the open [Agent Skills](https://agentskills.io/specification)
-format so other agents can load them too. To install them in Claude Code:
+format so other agents can load them too. The skills run `sartor`, and the
+plugin does not install it for you: each one stops and asks for the CLI when
+`sartor --version` fails. So the CLI comes first. In order:
 
-```sh
-claude plugin marketplace add tristanheilman/sartor
-claude plugin install sartor@sartor
-```
+1. **Install the CLI.** It is not on npm yet, so build it from a clone and link
+   it onto your PATH. Requires Node 20.19 or later.
 
-The skills pre-approve their own `sartor` commands with `allowed-tools:
-Bash(sartor *)`, but Claude Code currently drops that grant when a skill is
-invoked with arguments or while in `acceptEdits` mode — so you will be asked to
-approve every `sartor` command. To stop that, allow the command yourself in your
-Claude Code settings (`~/.claude/settings.json`, or `.claude/settings.json` in a
-project):
+   ```sh
+   git clone https://github.com/tristanheilman/sartor.git
+   cd sartor
+   npm install
+   npm run build:lib
+   npm link
+   ```
 
-```json
-{
-  "permissions": {
-    "allow": ["Bash(sartor *)"]
-  }
-}
-```
+2. **Add the marketplace.** This repository is its own plugin marketplace, named
+   `sartor`, declared in `.claude-plugin/marketplace.json`:
+
+   ```sh
+   claude plugin marketplace add tristanheilman/sartor
+   ```
+
+3. **Install the plugin.** The `sartor` plugin from the `sartor` marketplace,
+   whose manifest is `plugin/.claude-plugin/plugin.json`:
+
+   ```sh
+   claude plugin install sartor@sartor
+   ```
+
+4. **Optionally, allow `sartor` once.** The skills pre-approve their own
+   commands with `allowed-tools: Bash(sartor *)`, but Claude Code currently drops
+   that grant when a skill is invoked with arguments or while in `acceptEdits`
+   mode — so you will be asked to approve every `sartor` command. To stop that,
+   allow the command yourself in your Claude Code settings
+   (`~/.claude/settings.json`, or `.claude/settings.json` in a project):
+
+   ```json
+   {
+     "permissions": {
+       "allow": ["Bash(sartor *)"]
+     }
+   }
+   ```
+
+5. **Check it.** The CLI answers from any directory, and the plugin shows up as
+   installed:
+
+   ```sh
+   sartor --version      # 0.1.0
+   claude plugin list    # sartor, from the sartor marketplace
+   ```
+
+   In a Claude Code session the two skills are `/sartor:import-resume` and
+   `/sartor:tailor-resume`. For a first run that needs none of your own data,
+   point `tailor-resume` at the sample profile and posting in
+   [`examples/`](examples/README.md).
 
 Every command, flag, output field and exit code is in
-[the CLI reference](plugin/skills/tailor-resume/references/cli.md).
+[the CLI reference](plugin/skills/tailor-resume/references/cli.md); its
+[Installing](plugin/skills/tailor-resume/references/cli.md#installing) section
+is the same step 1, and is what the skills send an agent to.
 
 ---
 
