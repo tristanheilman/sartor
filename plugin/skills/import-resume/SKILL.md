@@ -13,7 +13,7 @@ metadata:
 
 The profile is the person's document of record: everything they have done, transcribed from their resume. Every tailored resume is selected from it, and the fabrication check measures against it — so a mistake here quietly affects every resume made from it. Transcribe; do not write.
 
-If `sartor --version` fails, the CLI is not installed. It is not on npm yet; install it from a clone: `git clone https://github.com/tristanheilman/sartor.git && cd sartor && npm install && npm run build:lib && npm link` (Node 20.19 or later).
+Run `sartor --version` first. If it is not found, the CLI is not installed: stop and tell the person how to install it — see [the CLI reference](../tailor-resume/references/cli.md#installing), which both skills share.
 
 ## Steps
 
