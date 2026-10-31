@@ -78,7 +78,7 @@ describe.each([
   it('only tells the agent to run commands the CLI has', () => {
     const found = commandsIn(md);
     expect(found.length).toBeGreaterThan(0);
-    expect(found.filter((c) => !c.known).map((c) => c.said)).toEqual([]);
+    expect(found.filter((c) => !c.known).map((c) => `${path}:${c.line}: sartor ${c.said}`)).toEqual([]);
   });
 
   it('only uses flags the command it names has, inside a fenced code block', () => {
@@ -189,6 +189,10 @@ describe("the README's agent walkthrough", () => {
       if (command === 'ingest run' || command === 'tailor run') continue;
       const rest = substitute(command, tokens.slice(words.length), cwd);
       if (command === 'review') {
+        // Not a file-name substitution: the doc's own `--reject 4` is replaced
+        // too, since that change number is illustrative and specific to this
+        // fixture it would likely grow the page past its target — see
+        // `safeRejectTarget`.
         const ri = rest.indexOf('--reject');
         if (ri !== -1) rest[ri + 1] = safeRejectTarget(cwd);
       }

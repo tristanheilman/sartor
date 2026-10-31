@@ -17,32 +17,43 @@ export function commandFor(words: string[]): string | undefined {
   return undefined;
 }
 
-/** A markdown file's fenced-block lines and inline code spans, trimmed — the only places a `sartor` word is ever an invocation rather than prose using the product's name. */
-function codeLines(md: string): string[] {
-  const fenced = [...md.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].flatMap((m) => m[1]!.split('\n'));
-  const inline = [...md.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]!);
-  return [...fenced, ...inline].map((s) => s.trim());
+/** A `sartor …` invocation named: the longest run of its leading words that is a real command, or those words as written when none is. */
+function mentionsIn(text: string, line: number): Array<{ said: string; known: boolean; line: number }> {
+  return [...text.matchAll(/(?:^|[\s(])sartor((?: [a-z]+){1,2})/g)].flatMap((m): Array<{ said: string; known: boolean; line: number }> => {
+    const words = m[1]!.trim().split(' ');
+    if (words[0] === 'version' || words[0] === 'help') return [];
+    const name = commandFor(words);
+    return [{ said: name ?? words.join(' '), known: !!name, line }];
+  });
 }
 
 /**
- * Every `sartor …` invocation in a markdown file — inline or in a code block —
- * as the command it names: the longest run of its leading words that is a
- * real command, or those words as written when none is. Only a code line
- * that starts with `sartor` counts, so a sentence that merely mentions the
- * product ("sartor never touches it") or a trailing shell comment ("# sartor,
- * from the sartor marketplace") is not read as a command.
+ * Every `sartor …` invocation in a markdown file, with the 1-based line it
+ * is on — inside a fenced code block, or an inline code span — as the
+ * command it names. Prose that merely mentions "sartor" outside of code
+ * ("sartor never touches it") is never read as an invocation. Inside a
+ * fenced block, a trailing shell comment is stripped first, so a line like
+ * "claude plugin list    # sartor, from the sartor marketplace" — a comment
+ * that mentions the product, not a `sartor` command — contributes nothing.
  */
-export function commandsIn(md: string): Array<{ said: string; known: boolean }> {
-  return codeLines(md)
-    .filter((line) => line.startsWith('sartor'))
-    .flatMap((line): Array<{ said: string; known: boolean }> => {
-      const m = /^sartor((?: [a-z]+){1,2})/.exec(line);
-      if (!m) return [];
-      const words = m[1]!.trim().split(' ');
-      if (words[0] === 'version' || words[0] === 'help') return [];
-      const name = commandFor(words);
-      return [name ? { said: name, known: true } : { said: words.join(' '), known: false }];
-    });
+export function commandsIn(md: string): Array<{ said: string; known: boolean; line: number }> {
+  const out: Array<{ said: string; known: boolean; line: number }> = [];
+  let inFence = false;
+  const lines = md.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!;
+    const lineNumber = i + 1;
+    if (/^\s*```/.test(raw)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      out.push(...mentionsIn(raw.replace(/\s+#.*$/, ''), lineNumber));
+      continue;
+    }
+    for (const span of raw.matchAll(/`([^`\n]+)`/g)) out.push(...mentionsIn(span[1]!, lineNumber));
+  }
+  return out;
 }
 
 export function frontmatter(md: string): Record<string, string> {

@@ -88,7 +88,7 @@ describe.each(skills)('the %s skill', (dir) => {
   it('only tells the agent to run commands the CLI has', () => {
     const found = commandsIn(md);
     expect(found.length).toBeGreaterThan(0);
-    expect(found.filter((c) => !c.known).map((c) => c.said)).toEqual([]);
+    expect(found.filter((c) => !c.known).map((c) => `${path}:${c.line}: sartor ${c.said}`)).toEqual([]);
   });
 });
 
