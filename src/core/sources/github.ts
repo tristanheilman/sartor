@@ -115,7 +115,25 @@ export interface RepoEvidence {
 
 export interface ReadRepoEvidenceOptions {
   tiers: EvidenceTier[];
+  /**
+   * The token owner's login, if already known. Tier 1's commit count needs
+   * it; when it's omitted this fetches `GET /user` itself. Reading evidence
+   * for many repos in one session should fetch it once up front with
+   * `getAuthenticatedLogin` and pass it to every call, rather than paying for
+   * a `/user` request per repo.
+   */
+  login?: string;
   signal?: AbortSignal;
+}
+
+/** The login of the token's own user — call once and reuse across repos. */
+export async function getAuthenticatedLogin(token: string, opts: { signal?: AbortSignal } = {}): Promise<string> {
+  const userRes = await githubFetch(`${API_ROOT}/user`, token, opts.signal);
+  const login = ((await userRes.json()) as { login?: string }).login;
+  if (!login) {
+    throw new Error('GitHub did not return a login for the authenticated user.');
+  }
+  return login;
 }
 
 /** Reads evidence for one repo at the requested tiers. `fullName` is `owner/repo`. */
@@ -153,7 +171,7 @@ export async function readRepoEvidence(
     const languagesRes = await githubFetch(languagesUrl, token, signal);
     evidence.languages = { value: (await languagesRes.json()) as Record<string, number>, url: languagesUrl };
 
-    evidence.commits = await readCommitSummary(token, owner, repo, signal);
+    evidence.commits = await readCommitSummary(token, owner, repo, opts.login, signal);
   }
 
   if (opts.tiers.includes(2)) {
@@ -186,6 +204,7 @@ async function readCommitSummary(
   token: string,
   owner: string,
   repo: string,
+  knownLogin: string | undefined,
   signal?: AbortSignal,
 ): Promise<Evidence<CommitSummary>> {
   const commitsUrl = `${repoApiUrl(owner, repo)}/commits`;
@@ -215,11 +234,7 @@ async function readCommitSummary(
     firstCommitAt = oldest[0]?.commit?.committer?.date ?? firstCommitAt;
   }
 
-  const userRes = await githubFetch(`${API_ROOT}/user`, token, signal);
-  const login = ((await userRes.json()) as { login?: string }).login;
-  if (!login) {
-    throw new Error('GitHub did not return a login for the authenticated user; cannot count their commits.');
-  }
+  const login = knownLogin ?? (await getAuthenticatedLogin(token, { signal }));
 
   // Same trick, scoped to one author: the last page number is the count.
   const authorRes = await githubFetch(
@@ -282,13 +297,20 @@ function toGitHubError(res: Response): GitHubError {
     return new GitHubError('GitHub rejected the token.', res, 'auth');
   }
   if (res.status === 403) {
-    if (res.headers.get('x-ratelimit-remaining') === '0') {
+    // The primary rate limit shows up as `x-ratelimit-remaining: 0`; the
+    // secondary (abuse-detection) limit instead sends `retry-after` and
+    // leaves the ratelimit headers alone. Either means "wait and retry", not
+    // "the token is bad".
+    if (res.headers.get('x-ratelimit-remaining') === '0' || res.headers.get('retry-after') !== null) {
       return new GitHubError('GitHub rate-limited the request. Wait and retry.', res, 'rate-limit');
     }
     return new GitHubError('GitHub refused the request as forbidden.', res, 'auth');
   }
   if (res.status === 404) {
     return new GitHubError('GitHub returned 404 for that resource.', res, 'not-found');
+  }
+  if (res.status === 429) {
+    return new GitHubError('GitHub rate-limited the request. Wait and retry.', res, 'rate-limit');
   }
   // Includes 409, which GitHub uses for a repo with no commits yet; callers
   // that care about that case check `cause.status` themselves.

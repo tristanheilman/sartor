@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { listRepos, readRepoEvidence } from './github';
+import { getAuthenticatedLogin, listRepos, readRepoEvidence } from './github';
 
 /**
  * Intercepts `fetch` the way `provider/provider.test.ts` does, rather than
@@ -132,6 +132,16 @@ describe('error mapping', () => {
     await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'auth' });
   });
 
+  it('maps a 403 with retry-after (the secondary rate limit) to rate-limit', async () => {
+    queueFetch([jsonResponse({ message: 'secondary rate limit' }, 403, { 'retry-after': '30' })]);
+    await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'rate-limit' });
+  });
+
+  it('maps 429 to rate-limit', async () => {
+    queueFetch([jsonResponse({ message: 'too many requests' }, 429)]);
+    await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'rate-limit' });
+  });
+
   it('maps 404 to not-found', async () => {
     queueFetch([jsonResponse({ message: 'Not Found' }, 404)]);
     await expect(readRepoEvidence('tok', 'me/missing', { tiers: [1] })).rejects.toMatchObject({
@@ -152,6 +162,19 @@ describe('error mapping', () => {
     ]);
     await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'network' });
     expect(captured).toHaveLength(1);
+  });
+});
+
+describe('getAuthenticatedLogin', () => {
+  it('returns the login, for a caller reusing it across several readRepoEvidence calls', async () => {
+    queueFetch([jsonResponse({ login: 'me' })]);
+    await expect(getAuthenticatedLogin('tok')).resolves.toBe('me');
+    expect(captured[0]!.url).toBe('https://api.github.com/user');
+  });
+
+  it('throws when GitHub returns no login', async () => {
+    queueFetch([jsonResponse({})]);
+    await expect(getAuthenticatedLogin('tok')).rejects.toThrow(/login/i);
   });
 });
 
@@ -333,6 +356,13 @@ describe('readRepoEvidence', () => {
   it('throws rather than silently counting every commit when GitHub returns no login', async () => {
     routeFetch(makeEvidenceRouter({ login: null }));
     await expect(readRepoEvidence('tok', 'me/demo', { tiers: [1] })).rejects.toThrow(/login/i);
+  });
+
+  it('skips GET /user when the login is already known, so reading many repos costs one fewer request each', async () => {
+    routeFetch(makeEvidenceRouter());
+    const evidence = await readRepoEvidence('tok', 'me/demo', { tiers: [1], login: 'me' });
+    expect(evidence.commits?.value.authoredByUserCount).toBe(7);
+    expect(captured.some((c) => c.url === 'https://api.github.com/user')).toBe(false);
   });
 
   it('throws for tier 3 and tier 4 without making any request', async () => {
