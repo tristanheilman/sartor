@@ -62,5 +62,6 @@ export {
   type EntryMatch,
   type BulletCandidate,
   type BasicsChange,
+  type FieldChange,
   type ApplyMergeOptions,
 } from './core/parse/merge';

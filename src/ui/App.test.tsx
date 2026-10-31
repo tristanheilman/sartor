@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
 import 'fake-indexeddb/auto';
 import { App } from './App';
-import { clearDraft, loadDraft } from '../storage/db';
+import { clearDraft, loadDraft, listProfiles } from '../storage/db';
 
 /**
  * Smoke tests for the shell.
@@ -247,5 +247,34 @@ describe('App', () => {
     // A saved profile is not a draft any more; restoring one would resurrect
     // edits the user had already committed or discarded.
     await waitFor(async () => expect(await loadDraft()).toBeNull());
+  });
+
+  it('offers a second import once a profile is saved, without touching the saved profile first', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('Sartor')).toBeDefined());
+
+    // Earlier tests in this file may have left a saved profile behind in the
+    // shared fake IndexedDB — start from a clean slate.
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: /erase all local data/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: /start with your resume/i })).toBeDefined());
+    expect(screen.queryByRole('button', { name: /add from a file/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /build one from scratch/i }));
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Dana Reyes' } });
+    fireEvent.click(screen.getByRole('button', { name: /save profile and continue/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: /the job posting/i })).toBeDefined());
+
+    fireEvent.click(screen.getByRole('button', { name: /^profile$/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /add from a file/i })).toBeDefined());
+
+    const before = await listProfiles();
+
+    fireEvent.click(screen.getByRole('button', { name: /add from a file/i }));
+    // The existing import screen is reused — nothing is saved by reaching it.
+    await waitFor(() => expect(screen.getByRole('heading', { name: /start with your resume/i })).toBeDefined());
+
+    expect(await listProfiles()).toEqual(before);
   });
 });

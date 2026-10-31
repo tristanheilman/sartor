@@ -4,7 +4,8 @@ import { ProfileEditor } from './components/ProfileEditor';
 import { Aurora } from './components/Aurora';
 import { SettingsButton } from './components/SettingsButton';
 import { ImportPanel } from './components/ImportPanel';
-import type { DuplicateBullets } from '../parse';
+import { MergePanel } from './components/MergePanel';
+import { planMerge, type DuplicateBullets, type ProfileMerge } from '../parse';
 import { InterviewPanel } from './components/InterviewPanel';
 import { JobPanel } from './components/JobPanel';
 import { ReviewPanel } from './components/ReviewPanel';
@@ -134,6 +135,10 @@ function ProfileStep({ onDone }: { onDone(): void }) {
   // The interview runs against the draft, before anything is persisted, so a
   // person can see what their answers did and still walk away from all of it.
   const [interviewing, setInterviewing] = useState(false);
+  // Growing a saved profile from a second source. Nothing here is persisted
+  // until the merge review is committed — see `MergePanel`.
+  const [addingFile, setAddingFile] = useState(false);
+  const [mergePlan, setMergePlan] = useState<{ plan: ProfileMerge; sourceLabel: string } | null>(null);
 
   // A freshly parsed profile lives here, unsaved, until it is confirmed.
   const editing = draft ?? profile;
@@ -163,6 +168,33 @@ function ProfileStep({ onDone }: { onDone(): void }) {
   // edits. Only the first one warrants "nothing has been saved yet".
   const hasEdits = draft !== null;
   const isNew = hasEdits && !profiles.some((p) => p.id === editing.id);
+
+  if (mergePlan) {
+    return (
+      <MergePanel
+        base={editing}
+        plan={mergePlan.plan}
+        sourceLabel={mergePlan.sourceLabel}
+        onCommit={(next) => {
+          void saveDraft(next);
+          setMergePlan(null);
+        }}
+        onCancel={() => setMergePlan(null)}
+      />
+    );
+  }
+
+  if (addingFile) {
+    return (
+      <ImportPanel
+        onParsed={(incoming) => {
+          setMergePlan({ plan: planMerge(editing, incoming), sourceLabel: incoming.label });
+          setAddingFile(false);
+        }}
+        onBlank={() => setAddingFile(false)}
+      />
+    );
+  }
 
   if (interviewing) {
     return (
@@ -228,6 +260,17 @@ function ProfileStep({ onDone }: { onDone(): void }) {
           Faster than the form, and it only asks about what is missing.
         </span>
       </div>
+
+      {profile && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="btn-secondary" onClick={() => setAddingFile(true)}>
+            Add from a file
+          </button>
+          <span className="text-sm text-stone-600">
+            Import another resume and review what it would add before anything changes.
+          </span>
+        </div>
+      )}
 
       <ProfileEditor
         profile={editing}
