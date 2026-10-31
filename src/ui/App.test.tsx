@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/react';
 import 'fake-indexeddb/auto';
 import { App } from './App';
-import { clearDraft, loadDraft } from '../storage/db';
+import { clearDraft, loadDraft, listProfiles } from '../storage/db';
 
 /**
  * Smoke tests for the shell.
@@ -13,6 +13,36 @@ import { clearDraft, loadDraft } from '../storage/db';
  * the README makes: that the key never leaves sessionStorage, and that the app
  * is usable enough to reach the import step without one.
  */
+
+/**
+ * `ingestResume` is the one call in the second-import path that hits a real
+ * provider. Everything else — `planMerge`, `applyMerge`, `summarizeMerge` —
+ * stays real, so the merge review test below exercises the actual merge
+ * logic and only stubs out the network.
+ */
+vi.mock('../parse', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../parse')>();
+  return {
+    ...actual,
+    ingestResume: vi.fn<typeof actual.ingestResume>(async (_text, _provider, _cfg, opts) => {
+      const structured = actual.structuredToProfile(
+        {
+          work: [
+            {
+              name: 'Acme',
+              position: 'Engineer',
+              startDate: '2022',
+              bullets: [{ text: 'Shipped a thing that mattered.' }],
+            },
+          ],
+        },
+        opts?.label ?? 'Imported resume',
+      );
+      if (!structured.ok) throw new Error('bad ingest fixture');
+      return { profile: structured.profile, warnings: structured.warnings, duplicates: structured.duplicates };
+    }),
+  };
+});
 
 beforeEach(async () => {
   sessionStorage.clear();
@@ -247,5 +277,62 @@ describe('App', () => {
     // A saved profile is not a draft any more; restoring one would resurrect
     // edits the user had already committed or discarded.
     await waitFor(async () => expect(await loadDraft()).toBeNull());
+  });
+
+  it('does not persist the second import until the merge review is committed', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('Sartor')).toBeDefined());
+
+    // Earlier tests in this file may have left a saved profile behind in the
+    // shared fake IndexedDB — start from a clean slate.
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: /erase all local data/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: /start with your resume/i })).toBeDefined());
+    expect(screen.queryByRole('button', { name: /add from a file/i })).toBeNull();
+
+    // A key is needed to reach the paste-text path that feeds the merge.
+    fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+    await waitFor(() => expect(screen.getByLabelText(/anthropic api key/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/anthropic api key/i), {
+      target: { value: 'sk-ant-test-key-1234567890' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /use key/i }));
+    await waitFor(() => expect(screen.getByText(/key loaded/i)).toBeDefined());
+    fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /build one from scratch/i }));
+    await waitFor(() => expect(screen.getByLabelText(/full name/i)).toBeDefined());
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Dana Reyes' } });
+    fireEvent.click(screen.getByRole('button', { name: /save profile and continue/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: /the job posting/i })).toBeDefined());
+
+    fireEvent.click(screen.getByRole('button', { name: /^profile$/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /add from a file/i })).toBeDefined());
+
+    const saved = await listProfiles();
+    expect(saved).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: /add from a file/i }));
+    await waitFor(() => expect(screen.getByText(/or paste the text instead/i)).toBeDefined());
+    fireEvent.click(screen.getByText(/or paste the text instead/i));
+    fireEvent.change(screen.getByPlaceholderText(/paste your whole resume here/i), {
+      target: { value: 'x'.repeat(50) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /parse pasted text/i }));
+
+    // The parsed source goes straight into the merge review, not into the
+    // saved profile list.
+    await waitFor(() => expect(screen.getByRole('heading', { name: /review before merging/i })).toBeDefined());
+    expect(await listProfiles()).toEqual(saved);
+
+    fireEvent.click(screen.getByRole('button', { name: /commit merge/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: /review before merging/i })).toBeNull(),
+    );
+
+    // Still not in the saved list — a merge commit only writes the draft, the
+    // same as any other unsaved edit. It still takes "Save changes and
+    // continue" to persist it, and `upsertProfile` was never called.
+    expect(await listProfiles()).toEqual(saved);
   });
 });
