@@ -9,18 +9,14 @@ import { EXIT, type Io } from './io';
 
 // Simulates a clean install where the optional peer is not there: every
 // `tailor run` / `ingest run` test in this file has no API key anyway, so
-// none of them reach the SDK import except the one below that sets one. The
-// error is thrown from the constructor rather than the factory itself, since
-// vitest replaces a factory-thrown error with its own generic one.
-vi.mock('@anthropic-ai/sdk', () => ({
-  default: class {
-    constructor() {
-      const err: NodeJS.ErrnoException = new Error("Cannot find package '@anthropic-ai/sdk' imported from src/core/provider/anthropic.ts");
-      err.code = 'ERR_MODULE_NOT_FOUND';
-      throw err;
-    }
-  },
-}));
+// none of them reach the SDK import except the one below that sets one.
+// Vitest wraps a factory's thrown error in a generic one of its own, with
+// this error as `.cause` — `missingDependency` unwraps one level to find it.
+vi.mock('@anthropic-ai/sdk', () => {
+  const err: NodeJS.ErrnoException = new Error("Cannot find package '@anthropic-ai/sdk' imported from src/core/provider/anthropic.ts");
+  err.code = 'ERR_MODULE_NOT_FOUND';
+  throw err;
+});
 
 /**
  * The CLI, driven the way an agent drives it: arguments in, one JSON envelope

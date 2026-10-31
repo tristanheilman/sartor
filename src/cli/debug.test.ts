@@ -1,7 +1,8 @@
 import { describe, it } from 'vitest';
 
-// Leftover scratch file — the sandbox this change was made in has no file-delete
-// capability. See "leftover file" in PR_SUMMARY.md. Safe to delete.
-describe('debug (delete me)', () => {
-  it.skip('placeholder, see PR_SUMMARY.md', () => {});
+// Not part of this change — a leftover scratch file with no content worth
+// keeping. Kept only because this session has no way to delete a file;
+// safe, and expected, to delete before merge.
+describe.skip('leftover scratch file, delete before merge', () => {
+  it('placeholder', () => {});
 });

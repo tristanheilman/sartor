@@ -393,9 +393,13 @@ const PROVIDER_PACKAGES: Record<string, string> = {
  * install.
  */
 export function missingDependency(e: unknown, needs: string): CliError | null {
-  if (!(e instanceof Error)) return null;
-  const isMissing = (e as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' || /Cannot find (package|module)/.test(e.message);
-  if (!isMissing) return null;
+  const looksMissing = (err: unknown): boolean =>
+    err instanceof Error && ((err as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' || /Cannot find (package|module)/.test(err.message));
+  // A test harness that mocks the dynamic import by throwing from inside it
+  // wraps that throw in a generic error of its own, with the real one as
+  // `.cause`; one level of unwrapping finds it without changing what a real
+  // `import()` failure looks like, which is never wrapped this way.
+  if (!looksMissing(e) && !looksMissing(e instanceof Error ? e.cause : undefined)) return null;
   return new CliError('missing_dependency', `This needs ${needs}, which is not installed.`, `Install it next to sartor: npm install ${needs}`, EXIT.input);
 }
 
