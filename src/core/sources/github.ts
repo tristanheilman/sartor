@@ -14,7 +14,12 @@
 
 const API_BASE = 'https://api.github.com';
 
-export type GitHubErrorKind = 'auth' | 'rate-limit' | 'not-found' | 'network';
+/**
+ * `auth`, `rate-limit`, `not-found` and `network` are what a failed request
+ * maps to. `unsupported` is not a request failure at all — it is what
+ * requesting tier 3 or 4 throws, since those tiers are typed but not read.
+ */
+export type GitHubErrorKind = 'auth' | 'rate-limit' | 'not-found' | 'network' | 'unsupported';
 
 export class GitHubError extends Error {
   constructor(
@@ -122,8 +127,20 @@ function githubHeaders(token: string, extra?: HeadersInit): HeadersInit {
   };
 }
 
+/**
+ * Resolves a path against `API_BASE`, or validates an absolute URL (as comes
+ * back in a `Link` header) actually points at it. Without this check, a
+ * doctored `Link` header in a response would make the next call send the
+ * bearer token to whatever host it names.
+ */
+function resolveUrl(urlOrPath: string): string {
+  if (!urlOrPath.startsWith('http')) return `${API_BASE}${urlOrPath}`;
+  if (urlOrPath === API_BASE || urlOrPath.startsWith(`${API_BASE}/`)) return urlOrPath;
+  throw new GitHubError(`Refused to request a URL outside ${API_BASE}: ${urlOrPath}`, undefined, 'network');
+}
+
 async function rawFetch(urlOrPath: string, token: string, init?: RequestInit): Promise<Response> {
-  const url = urlOrPath.startsWith('http') ? urlOrPath : `${API_BASE}${urlOrPath}`;
+  const url = resolveUrl(urlOrPath);
   try {
     return await fetch(url, { ...init, headers: githubHeaders(token, init?.headers) });
   } catch (err) {
@@ -135,8 +152,13 @@ function toGitHubError(res: Response): GitHubError {
   if (res.status === 401) {
     return new GitHubError('GitHub rejected the token.', undefined, 'auth');
   }
+  if (res.status === 429) {
+    return new GitHubError('GitHub rate limit reached. Wait and retry.', undefined, 'rate-limit');
+  }
   if (res.status === 403) {
-    if (res.headers.get('x-ratelimit-remaining') === '0') {
+    // A primary rate limit reports `x-ratelimit-remaining: 0`; a secondary
+    // one (too many requests in a short burst) carries `retry-after` instead.
+    if (res.headers.get('x-ratelimit-remaining') === '0' || res.headers.get('retry-after')) {
       return new GitHubError('GitHub rate limit reached. Wait and retry.', undefined, 'rate-limit');
     }
     return new GitHubError('GitHub refused the request for this token.', undefined, 'auth');
@@ -170,7 +192,15 @@ function parseLinkHeader(header: string | null): Record<string, string> {
 
 function decodeRepoFileContent(base64: string, byteCap = Infinity): string {
   const binary = atob(base64.replace(/\n/g, ''));
-  const length = Math.min(binary.length, byteCap);
+  let length = Math.min(binary.length, byteCap);
+
+  // A cap can land inside a multi-byte UTF-8 character. Back off to the last
+  // complete one, rather than leaving a trailing U+FFFD.
+  if (length < binary.length) {
+    while (length > 0 && (binary.charCodeAt(length - 1) & 0xc0) === 0x80) length--;
+    if (length > 0 && (binary.charCodeAt(length - 1) & 0xc0) === 0xc0) length--;
+  }
+
   const bytes = new Uint8Array(length);
   for (let i = 0; i < length; i++) bytes[i] = binary.charCodeAt(i);
   return new TextDecoder('utf-8').decode(bytes);
@@ -211,9 +241,14 @@ async function readCommitEvidence(
 ): Promise<Evidenced<CommitEvidence>> {
   const base = `/repos/${owner}/${repo}/commits`;
 
-  const user = await getJson<{ login: string }>('/user', token, signal);
-
-  const latest = await getJson<GitHubCommitRaw[]>(`${base}?per_page=1`, token, signal);
+  // GitHub answers 409 on the commits endpoint of a repository with no
+  // commits at all, rather than an empty array.
+  const latestRes = await rawFetch(`${base}?per_page=1`, token, { signal });
+  if (latestRes.status === 409) {
+    return { value: { firstCommitAt: null, lastCommitAt: null, authoredCommitCount: 0 }, url: `${API_BASE}${base}` };
+  }
+  if (!latestRes.ok) throw toGitHubError(latestRes);
+  const latest = { data: (await latestRes.json()) as GitHubCommitRaw[], res: latestRes };
   const latestCommit = latest.data[0];
   const lastCommitAt = latestCommit ? latestCommit.commit.committer?.date ?? latestCommit.commit.author?.date ?? null : null;
 
@@ -225,6 +260,7 @@ async function readCommitEvidence(
     firstCommitAt = oldestCommit ? oldestCommit.commit.committer?.date ?? oldestCommit.commit.author?.date ?? null : null;
   }
 
+  const user = await getJson<{ login: string }>('/user', token, signal);
   const authored = await getJson<GitHubCommitRaw[]>(
     `${base}?author=${encodeURIComponent(user.data.login)}&per_page=1`,
     token,
@@ -287,15 +323,18 @@ export async function readRepoEvidence(
   opts: ReadRepoEvidenceOptions,
 ): Promise<RepoEvidence> {
   if (opts.tiers.includes(3) || opts.tiers.includes(4)) {
-    throw new Error(
+    throw new GitHubError(
       'GitHub evidence tiers 3 and 4 are not implemented yet (see docs/CONTENT-SOURCES.md, Part 2, "What we read").',
+      undefined,
+      'unsupported',
     );
   }
 
-  const [owner, repo] = fullName.split('/');
-  if (!owner || !repo) {
+  const segments = fullName.split('/');
+  if (segments.length !== 2 || !segments[0] || !segments[1]) {
     throw new Error(`Expected a "owner/repo" full name, got "${fullName}".`);
   }
+  const [owner, repo] = segments as [string, string];
 
   const repoResult = await getJson<GitHubRepoRaw>(`/repos/${owner}/${repo}`, token, opts.signal);
   const repoData = repoResult.data;

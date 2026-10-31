@@ -98,13 +98,13 @@ describe('readRepoEvidence — tier 1', () => {
     queueFetch([
       jsonResponse(repoRaw),
       jsonResponse({ TypeScript: 12345, HTML: 10 }),
-      jsonResponse({ login: 'octocat' }),
       jsonResponse([{ commit: { author: { date: '2026-01-05T00:00:00Z' }, committer: { date: '2026-01-05T00:00:00Z' } } }], {
         headers: {
           link: '<https://api.github.com/repos/octocat/sartor/commits?per_page=1&page=40>; rel="last"',
         },
       }),
       jsonResponse([{ commit: { author: { date: '2024-02-01T00:00:00Z' }, committer: { date: '2024-02-01T00:00:00Z' } } }]),
+      jsonResponse({ login: 'octocat' }),
       jsonResponse([{ commit: { author: { date: '2026-01-05T00:00:00Z' }, committer: { date: '2026-01-05T00:00:00Z' } } }], {
         headers: {
           link: '<https://api.github.com/repos/octocat/sartor/commits?author=octocat&per_page=1&page=7>; rel="last"',
@@ -147,8 +147,8 @@ describe('readRepoEvidence — tier 1', () => {
     queueFetch([
       jsonResponse(repoRaw),
       jsonResponse({}),
-      jsonResponse({ login: 'octocat' }),
       jsonResponse([{ commit: { author: { date: 'd' }, committer: { date: 'd' } } }]),
+      jsonResponse({ login: 'octocat' }),
       jsonResponse([{ commit: { author: { date: 'd' }, committer: { date: 'd' } } }]),
     ]);
 
@@ -160,11 +160,31 @@ describe('readRepoEvidence — tier 1', () => {
       expect(call.headers['x-github-api-version']).toBe('2022-11-28');
     }
   });
+
+  it('reports an empty repository (409 on commits) as zero commit evidence, not an error', async () => {
+    queueFetch([
+      jsonResponse(repoRaw),
+      jsonResponse({}),
+      jsonResponse({ message: 'Git Repository is empty.' }, { status: 409 }),
+    ]);
+
+    const evidence = await readRepoEvidence('gh-token', 'octocat/sartor', { tiers: [1] });
+
+    expect(evidence.commits).toEqual({
+      value: { firstCommitAt: null, lastCommitAt: null, authoredCommitCount: 0 },
+      url: 'https://api.github.com/repos/octocat/sartor/commits',
+    });
+    // No /user call is needed once the repository is known to be empty.
+    expect(captured).toHaveLength(3);
+  });
 });
 
 describe('readRepoEvidence — tier 2', () => {
   function toBase64(text: string): string {
-    return btoa(text);
+    const bytes = new TextEncoder().encode(text);
+    let binary = '';
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary);
   }
 
   it('decodes the README and populates no tier-1 field', async () => {
@@ -207,6 +227,31 @@ describe('readRepoEvidence — tier 2', () => {
     expect(evidence.readme!.value.length).toBe(20_000);
   });
 
+  it('does not split a multi-byte character at the byte cap', async () => {
+    // 19,998 ASCII bytes followed by a 4-byte emoji straddles the 20,000-byte
+    // cap right across its encoding — bytes 19,998 and 19,999 are the emoji's
+    // lead byte and first continuation byte, with two continuation bytes cut
+    // off. A naive cut would leave those two dangling bytes.
+    const content = 'a'.repeat(19_998) + '🙂' + 'more text that is beyond the cap';
+    queueFetch([
+      jsonResponse(repoRaw),
+      jsonResponse({
+        content: toBase64(content),
+        encoding: 'base64',
+        html_url: 'https://github.com/octocat/sartor/blob/main/README.md',
+      }),
+      jsonResponse({}, { status: 404 }),
+      jsonResponse({}, { status: 404 }),
+      jsonResponse({}, { status: 404 }),
+      jsonResponse({}, { status: 404 }),
+    ]);
+
+    const evidence = await readRepoEvidence('gh-token', 'octocat/sartor', { tiers: [2] });
+
+    expect(evidence.readme!.value).toBe('a'.repeat(19_998));
+    expect(evidence.readme!.value).not.toContain('�');
+  });
+
   it('finds the first manifest present among the candidates', async () => {
     queueFetch([
       jsonResponse(repoRaw),
@@ -229,9 +274,24 @@ describe('readRepoEvidence — tier 2', () => {
 });
 
 describe('readRepoEvidence — tiers 3 and 4', () => {
-  it('throws rather than silently returning nothing', async () => {
-    await expect(readRepoEvidence('gh-token', 'octocat/sartor', { tiers: [3] })).rejects.toThrow(/tier/i);
-    await expect(readRepoEvidence('gh-token', 'octocat/sartor', { tiers: [4] })).rejects.toThrow(/tier/i);
+  it('throws a GitHubError rather than silently returning nothing', async () => {
+    await expect(readRepoEvidence('gh-token', 'octocat/sartor', { tiers: [3] })).rejects.toMatchObject({
+      kind: 'unsupported',
+    });
+    await expect(readRepoEvidence('gh-token', 'octocat/sartor', { tiers: [4] })).rejects.toMatchObject({
+      kind: 'unsupported',
+    });
+    await expect(readRepoEvidence('gh-token', 'octocat/sartor', { tiers: [3] })).rejects.toBeInstanceOf(GitHubError);
+  });
+});
+
+describe('readRepoEvidence — full name validation', () => {
+  it('rejects a full name with more than one slash rather than silently truncating it', async () => {
+    await expect(readRepoEvidence('gh-token', 'a/b/c', { tiers: [] })).rejects.toThrow(/owner\/repo/i);
+  });
+
+  it('rejects a full name with no slash', async () => {
+    await expect(readRepoEvidence('gh-token', 'onlyone', { tiers: [] })).rejects.toThrow(/owner\/repo/i);
   });
 });
 
@@ -251,6 +311,18 @@ describe('error mapping', () => {
   it('maps a plain 403 to auth', async () => {
     queueFetch([jsonResponse({ message: 'Forbidden' }, { status: 403 })]);
     await expect(listRepos('gh-token')).rejects.toMatchObject({ kind: 'auth' });
+  });
+
+  it('maps 429 to rate-limit', async () => {
+    queueFetch([jsonResponse({ message: 'Too Many Requests' }, { status: 429 })]);
+    await expect(listRepos('gh-token')).rejects.toMatchObject({ kind: 'rate-limit' });
+  });
+
+  it('maps a secondary-limit 403 (retry-after, no x-ratelimit-remaining) to rate-limit', async () => {
+    queueFetch([
+      jsonResponse({ message: 'You have exceeded a secondary rate limit' }, { status: 403, headers: { 'retry-after': '30' } }),
+    ]);
+    await expect(listRepos('gh-token')).rejects.toMatchObject({ kind: 'rate-limit' });
   });
 
   it('maps 404 to not-found', async () => {
@@ -276,8 +348,8 @@ describe('request scope', () => {
     queueFetch([
       jsonResponse(repoRaw),
       jsonResponse({}),
-      jsonResponse({ login: 'octocat' }),
       jsonResponse([{ commit: { author: { date: 'd' }, committer: { date: 'd' } } }]),
+      jsonResponse({ login: 'octocat' }),
       jsonResponse([{ commit: { author: { date: 'd' }, committer: { date: 'd' } } }]),
     ]);
     await readRepoEvidence('gh-token', 'octocat/sartor', { tiers: [1] });
@@ -285,5 +357,17 @@ describe('request scope', () => {
     for (const call of captured) {
       expect(call.url.startsWith('https://api.github.com')).toBe(true);
     }
+  });
+
+  it('refuses to follow a Link header that points off api.github.com', async () => {
+    queueFetch([
+      jsonResponse([{ ...repoRaw, name: 'a' }], {
+        headers: { link: '<https://evil.example.com/user/repos?page=2>; rel="next"' },
+      }),
+    ]);
+
+    await expect(listRepos('gh-token')).rejects.toMatchObject({ kind: 'network' });
+    // The bearer token was never sent to the off-host URL.
+    expect(captured).toHaveLength(1);
   });
 });
