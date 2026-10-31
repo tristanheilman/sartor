@@ -139,10 +139,37 @@ describe('listRepos', () => {
     await expect(listRepos(TOKEN)).rejects.toMatchObject({ kind: 'not-found' });
   });
 
+  it('maps a secondary-limited 403 (Retry-After, no exhausted primary limit) to rate-limit, not auth', async () => {
+    stubRoutes([
+      ['/user/repos', () => new Response(null, { status: 403, headers: { 'retry-after': '30' } })],
+    ]);
+    await expect(listRepos(TOKEN)).rejects.toMatchObject({ kind: 'rate-limit' });
+  });
+
+  it('maps a plain 403 with neither signal to auth', async () => {
+    stubRoutes([['/user/repos', () => new Response(null, { status: 403 })]]);
+    await expect(listRepos(TOKEN)).rejects.toMatchObject({ kind: 'auth' });
+  });
+
+  it('maps a 429 to rate-limit, not network', async () => {
+    stubRoutes([['/user/repos', () => new Response(null, { status: 429 })]]);
+    await expect(listRepos(TOKEN)).rejects.toMatchObject({ kind: 'rate-limit' });
+  });
+
   it('maps a network-level throw to a typed network error', async () => {
     vi.stubGlobal('fetch', () => Promise.reject(new Error('offline')));
     await expect(listRepos(TOKEN)).rejects.toBeInstanceOf(GitHubError);
     await expect(listRepos(TOKEN)).rejects.toMatchObject({ kind: 'network' });
+  });
+
+  it('lets an abort from the caller propagate as-is, not wrapped as a network error', async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException('aborted', 'AbortError');
+    vi.stubGlobal('fetch', () => {
+      controller.abort();
+      return Promise.reject(abortError);
+    });
+    await expect(listRepos(TOKEN, { signal: controller.signal })).rejects.toBe(abortError);
   });
 });
 
@@ -169,6 +196,7 @@ describe('readRepoEvidence', () => {
             html_url: 'https://github.com/me/proj/blob/main/package.json',
           }),
       ],
+      ['/repos/me/proj/contents/', () => new Response(null, { status: 404 })],
       [
         '/user',
         () => jsonResponse({ login: 'me' }),
@@ -232,7 +260,7 @@ describe('readRepoEvidence', () => {
       },
     });
     expect(evidence.readme).toBeNull();
-    expect(evidence.manifest).toBeNull();
+    expect(evidence.manifests).toEqual([]);
   });
 
   it('populates only tier 2 when tier 1 is not requested', async () => {
@@ -246,10 +274,12 @@ describe('readRepoEvidence', () => {
       url: 'https://github.com/me/proj/blob/main/README.md',
       value: '# Hello\n\nA project.',
     });
-    expect(evidence.manifest).toEqual({
-      url: 'https://github.com/me/proj/blob/main/package.json',
-      value: { path: 'package.json', content: '{"name":"proj"}' },
-    });
+    expect(evidence.manifests).toEqual([
+      {
+        url: 'https://github.com/me/proj/blob/main/package.json',
+        value: { path: 'package.json', content: '{"name":"proj"}' },
+      },
+    ]);
   });
 
   it('caps the README at the byte cap, without splitting a multi-byte character', async () => {
@@ -266,36 +296,45 @@ describe('readRepoEvidence', () => {
     expect(evidence.readme!.value.length).toBeLessThan(oversized.length);
   });
 
-  it('tries manifest candidates in order and stops at the first match', async () => {
+  it('collects every manifest present, not just the first match', async () => {
     stubRoutes([
       ['/readme', () => new Response(null, { status: 404 })],
-      ['/contents/package.json', () => new Response(null, { status: 404 })],
       [
-        '/contents/pyproject.toml',
-        () => jsonResponse({ content: Buffer.from('[tool.poetry]').toString('base64'), html_url: 'u' }),
+        '/contents/package.json',
+        () => jsonResponse({ content: Buffer.from('{"name":"proj"}').toString('base64'), html_url: 'u-package' }),
       ],
+      ['/contents/pyproject.toml', () => new Response(null, { status: 404 })],
+      [
+        '/contents/go.mod',
+        () => jsonResponse({ content: Buffer.from('module proj').toString('base64'), html_url: 'u-gomod' }),
+      ],
+      ['/contents/Cargo.toml', () => new Response(null, { status: 404 })],
     ]);
     const evidence = await readRepoEvidence(TOKEN, 'me/proj', { tiers: [2] });
-    expect(evidence.manifest).toEqual({ url: 'u', value: { path: 'pyproject.toml', content: '[tool.poetry]' } });
+    expect(evidence.manifests).toEqual([
+      { url: 'u-package', value: { path: 'package.json', content: '{"name":"proj"}' } },
+      { url: 'u-gomod', value: { path: 'go.mod', content: 'module proj' } },
+    ]);
   });
 
-  it('returns a null readme and manifest when neither exists', async () => {
+  it('returns a null readme and no manifests when neither exists', async () => {
     stubRoutes([['', () => new Response(null, { status: 404 })]]);
     const evidence = await readRepoEvidence(TOKEN, 'me/proj', { tiers: [2] });
     expect(evidence.readme).toBeNull();
-    expect(evidence.manifest).toBeNull();
+    expect(evidence.manifests).toEqual([]);
   });
 
-  it('caps the manifest at the byte cap', async () => {
+  it('caps each manifest at the byte cap', async () => {
     stubRoutes([
       ['/readme', () => new Response(null, { status: 404 })],
       [
         '/contents/package.json',
         () => jsonResponse({ content: Buffer.from('x'.repeat(30_000)).toString('base64'), html_url: 'u' }),
       ],
+      ['/contents/', () => new Response(null, { status: 404 })],
     ]);
     const evidence = await readRepoEvidence(TOKEN, 'me/proj', { tiers: [2] });
-    const byteLength = new TextEncoder().encode(evidence.manifest!.value.content).length;
+    const byteLength = new TextEncoder().encode(evidence.manifests[0]!.value.content).length;
     expect(byteLength).toBeLessThanOrEqual(20_000);
   });
 

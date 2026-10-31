@@ -77,7 +77,8 @@ export interface RepoEvidence {
   languages: EvidenceItem<Record<string, number>> | null;
   commits: EvidenceItem<CommitSummary> | null;
   readme: EvidenceItem<string> | null;
-  manifest: EvidenceItem<{ path: string; content: string }> | null;
+  /** Every manifest present among `MANIFEST_CANDIDATES`, not just the first. */
+  manifests: EvidenceItem<{ path: string; content: string }>[];
 }
 
 export type EvidenceTier = 1 | 2 | 3 | 4;
@@ -99,14 +100,21 @@ async function githubFetch(token: string, url: string, signal?: AbortSignal): Pr
       },
     });
   } catch (err) {
+    // An abort the caller asked for is not a GitHub failure — let the
+    // original AbortError propagate so callers can tell it apart from a
+    // real connectivity problem the usual way (`err.name === 'AbortError'`).
+    if (signal?.aborted) throw err;
     throw new GitHubError('Could not reach the GitHub API.', 'network', err);
   }
 
   if (res.status === 401) {
     throw new GitHubError('GitHub rejected the token.', 'auth', undefined, res.status);
   }
-  if (res.status === 403) {
-    if (res.headers.get('x-ratelimit-remaining') === '0') {
+  if (res.status === 403 || res.status === 429) {
+    // A primary limit sets x-ratelimit-remaining: 0; a secondary limit (too
+    // many requests in a short burst, or too much compute) answers with a
+    // Retry-After instead, and may do so on either status code.
+    if (res.headers.get('x-ratelimit-remaining') === '0' || res.headers.get('retry-after') || res.status === 429) {
       throw new GitHubError('GitHub rate limit exceeded.', 'rate-limit', undefined, res.status);
     }
     throw new GitHubError('GitHub refused the request for this token.', 'auth', undefined, res.status);
@@ -249,11 +257,12 @@ async function readReadme(
   return { url: String(data.html_url ?? url), value: content };
 }
 
-async function readManifest(
+async function readManifests(
   token: string,
   fullName: string,
   signal?: AbortSignal,
-): Promise<EvidenceItem<{ path: string; content: string }> | null> {
+): Promise<EvidenceItem<{ path: string; content: string }>[]> {
+  const manifests: EvidenceItem<{ path: string; content: string }>[] = [];
   for (const path of MANIFEST_CANDIDATES) {
     const url = `${API_ROOT}/repos/${fullName}/contents/${path}`;
     let res: Response;
@@ -265,9 +274,9 @@ async function readManifest(
     }
     const data = (await res.json()) as Record<string, unknown>;
     const content = capBytes(decodeBase64Content(String(data.content ?? '')), CONTENT_BYTE_CAP);
-    return { url: String(data.html_url ?? url), value: { path, content } };
+    manifests.push({ url: String(data.html_url ?? url), value: { path, content } });
   }
-  return null;
+  return manifests;
 }
 
 /**
@@ -292,7 +301,7 @@ export async function readRepoEvidence(
   }
 
   const { signal } = opts;
-  const evidence: RepoEvidence = { repo: null, languages: null, commits: null, readme: null, manifest: null };
+  const evidence: RepoEvidence = { repo: null, languages: null, commits: null, readme: null, manifests: [] };
 
   if (tiers.has(1)) {
     const repoUrl = `${API_ROOT}/repos/${fullName}`;
@@ -320,7 +329,7 @@ export async function readRepoEvidence(
 
   if (tiers.has(2)) {
     evidence.readme = await readReadme(token, fullName, signal);
-    evidence.manifest = await readManifest(token, fullName, signal);
+    evidence.manifests = await readManifests(token, fullName, signal);
   }
 
   return evidence;
