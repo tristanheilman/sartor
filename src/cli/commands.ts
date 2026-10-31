@@ -242,7 +242,7 @@ export async function ingestRunCommand(ctx: Ctx): Promise<Result> {
   const { id, cfg } = providerConfig(ctx.io, str(ctx.flags.provider), str(ctx.flags.model));
   const { text } = await extract(ctx.io, path);
   ctx.io.stderr.write(`Structuring with ${id} ${cfg.model}…\n`);
-  const result = await callProvider(() => ingestResume(text, getProvider(id), cfg, { label: str(ctx.flags.label) ?? basename(path, extname(path)) }));
+  const result = await callProvider(id, () => ingestResume(text, getProvider(id), cfg, { label: str(ctx.flags.label) ?? basename(path, extname(path)) }));
   await writeOut(ctx.io, out, `${JSON.stringify(result.profile, null, 2)}\n`);
   const stats = profileStats(result.profile);
   const repeats = repeatsIn(result.profile, result.duplicates);
@@ -377,8 +377,30 @@ function summarizeFit(f: ReturnType<typeof fitToTarget>) {
   return { dropped: f.dropped, added: f.added, restoredSkills: f.restoredSkills, droppedEntries: f.droppedEntries, emptyRolesFilled: f.emptyRolesFilled, fits: f.fits, reinstated: f.reinstated };
 }
 
+/** The npm package each provider id (from `core/provider/index.ts`) imports in `complete()`. */
+const PROVIDER_PACKAGE: Record<string, string> = {
+  anthropic: '@anthropic-ai/sdk',
+  openai: 'openai',
+  google: '@google/genai',
+};
+
+/**
+ * True when `e` is a dynamic `import()` failing because an optional peer was
+ * never installed — not a bug in sartor, just the one `npm install` the
+ * person has to run next.
+ */
+export function missingDependency(e: unknown, needs: string): CliError | null {
+  // Walked rather than checked once: a loader can wrap the real error in one
+  // of its own and hang it off `cause`, as Vitest's module mocker does.
+  for (let err = e; err instanceof Error; err = (err as Error & { cause?: unknown }).cause) {
+    const isMissingModule = (err as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' || /Cannot find (package|module)/.test(err.message);
+    if (isMissingModule) return new CliError('missing_dependency', `${needs} is not installed.`, `Install it next to sartor: npm install ${needs}`, EXIT.input);
+  }
+  return null;
+}
+
 /** Provider failures as CLI failures an agent can act on. */
-async function callProvider<T>(fn: () => Promise<T>): Promise<T> {
+async function callProvider<T>(id: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {
@@ -392,6 +414,8 @@ async function callProvider<T>(fn: () => Promise<T>): Promise<T> {
       }[e.kind];
       throw new CliError(`provider_${e.kind.replace('-', '_')}`, e.message, hint, EXIT.provider);
     }
+    const dep = missingDependency(e, PROVIDER_PACKAGE[id] ?? id);
+    if (dep) throw dep;
     throw e;
   }
 }
@@ -403,7 +427,7 @@ export async function tailorRunCommand(ctx: Ctx): Promise<Result> {
   const template = parseTemplate(str(ctx.flags.template));
   const { id, cfg } = providerConfig(ctx.io, str(ctx.flags.provider), str(ctx.flags.model));
   ctx.io.stderr.write(`Tailoring with ${id} ${cfg.model}…\n`);
-  const outcome = await callProvider(() => runTailor(profile, jd, constraints, getProvider(id), cfg, { template }));
+  const outcome = await callProvider(id, () => runTailor(profile, jd, constraints, getProvider(id), cfg, { template }));
   const file: RunFile = {
     format: RUN_FORMAT,
     template: template.id,
@@ -544,10 +568,8 @@ export async function renderCommand(ctx: Ctx): Promise<Result> {
       bytes = new Uint8Array(await (await renderDocxBlob(doc, template)).arrayBuffer());
     }
   } catch (e) {
-    if (e instanceof Error && /Cannot find (package|module)/.test(e.message)) {
-      const needs = format === 'pdf' ? 'react @react-pdf/renderer' : 'docx';
-      throw new CliError('missing_dependency', `Rendering ${format.toUpperCase()} needs ${needs}, which is not installed.`, `Install it next to sartor: npm install ${needs}`, EXIT.input);
-    }
+    const dep = missingDependency(e, format === 'pdf' ? 'react @react-pdf/renderer' : 'docx');
+    if (dep) throw dep;
     throw e;
   }
   await writeOut(ctx.io, out, bytes);
