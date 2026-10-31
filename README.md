@@ -238,12 +238,12 @@ the commands you will run next to `sartor`.
 | `extract`, `ingest prompt`, `ingest run` on a DOCX | `mammoth` | exit 3, `extract_failed`, message names `mammoth` |
 | `render --format pdf` | `react @react-pdf/renderer` | exit 3, `missing_dependency`, install line in the hint |
 | `render --format docx` | `docx` | exit 3, `missing_dependency`, install line in the hint |
-| `ingest run`, `tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` | exit 1, `internal_error`, message names the package |
+| `ingest run`, `tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` | exit 3, `missing_dependency`, install line in the hint |
 
-Only the PDF reader and the two renderers are checked up front. A missing
-`mammoth` or provider SDK is caught later, so the error code is the generic one
-for that stage; the message still says which package could not be found, and
-the fix is the same: `npm install <package>` next to `sartor`.
+Only `mammoth` for a DOCX is caught later, so its error code is the generic one
+for that stage (`extract_failed`); the message still says which package could
+not be found. Everywhere else the fix is the same: `npm install <package>`
+next to `sartor`.
 
 Everything else — `ingest apply`, `tailor prompt`, `tailor apply`, `review`,
 `check`, `schema`, `templates`, reading a `.txt` resume and `render --format

@@ -22,9 +22,9 @@ An install from npm has only `zod`. Each command loads the engine it needs on de
 | `sartor extract`, `sartor ingest prompt`, `sartor ingest run` on a DOCX | `mammoth` | exit 3, `error.code` `extract_failed`, `error.message` names `mammoth` |
 | `sartor render --format pdf` | `react @react-pdf/renderer` | exit 3, `error.code` `missing_dependency`, install line in `error.hint` |
 | `sartor render --format docx` | `docx` | exit 3, `error.code` `missing_dependency`, install line in `error.hint` |
-| `sartor ingest run`, `sartor tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` | exit 1, `error.code` `internal_error`, `error.message` names the package |
+| `sartor ingest run`, `sartor tailor run` | the chosen provider's SDK: `@anthropic-ai/sdk`, `openai` or `@google/genai` | exit 3, `error.code` `missing_dependency`, install line in `error.hint` |
 
-Only the PDF reader and the two renderers are checked up front. A missing `mammoth` or provider SDK is caught later, so the code is the generic one for that stage and the hint will not mention installing anything; read `error.message` for the package name. The fix is the same in every row: `npm install <package>` next to `sartor`.
+Only `mammoth` for a DOCX is caught later, so its code is the generic one for that stage (`extract_failed`) and the hint will not mention installing anything; read `error.message` for the package name. Everywhere else the fix is the same: `npm install <package>` next to `sartor`.
 
 Everything else — `ingest apply`, `tailor prompt`, `tailor apply`, `review`, `check`, `schema`, `templates`, a `.txt` resume and `--format txt` — needs nothing beyond `sartor` itself.
 

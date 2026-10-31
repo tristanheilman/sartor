@@ -1,10 +1,20 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { main } from './main';
+import { missingDependency } from './commands';
 import type { Io } from './io';
+
+// `tailor run` imports the provider SDK lazily, inside `complete()`. Mocked
+// here so one test can simulate the package never having been installed,
+// without touching the real module for any other test in this file.
+vi.mock('@anthropic-ai/sdk', () => {
+  const err = new Error("Cannot find package '@anthropic-ai/sdk' imported from /app/dist/main.js");
+  (err as NodeJS.ErrnoException).code = 'ERR_MODULE_NOT_FOUND';
+  throw err;
+});
 
 /**
  * The CLI, driven the way an agent drives it: arguments in, one JSON envelope
@@ -30,7 +40,7 @@ beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), 'sartor-cli-'));
 });
 
-async function sartor(args: string[], opts: { tty?: boolean; stdin?: string } = {}): Promise<Run> {
+async function sartor(args: string[], opts: { tty?: boolean; stdin?: string; env?: Record<string, string> } = {}): Promise<Run> {
   let stdout = '';
   let stderr = '';
   const io: Io = {
@@ -43,7 +53,7 @@ async function sartor(args: string[], opts: { tty?: boolean; stdin?: string } = 
       { isTTY: opts.stdin === undefined },
     ),
     cwd,
-    env: {},
+    env: opts.env ?? {},
   };
   const code = await main(args, io, '0.0.0-test');
   let json: any;
@@ -440,6 +450,34 @@ describe('bring your own key', () => {
     expect(r.json.error.code).toBe('missing_api_key');
     expect(r.json.error.hint).toMatch(/ANTHROPIC_API_KEY/);
     expect(r.json.error.hint).toMatch(/tailor prompt/);
+  });
+
+  it('reports a provider SDK that was never installed as a missing dependency, not a bug', async () => {
+    const r = await sartor(['tailor', 'run', '--profile', profile, '--posting', posting], { env: { ANTHROPIC_API_KEY: 'sk-ant-test' } });
+    expect(r.code).toBe(3);
+    expect(r.json.error.code).toBe('missing_dependency');
+    expect(r.json.error.hint).toMatch(/npm install @anthropic-ai\/sdk/);
+  });
+});
+
+describe('missingDependency', () => {
+  it('matches a real ERR_MODULE_NOT_FOUND error from a dynamic import', async () => {
+    let caught: unknown;
+    const missingPackage = 'sartor-does-not-have-this-package';
+    try {
+      await import(missingPackage);
+    } catch (e) {
+      caught = e;
+    }
+    const err = missingDependency(caught, 'some-package');
+    expect(err).not.toBeNull();
+    expect(err?.code).toBe('missing_dependency');
+    expect(err?.hint).toMatch(/npm install some-package/);
+  });
+
+  it('leaves an unrelated error alone', () => {
+    expect(missingDependency(new Error('boom'), 'some-package')).toBeNull();
+    expect(missingDependency('not an error', 'some-package')).toBeNull();
   });
 });
 
