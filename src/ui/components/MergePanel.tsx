@@ -270,18 +270,21 @@ function BulletRow({
   value: MergeAction;
   onChange(action: MergeAction): void;
 }) {
+  // A bullet only has something to merge *into* when it is a reworded
+  // version of one already on this entry — `planMerge`'s own signal for that
+  // is `suggested: 'merge'`. A word-for-word repeat gets `duplicateOf` too,
+  // but offering "Merge into…" there would imply there is a new phrasing to
+  // keep when there is not, so it only gets Add / Skip.
   return (
     <li className="flex flex-wrap items-start justify-between gap-2 text-sm">
       <div className="flex-1">
         <p>{bullet.incoming.text}</p>
-        <p className="mt-0.5 text-xs text-stone-500">
-          {bullet.duplicateOf ? 'Becomes an alternate wording of an existing bullet' : bullet.reason}
-        </p>
+        <p className="mt-0.5 text-xs text-stone-500">{bullet.reason}</p>
       </div>
       <ActionButtons
         value={value}
         onChange={onChange}
-        mergeLabel={bullet.duplicateOf ? 'Merge into…' : undefined}
+        mergeLabel={bullet.suggested === 'merge' ? 'Merge into…' : undefined}
       />
     </li>
   );

@@ -187,11 +187,13 @@ function ProfileStep({ onDone }: { onDone(): void }) {
   if (addingFile) {
     return (
       <ImportPanel
+        heading="Add a second resume"
         onParsed={(incoming) => {
           setMergePlan({ plan: planMerge(editing, incoming), sourceLabel: incoming.label });
           setAddingFile(false);
         }}
         onBlank={() => setAddingFile(false)}
+        onCancel={() => setAddingFile(false)}
       />
     );
   }

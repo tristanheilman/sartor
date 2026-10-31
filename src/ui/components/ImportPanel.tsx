@@ -15,9 +15,16 @@ type Phase = 'idle' | 'extracting' | 'structuring' | 'error';
 export function ImportPanel({
   onParsed,
   onBlank,
+  heading = 'Start with your resume',
+  onCancel,
 }: {
   onParsed(profile: Profile, warnings: string[], duplicates: DuplicateBullets[]): void;
   onBlank(profile: Profile): void;
+  /** Override for contexts other than the very first import, e.g. adding a second source. */
+  heading?: string;
+  /** When set, replaces the "build one from scratch" footer with a way back —
+   * building a blank profile makes no sense once there is already one to add to. */
+  onCancel?(): void;
 }) {
   const { provider, config, ready } = useActiveProvider();
   const [phase, setPhase] = useState<Phase>('idle');
@@ -89,7 +96,7 @@ export function ImportPanel({
   return (
     <div className="mx-auto w-full max-w-2xl">
       <div className="card p-7">
-        <h2 className="text-center text-xl font-semibold tracking-tight">Start with your resume</h2>
+        <h2 className="text-center text-xl font-semibold tracking-tight">{heading}</h2>
         <p className="mx-auto mt-1.5 max-w-md text-center text-sm text-stone-600">
           It is read here in this tab. Only the text goes to {provider.info.label}, and only to turn
           it into fields you review.
@@ -165,17 +172,29 @@ export function ImportPanel({
         )}
       </div>
 
-      <p className="mt-4 text-center text-sm text-stone-500">
-        No resume to hand?{' '}
-        <button
-          type="button"
-          className="underline underline-offset-2 hover:text-stone-800"
-          onClick={() => onBlank({ ...emptyProfile(ids.profile()), label: 'My profile' })}
-        >
-          Build one from scratch
-        </button>
-        .
-      </p>
+      {onCancel ? (
+        <p className="mt-4 text-center text-sm text-stone-500">
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-stone-800"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        </p>
+      ) : (
+        <p className="mt-4 text-center text-sm text-stone-500">
+          No resume to hand?{' '}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-stone-800"
+            onClick={() => onBlank({ ...emptyProfile(ids.profile()), label: 'My profile' })}
+          >
+            Build one from scratch
+          </button>
+          .
+        </p>
+      )}
     </div>
   );
 }
