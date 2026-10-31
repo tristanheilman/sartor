@@ -24,6 +24,8 @@ export class GitHubError extends Error {
     message: string,
     readonly kind: GitHubErrorKind,
     readonly cause?: unknown,
+    /** The HTTP status GitHub returned, when the failure came from a response. */
+    readonly status?: number,
   ) {
     super(message);
     this.name = 'GitHubError';
@@ -82,6 +84,7 @@ export type EvidenceTier = 1 | 2 | 3 | 4;
 
 export interface ReadRepoEvidenceOptions {
   tiers: EvidenceTier[];
+  signal?: AbortSignal;
 }
 
 async function githubFetch(token: string, url: string, signal?: AbortSignal): Promise<Response> {
@@ -100,19 +103,19 @@ async function githubFetch(token: string, url: string, signal?: AbortSignal): Pr
   }
 
   if (res.status === 401) {
-    throw new GitHubError('GitHub rejected the token.', 'auth');
+    throw new GitHubError('GitHub rejected the token.', 'auth', undefined, res.status);
   }
   if (res.status === 403) {
     if (res.headers.get('x-ratelimit-remaining') === '0') {
-      throw new GitHubError('GitHub rate limit exceeded.', 'rate-limit');
+      throw new GitHubError('GitHub rate limit exceeded.', 'rate-limit', undefined, res.status);
     }
-    throw new GitHubError('GitHub refused the request for this token.', 'auth');
+    throw new GitHubError('GitHub refused the request for this token.', 'auth', undefined, res.status);
   }
   if (res.status === 404) {
-    throw new GitHubError('Not found on GitHub.', 'not-found');
+    throw new GitHubError('Not found on GitHub.', 'not-found', undefined, res.status);
   }
   if (!res.ok) {
-    throw new GitHubError(`GitHub returned ${res.status}.`, 'network');
+    throw new GitHubError(`GitHub returned ${res.status}.`, 'network', undefined, res.status);
   }
   return res;
 }
@@ -171,7 +174,7 @@ function capBytes(text: string, maxBytes: number): string {
   return new TextDecoder('utf-8').decode(bytes.slice(0, maxBytes));
 }
 
-const README_BYTE_CAP = 20_000;
+const CONTENT_BYTE_CAP = 20_000;
 const MANIFEST_CANDIDATES = ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml'];
 
 function commitDate(commit: Record<string, unknown> | undefined): string | null {
@@ -180,13 +183,27 @@ function commitDate(commit: Record<string, unknown> | undefined): string | null 
   return (author?.date as string | undefined) ?? null;
 }
 
-async function readCommitSummary(token: string, fullName: string): Promise<EvidenceItem<CommitSummary>> {
-  const userRes = await githubFetch(token, `${API_ROOT}/user`);
+async function readCommitSummary(
+  token: string,
+  fullName: string,
+  signal?: AbortSignal,
+): Promise<EvidenceItem<CommitSummary>> {
+  const userRes = await githubFetch(token, `${API_ROOT}/user`, signal);
   const user = (await userRes.json()) as Record<string, unknown>;
   const login = String(user.login);
 
   const url = `${API_ROOT}/repos/${fullName}/commits?author=${encodeURIComponent(login)}&per_page=1`;
-  const newestRes = await githubFetch(token, url);
+  let newestRes: Response;
+  try {
+    newestRes = await githubFetch(token, url, signal);
+  } catch (err) {
+    // GitHub returns 409 for a repository with no commits yet, rather than
+    // an empty 200 — that is evidence of zero commits, not a read failure.
+    if (err instanceof GitHubError && err.status === 409) {
+      return { url, value: { firstCommitDate: null, lastCommitDate: null, authoredCommitCount: 0 } };
+    }
+    throw err;
+  }
   const newestPage = (await newestRes.json()) as Array<Record<string, unknown>>;
 
   if (newestPage.length === 0) {
@@ -201,7 +218,7 @@ async function readCommitSummary(token: string, fullName: string): Promise<Evide
   }
 
   const lastPageNumber = Number(new URL(links.last).searchParams.get('page') ?? '1');
-  const oldestRes = await githubFetch(token, links.last);
+  const oldestRes = await githubFetch(token, links.last, signal);
   const oldestPage = (await oldestRes.json()) as Array<Record<string, unknown>>;
 
   return {
@@ -214,35 +231,40 @@ async function readCommitSummary(token: string, fullName: string): Promise<Evide
   };
 }
 
-async function readReadme(token: string, fullName: string): Promise<EvidenceItem<string> | null> {
+async function readReadme(
+  token: string,
+  fullName: string,
+  signal?: AbortSignal,
+): Promise<EvidenceItem<string> | null> {
   const url = `${API_ROOT}/repos/${fullName}/readme`;
   let res: Response;
   try {
-    res = await githubFetch(token, url);
+    res = await githubFetch(token, url, signal);
   } catch (err) {
     if (err instanceof GitHubError && err.kind === 'not-found') return null;
     throw err;
   }
   const data = (await res.json()) as Record<string, unknown>;
-  const content = capBytes(decodeBase64Content(String(data.content ?? '')), README_BYTE_CAP);
+  const content = capBytes(decodeBase64Content(String(data.content ?? '')), CONTENT_BYTE_CAP);
   return { url: String(data.html_url ?? url), value: content };
 }
 
 async function readManifest(
   token: string,
   fullName: string,
+  signal?: AbortSignal,
 ): Promise<EvidenceItem<{ path: string; content: string }> | null> {
   for (const path of MANIFEST_CANDIDATES) {
     const url = `${API_ROOT}/repos/${fullName}/contents/${path}`;
     let res: Response;
     try {
-      res = await githubFetch(token, url);
+      res = await githubFetch(token, url, signal);
     } catch (err) {
       if (err instanceof GitHubError && err.kind === 'not-found') continue;
       throw err;
     }
     const data = (await res.json()) as Record<string, unknown>;
-    const content = decodeBase64Content(String(data.content ?? ''));
+    const content = capBytes(decodeBase64Content(String(data.content ?? '')), CONTENT_BYTE_CAP);
     return { url: String(data.html_url ?? url), value: { path, content } };
   }
   return null;
@@ -269,11 +291,12 @@ export async function readRepoEvidence(
     throw new Error('Tiers 3 and 4 are not implemented yet.');
   }
 
+  const { signal } = opts;
   const evidence: RepoEvidence = { repo: null, languages: null, commits: null, readme: null, manifest: null };
 
   if (tiers.has(1)) {
     const repoUrl = `${API_ROOT}/repos/${fullName}`;
-    const repoRes = await githubFetch(token, repoUrl);
+    const repoRes = await githubFetch(token, repoUrl, signal);
     const repoData = (await repoRes.json()) as Record<string, unknown>;
     evidence.repo = {
       url: repoUrl,
@@ -289,15 +312,15 @@ export async function readRepoEvidence(
     };
 
     const languagesUrl = `${API_ROOT}/repos/${fullName}/languages`;
-    const languagesRes = await githubFetch(token, languagesUrl);
+    const languagesRes = await githubFetch(token, languagesUrl, signal);
     evidence.languages = { url: languagesUrl, value: (await languagesRes.json()) as Record<string, number> };
 
-    evidence.commits = await readCommitSummary(token, fullName);
+    evidence.commits = await readCommitSummary(token, fullName, signal);
   }
 
   if (tiers.has(2)) {
-    evidence.readme = await readReadme(token, fullName);
-    evidence.manifest = await readManifest(token, fullName);
+    evidence.readme = await readReadme(token, fullName, signal);
+    evidence.manifest = await readManifest(token, fullName, signal);
   }
 
   return evidence;

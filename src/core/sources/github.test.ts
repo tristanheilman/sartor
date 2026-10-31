@@ -11,6 +11,7 @@ import { listRepos, readRepoEvidence, GitHubError } from './github';
 interface Captured {
   url: string;
   headers: Record<string, string>;
+  signal: AbortSignal | null | undefined;
 }
 
 const captured: Captured[] = [];
@@ -21,7 +22,7 @@ function capture(input: unknown, init: RequestInit | undefined) {
   new Headers(init?.headers ?? (input as Request)?.headers).forEach((v, k) => {
     headers[k.toLowerCase()] = v;
   });
-  captured.push({ url, headers });
+  captured.push({ url, headers, signal: init?.signal });
 }
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -251,16 +252,18 @@ describe('readRepoEvidence', () => {
     });
   });
 
-  it('caps the README at the byte cap', async () => {
+  it('caps the README at the byte cap, without splitting a multi-byte character', async () => {
+    // "é" is two bytes in UTF-8, so a naive character-count cap would pass
+    // while still letting the byte length exceed the cap.
+    const oversized = 'é'.repeat(15_000);
     stubRoutes([
-      [
-        '/readme',
-        () => jsonResponse({ content: Buffer.from('x'.repeat(30_000)).toString('base64'), html_url: 'u' }),
-      ],
+      ['/readme', () => jsonResponse({ content: Buffer.from(oversized, 'utf-8').toString('base64'), html_url: 'u' })],
       ['/contents/', () => new Response(null, { status: 404 })],
     ]);
     const evidence = await readRepoEvidence(TOKEN, 'me/proj', { tiers: [2] });
-    expect(evidence.readme!.value.length).toBeLessThanOrEqual(20_000);
+    const byteLength = new TextEncoder().encode(evidence.readme!.value).length;
+    expect(byteLength).toBeLessThanOrEqual(20_000);
+    expect(evidence.readme!.value.length).toBeLessThan(oversized.length);
   });
 
   it('tries manifest candidates in order and stops at the first match', async () => {
@@ -281,6 +284,57 @@ describe('readRepoEvidence', () => {
     const evidence = await readRepoEvidence(TOKEN, 'me/proj', { tiers: [2] });
     expect(evidence.readme).toBeNull();
     expect(evidence.manifest).toBeNull();
+  });
+
+  it('caps the manifest at the byte cap', async () => {
+    stubRoutes([
+      ['/readme', () => new Response(null, { status: 404 })],
+      [
+        '/contents/package.json',
+        () => jsonResponse({ content: Buffer.from('x'.repeat(30_000)).toString('base64'), html_url: 'u' }),
+      ],
+    ]);
+    const evidence = await readRepoEvidence(TOKEN, 'me/proj', { tiers: [2] });
+    const byteLength = new TextEncoder().encode(evidence.manifest!.value.content).length;
+    expect(byteLength).toBeLessThanOrEqual(20_000);
+  });
+
+  it('reports a repository with no commits yet as a zero-commit summary, not a failure', async () => {
+    stubRoutes([
+      ['/repos/me/empty/languages', () => jsonResponse({})],
+      ['/commits', () => new Response(null, { status: 409 })],
+      ['/user', () => jsonResponse({ login: 'me' })],
+      [
+        '/repos/me/empty',
+        () =>
+          jsonResponse({
+            name: 'empty',
+            full_name: 'me/empty',
+            description: null,
+            visibility: 'public',
+            pushed_at: '2026-01-01T00:00:00Z',
+            stargazers_count: 0,
+            topics: [],
+          }),
+      ],
+    ]);
+    const evidence = await readRepoEvidence(TOKEN, 'me/empty', { tiers: [1] });
+    expect(evidence.commits!.value).toEqual({
+      firstCommitDate: null,
+      lastCommitDate: null,
+      authoredCommitCount: 0,
+    });
+  });
+
+  it('forwards an AbortSignal to every request it makes', async () => {
+    stubTier1And2();
+    const controller = new AbortController();
+    await readRepoEvidence(TOKEN, 'me/proj', { tiers: [1, 2], signal: controller.signal });
+
+    expect(captured.length).toBeGreaterThan(0);
+    for (const call of captured) {
+      expect(call.signal).toBe(controller.signal);
+    }
   });
 
   it('throws when tier 3 is requested', async () => {
