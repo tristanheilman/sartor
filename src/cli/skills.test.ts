@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COMMANDS } from './main';
+import { commandsIn, frontmatter } from './markdown-commands';
 
 /**
  * The skills shipped in `plugin/`, held to the Agent Skills specification
@@ -39,35 +40,7 @@ function links(md: string, dir: string): Array<{ said: string; file: string; anc
     .map(([, target, anchor]) => ({ said: target!, file: resolve(SKILLS, dir, target!), anchor }));
 }
 
-function frontmatter(md: string): Record<string, string> {
-  const m = /^---\n([\s\S]*?)\n---\n/.exec(md);
-  if (!m) return {};
-  const out: Record<string, string> = {};
-  for (const line of m[1]!.split('\n')) {
-    const kv = /^([a-z-]+):\s*(.*)$/.exec(line);
-    if (kv) out[kv[1]!] = kv[2]!.replace(/^"|"$/g, '');
-  }
-  return out;
-}
-
 const known = new Set(COMMANDS.map((c) => c.name));
-
-/**
- * Every `sartor …` invocation in a markdown file — inline or in a code block —
- * as the command it names: the longest run of its leading words that is a
- * real command, or those words as written when none is.
- */
-function commandsIn(md: string): Array<{ said: string; known: boolean }> {
-  return [...md.matchAll(/(?:^|[`\s(])sartor((?: [a-z]+){1,2})/gm)].flatMap((m): Array<{ said: string; known: boolean }> => {
-    const words = m[1]!.trim().split(' ');
-    if (words[0] === 'version' || words[0] === 'help') return [];
-    for (const n of [2, 1]) {
-      const name = words.slice(0, n).join(' ');
-      if (known.has(name)) return [{ said: name, known: true }];
-    }
-    return [{ said: words.join(' '), known: false }];
-  });
-}
 
 it('ships skills', () => {
   expect(skills.length).toBeGreaterThan(0);
@@ -116,7 +89,7 @@ describe.each(skills)('the %s skill', (dir) => {
   });
 
   it('only tells the agent to run commands the CLI has', () => {
-    const found = commandsIn(md);
+    const found = commandsIn(md, known);
     expect(found.length).toBeGreaterThan(0);
     expect(found.filter((c) => !c.known).map((c) => c.said)).toEqual([]);
   });
@@ -124,7 +97,7 @@ describe.each(skills)('the %s skill', (dir) => {
 
 it('references only commands the CLI has', () => {
   const md = readFileSync(join(SKILLS, 'tailor-resume/references/cli.md'), 'utf8');
-  expect(commandsIn(md).filter((c) => !c.known).map((c) => c.said)).toEqual([]);
+  expect(commandsIn(md, known).filter((c) => !c.known).map((c) => c.said)).toEqual([]);
   // And documents every one of them.
   for (const c of COMMANDS) expect(md, c.name).toContain(`sartor ${c.name}`);
 });
