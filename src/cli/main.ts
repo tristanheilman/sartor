@@ -24,7 +24,7 @@ import * as cmd from './commands';
 
 type Options = NonNullable<ParseArgsConfig['options']>;
 
-export interface Command {
+interface Command {
   name: string;
   summary: string;
   usage: string;

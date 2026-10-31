@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,7 +16,7 @@ import type { Io } from './io';
  */
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const CASE = join(ROOT, 'evals/cases/platform-stretch');
+const EXAMPLES = join(ROOT, 'examples');
 const RESUME_FIXTURE = join(ROOT, 'src/core/parse/__fixtures__/resume.txt');
 
 const known = new Set(COMMANDS.map((c) => c.name));
@@ -31,13 +31,13 @@ describe.each(DOCS)('%s', (relPath, path) => {
   const md = readFileSync(path, 'utf8');
 
   it('only tells the agent to run commands the CLI has', () => {
-    const unknown = commandsIn(md, known).filter((c) => !c.known);
+    const unknown = commandsIn(md, known, { codeOnly: true }).filter((c) => !c.known);
     expect(unknown.map((c) => `${relPath}:${c.line}: sartor ${c.said}`)).toEqual([]);
   });
 
   it('only uses flags the named command or the CLI itself has, on a fenced-block line', () => {
     const bad: string[] = [];
-    for (const { said, known: isKnown, flags, line, fenced } of commandsIn(md, known)) {
+    for (const { said, known: isKnown, flags, line, fenced } of commandsIn(md, known, { codeOnly: true })) {
       if (!fenced || !isKnown || flags.length === 0) continue;
       const command = COMMANDS.find((c) => c.name === said)!;
       const allowed = new Set([...Object.keys(command.options), ...globalFlags]);
@@ -79,14 +79,64 @@ const STRUCTURED_RESUME = {
   awards: [],
 };
 
+// A plan against `examples/profile.json`'s real IDs, kept deliberately small
+// — one role, two of its six bullets — so the page that `tailor apply` fits
+// has room to spare. `examples/plan.json` itself fits the page exactly (it is
+// built, like the import-resume skill recommends, by including more bullets
+// than fit and letting the fit pass trim them), so restoring anything the
+// walkthrough's own `review --reject 4` puts back would overflow the page
+// and `render` would refuse it — the opposite of what this test is checking.
+const PLAN = {
+  summary: { text: 'Full-stack engineer who ships accessible interfaces backed by well-designed APIs.', rationale: 'A short rewrite for this trimmed sample.' },
+  sectionOrder: ['summary', 'skills', 'work', 'projects', 'education', 'certificates', 'awards'],
+  work: [
+    {
+      id: 'wrk_tidewater',
+      include: true,
+      order: 1,
+      bullets: [
+        { bulletId: 'blt_scheduler', include: true, order: 1, text: '', textSource: 'canonical', rationale: '' },
+        { bulletId: 'blt_design_system', include: true, order: 2, text: '', textSource: 'canonical', rationale: '' },
+        { bulletId: 'blt_billing_api', include: false, order: 3, text: '', textSource: 'canonical', rationale: 'Left out of this trimmed sample.' },
+        { bulletId: 'blt_wcag', include: false, order: 4, text: '', textSource: 'canonical', rationale: 'Left out of this trimmed sample.' },
+        { bulletId: 'blt_oncall', include: false, order: 5, text: '', textSource: 'canonical', rationale: 'Left out of this trimmed sample.' },
+        { bulletId: 'blt_lunch_learn', include: false, order: 6, text: '', textSource: 'canonical', rationale: 'Left out of this trimmed sample.' },
+      ],
+    },
+    { id: 'wrk_brightline', include: false, order: 2, bullets: [] },
+    { id: 'wrk_pineridge', include: false, order: 3, bullets: [] },
+  ],
+  projects: [
+    { id: 'prj_formlift', include: false, order: 1, bullets: [] },
+    { id: 'prj_mealmap', include: false, order: 2, bullets: [] },
+    { id: 'prj_trailhead', include: false, order: 3, bullets: [] },
+  ],
+  education: [{ id: 'edu_cascadia', include: true, order: 1, bullets: [] }],
+  skills: [
+    { id: 'skl_lang', include: true, order: 1, keywords: ['TypeScript', 'JavaScript', 'SQL', 'Python', 'PHP'] },
+    { id: 'skl_front', include: true, order: 2, keywords: ['React', 'Next.js', 'Tailwind CSS', 'Storybook', 'Playwright'] },
+    { id: 'skl_back', include: true, order: 3, keywords: ['Node.js', 'PostgreSQL', 'MySQL', 'Redis', 'REST APIs'] },
+    { id: 'skl_tools', include: true, order: 4, keywords: ['Git', 'GitHub Actions', 'Docker', 'Vercel', 'Figma'] },
+  ],
+  notes: '',
+  requested: [],
+};
+
 describe('"Using it from an agent"', () => {
-  it('runs every step that needs no model, against a sample profile, posting and plan', async () => {
+  let cwd: string;
+  afterEach(() => {
+    if (cwd) rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it('runs every step that needs no model, against the examples/ profile and posting', async () => {
     const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
     const block = firstFencedBlock(section(readme, 'Using it from an agent'));
 
-    const cwd = mkdtempSync(join(tmpdir(), 'sartor-readme-'));
+    cwd = mkdtempSync(join(tmpdir(), 'sartor-readme-'));
     // Stands in for the agent's own writing step ahead of `ingest apply`.
     writeFileSync(join(cwd, 'structured.json'), JSON.stringify(STRUCTURED_RESUME));
+    // Stands in for the agent's own writing step ahead of `tailor apply`.
+    writeFileSync(join(cwd, 'plan.json'), JSON.stringify(PLAN));
 
     async function sartor(argv: string[]): Promise<{ code: number; stderr: string; json: any }> {
       let stdout = '';
@@ -128,11 +178,10 @@ describe('"Using it from an agent"', () => {
 
       const args = rest.map((t, i) => {
         const prev = rest[i - 1];
-        if (prev === '--profile' && t === 'profile.json') return join(CASE, 'profile.json');
-        if (prev === '--posting' && t === 'posting.txt') return join(CASE, 'posting.txt');
-        if (prev === '--plan' && t === 'plan.json') return join(CASE, 'plans', '01.json');
+        if (prev === '--profile' && t === 'profile.json') return join(EXAMPLES, 'profile.json');
+        if (prev === '--posting' && t === 'posting.txt') return join(EXAMPLES, 'posting.txt');
         if (name === 'ingest prompt' && t === 'resume.pdf') return RESUME_FIXTURE;
-        return t;
+        return t; // "structured.json", "plan.json" and "run.json" resolve against the files this test wrote into `cwd`
       });
 
       const r = await sartor([...name.split(' '), ...args, '--json']);
