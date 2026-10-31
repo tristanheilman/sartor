@@ -84,6 +84,7 @@ export interface RepoBasics {
   description: string | null;
   visibility: string;
   pushedAt: string | null;
+  stars: number;
 }
 
 export interface CommitSummary {
@@ -133,16 +134,16 @@ export async function readRepoEvidence(
     }
   }
 
-  const [owner, repo] = fullName.split('/');
-  if (!owner || !repo) {
-    throw new GitHubError(`"${fullName}" is not an "owner/repo" full name.`, undefined, 'not-found');
+  const [owner, repo, ...extra] = fullName.split('/');
+  if (!owner || !repo || extra.length > 0) {
+    throw new Error(`"${fullName}" is not an "owner/repo" full name.`);
   }
 
   const { signal } = opts;
   const evidence: RepoEvidence = { fullName };
 
   if (opts.tiers.includes(1)) {
-    const repoUrl = `${API_ROOT}/repos/${owner}/${repo}`;
+    const repoUrl = repoApiUrl(owner, repo);
     const repoRes = await githubFetch(repoUrl, token, signal);
     const repoData = (await repoRes.json()) as Record<string, unknown>;
     evidence.repo = { value: toRepoBasics(repoData), url: repoUrl };
@@ -156,13 +157,17 @@ export async function readRepoEvidence(
   }
 
   if (opts.tiers.includes(2)) {
-    const readme = await tryReadContents(token, `${API_ROOT}/repos/${owner}/${repo}/readme`, signal);
+    const readme = await tryReadContents(token, `${repoApiUrl(owner, repo)}/readme`, signal);
     if (readme) {
       evidence.readme = { value: capBytes(readme.content, README_BYTE_CAP), url: readme.url };
     }
 
     for (const path of MANIFEST_CANDIDATES) {
-      const file = await tryReadContents(token, `${API_ROOT}/repos/${owner}/${repo}/contents/${path}`, signal);
+      const file = await tryReadContents(
+        token,
+        `${repoApiUrl(owner, repo)}/contents/${encodeURIComponent(path)}`,
+        signal,
+      );
       if (file) {
         evidence.manifest = { value: { path, content: file.content }, url: file.url };
         break;
@@ -173,15 +178,30 @@ export async function readRepoEvidence(
   return evidence;
 }
 
+function repoApiUrl(owner: string, repo: string): string {
+  return `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+}
+
 async function readCommitSummary(
   token: string,
   owner: string,
   repo: string,
   signal?: AbortSignal,
 ): Promise<Evidence<CommitSummary>> {
-  const commitsUrl = `${API_ROOT}/repos/${owner}/${repo}/commits`;
+  const commitsUrl = `${repoApiUrl(owner, repo)}/commits`;
 
-  const latestRes = await githubFetch(`${commitsUrl}?per_page=1`, token, signal);
+  // A repository with no commits yet (freshly created, no default branch)
+  // reports 409 here rather than an empty array. That is "no commits", not a
+  // failure to reach GitHub.
+  let latestRes: Response;
+  try {
+    latestRes = await githubFetch(`${commitsUrl}?per_page=1`, token, signal);
+  } catch (err) {
+    if (err instanceof GitHubError && err.cause instanceof Response && err.cause.status === 409) {
+      return { value: { firstCommitAt: null, lastCommitAt: null, authoredByUserCount: 0 }, url: commitsUrl };
+    }
+    throw err;
+  }
   const latest = (await latestRes.json()) as Array<{ commit?: { committer?: { date?: string } } }>;
   const lastCommitAt = latest[0]?.commit?.committer?.date ?? null;
 
@@ -196,7 +216,10 @@ async function readCommitSummary(
   }
 
   const userRes = await githubFetch(`${API_ROOT}/user`, token, signal);
-  const login = ((await userRes.json()) as { login?: string }).login ?? '';
+  const login = ((await userRes.json()) as { login?: string }).login;
+  if (!login) {
+    throw new Error('GitHub did not return a login for the authenticated user; cannot count their commits.');
+  }
 
   // Same trick, scoped to one author: the last page number is the count.
   const authorRes = await githubFetch(
@@ -231,6 +254,12 @@ async function tryReadContents(
 }
 
 async function githubFetch(url: string, token: string, signal?: AbortSignal): Promise<Response> {
+  // Every request — including ones built from a `Link` header GitHub sent us
+  // — stays inside the one host the token is ever given to.
+  if (!url.startsWith(`${API_ROOT}/`)) {
+    throw new GitHubError(`Refusing to send the token to a non-GitHub-API URL: ${url}`, undefined, 'network');
+  }
+
   let res: Response;
   try {
     res = await fetch(url, {
@@ -250,18 +279,20 @@ async function githubFetch(url: string, token: string, signal?: AbortSignal): Pr
 
 function toGitHubError(res: Response): GitHubError {
   if (res.status === 401) {
-    return new GitHubError('GitHub rejected the token.', undefined, 'auth');
+    return new GitHubError('GitHub rejected the token.', res, 'auth');
   }
   if (res.status === 403) {
     if (res.headers.get('x-ratelimit-remaining') === '0') {
-      return new GitHubError('GitHub rate-limited the request. Wait and retry.', undefined, 'rate-limit');
+      return new GitHubError('GitHub rate-limited the request. Wait and retry.', res, 'rate-limit');
     }
-    return new GitHubError('GitHub refused the request as forbidden.', undefined, 'auth');
+    return new GitHubError('GitHub refused the request as forbidden.', res, 'auth');
   }
   if (res.status === 404) {
-    return new GitHubError('GitHub returned 404 for that resource.', undefined, 'not-found');
+    return new GitHubError('GitHub returned 404 for that resource.', res, 'not-found');
   }
-  return new GitHubError(`GitHub returned ${res.status}.`, undefined, 'network');
+  // Includes 409, which GitHub uses for a repo with no commits yet; callers
+  // that care about that case check `cause.status` themselves.
+  return new GitHubError(`GitHub returned ${res.status}.`, res, 'network');
 }
 
 function parseLinkHeader(header: string | null): Record<string, string> {
@@ -281,6 +312,7 @@ function toRepoBasics(data: Record<string, unknown>): RepoBasics {
     description: (data.description as string | null) ?? null,
     visibility: str(data.visibility),
     pushedAt: (data.pushed_at as string | null) ?? null,
+    stars: typeof data.stargazers_count === 'number' ? data.stargazers_count : 0,
   };
 }
 
@@ -297,5 +329,11 @@ function decodeBase64(b64: string): string {
 function capBytes(text: string, maxBytes: number): string {
   const bytes = new TextEncoder().encode(text);
   if (bytes.length <= maxBytes) return text;
-  return new TextDecoder('utf-8').decode(bytes.slice(0, maxBytes));
+
+  // Back up off any trailing continuation byte (10xxxxxx) so the cut never
+  // lands inside a multi-byte character — otherwise the decoder would turn
+  // the fragment into a 3-byte U+FFFD and the result could exceed maxBytes.
+  let end = maxBytes;
+  while (end > 0 && (bytes[end]! & 0xc0) === 0x80) end--;
+  return new TextDecoder('utf-8').decode(bytes.slice(0, end));
 }

@@ -143,12 +143,48 @@ describe('error mapping', () => {
     vi.stubGlobal('fetch', () => Promise.reject(new Error('boom')));
     await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'network' });
   });
+
+  it('refuses to follow a Link header that points off api.github.com', async () => {
+    queueFetch([
+      jsonResponse([{ name: 'a', full_name: 'me/a', html_url: 'https://github.com/me/a' }], 200, {
+        link: '<https://evil.example.com/user/repos?page=2>; rel="next"',
+      }),
+    ]);
+    await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'network' });
+    expect(captured).toHaveLength(1);
+  });
+});
+
+describe('readRepoEvidence input validation', () => {
+  it('rejects a name with no slash, without making a request', async () => {
+    vi.stubGlobal('fetch', () => {
+      throw new Error('fetch should not be called');
+    });
+    await expect(readRepoEvidence('tok', 'not-a-full-name', { tiers: [1] })).rejects.toThrow(
+      /owner\/repo/,
+    );
+  });
+
+  it('rejects a name with extra segments, without making a request', async () => {
+    vi.stubGlobal('fetch', () => {
+      throw new Error('fetch should not be called');
+    });
+    await expect(readRepoEvidence('tok', 'me/demo/extra', { tiers: [1] })).rejects.toThrow(/owner\/repo/);
+  });
 });
 
 /* ------------------------------------------------------------------ */
 
-function makeEvidenceRouter(opts: { readmeContent?: string; manifestPath?: string | null } = {}) {
-  const { readmeContent = '# Demo\n\nSome text.', manifestPath = 'package.json' } = opts;
+function makeEvidenceRouter(
+  opts: {
+    readmeContent?: string;
+    manifestPath?: string | null;
+    login?: string | null;
+    commitsStatus?: number;
+  } = {},
+) {
+  const { readmeContent = '# Demo\n\nSome text.', manifestPath = 'package.json', login = 'me', commitsStatus } =
+    opts;
 
   return (url: string): Response => {
     if (url === 'https://api.github.com/repos/me/demo') {
@@ -160,12 +196,14 @@ function makeEvidenceRouter(opts: { readmeContent?: string; manifestPath?: strin
         pushed_at: '2024-06-01T00:00:00Z',
         html_url: 'https://github.com/me/demo',
         topics: ['cli', 'tools'],
+        stargazers_count: 42,
       });
     }
     if (url === 'https://api.github.com/repos/me/demo/languages') {
       return jsonResponse({ TypeScript: 1000, JavaScript: 200 });
     }
     if (url === 'https://api.github.com/repos/me/demo/commits?per_page=1') {
+      if (commitsStatus) return jsonResponse({ message: 'Git Repository is empty.' }, commitsStatus);
       return jsonResponse([{ commit: { committer: { date: '2024-06-01T00:00:00Z' } } }], 200, {
         link: '<https://api.github.com/repos/me/demo/commits?per_page=1&page=12>; rel="last"',
       });
@@ -174,11 +212,11 @@ function makeEvidenceRouter(opts: { readmeContent?: string; manifestPath?: strin
       return jsonResponse([{ commit: { committer: { date: '2023-01-01T00:00:00Z' } } }]);
     }
     if (url === 'https://api.github.com/user') {
-      return jsonResponse({ login: 'me' });
+      return jsonResponse(login ? { login } : {});
     }
-    if (url === 'https://api.github.com/repos/me/demo/commits?author=me&per_page=1') {
+    if (url === `https://api.github.com/repos/me/demo/commits?author=${login}&per_page=1`) {
       return jsonResponse([{ commit: { committer: { date: '2024-06-01T00:00:00Z' } } }], 200, {
-        link: '<https://api.github.com/repos/me/demo/commits?author=me&per_page=1&page=7>; rel="last"',
+        link: `<https://api.github.com/repos/me/demo/commits?author=${login}&per_page=1&page=7>; rel="last"`,
       });
     }
     if (url === 'https://api.github.com/repos/me/demo/readme') {
@@ -213,6 +251,7 @@ describe('readRepoEvidence', () => {
         description: 'A demo repo',
         visibility: 'public',
         pushedAt: '2024-06-01T00:00:00Z',
+        stars: 42,
       },
       url: 'https://api.github.com/repos/me/demo',
     });
@@ -267,6 +306,33 @@ describe('readRepoEvidence', () => {
     expect(readme.length).toBeGreaterThan(0);
     expect(readme.length).toBeLessThan(long.length);
     expect(new TextEncoder().encode(readme).length).toBeLessThanOrEqual(8_000);
+  });
+
+  it('cuts cleanly when the byte cap lands inside a multi-byte character', async () => {
+    // 7,999 ASCII bytes followed by three-byte "€" characters: the 8,000-byte
+    // cut lands on the first continuation byte of the first "€", so a naive
+    // slice-then-decode would turn it into a stray U+FFFD over the cap.
+    const content = 'a'.repeat(7_999) + '€'.repeat(5);
+    routeFetch(makeEvidenceRouter({ readmeContent: content, manifestPath: null }));
+    const evidence = await readRepoEvidence('tok', 'me/demo', { tiers: [2] });
+    const readme = evidence.readme!.value;
+    expect(readme).toBe('a'.repeat(7_999));
+    expect(new TextEncoder().encode(readme).length).toBeLessThanOrEqual(8_000);
+  });
+
+  it('reports no commits for an empty repository (409) instead of a network error', async () => {
+    routeFetch(makeEvidenceRouter({ commitsStatus: 409 }));
+    const evidence = await readRepoEvidence('tok', 'me/demo', { tiers: [1] });
+    expect(evidence.commits?.value).toEqual({
+      firstCommitAt: null,
+      lastCommitAt: null,
+      authoredByUserCount: 0,
+    });
+  });
+
+  it('throws rather than silently counting every commit when GitHub returns no login', async () => {
+    routeFetch(makeEvidenceRouter({ login: null }));
+    await expect(readRepoEvidence('tok', 'me/demo', { tiers: [1] })).rejects.toThrow(/login/i);
   });
 
   it('throws for tier 3 and tier 4 without making any request', async () => {
