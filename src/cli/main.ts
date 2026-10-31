@@ -24,7 +24,7 @@ import * as cmd from './commands';
 
 type Options = NonNullable<ParseArgsConfig['options']>;
 
-interface Command {
+export interface Command {
   name: string;
   summary: string;
   usage: string;
@@ -148,7 +148,7 @@ export const COMMANDS: Command[] = [
   },
 ];
 
-const GLOBAL: Options = {
+export const GLOBAL: Options = {
   json: { type: 'boolean' },
   human: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
