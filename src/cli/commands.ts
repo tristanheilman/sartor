@@ -16,7 +16,7 @@ import { buildCoverage } from '../core/tailor/coverage';
 import { documentToSlices } from '../core/render/model';
 import { parseSafetyChecks } from '../core/render/parseSafety';
 import { renderPlainText } from '../core/render/text';
-import { getProvider, ProviderError } from '../core/provider';
+import { getProvider, ProviderError, PROVIDERS } from '../core/provider';
 import { CliError, EXIT, describeIssues, readBytes, readJson, readText, writeOut, type Io, type Result } from './io';
 import { RUN_FORMAT, readRunFile, writeRunFile, type RunFile } from './runfile';
 import {
@@ -242,7 +242,7 @@ export async function ingestRunCommand(ctx: Ctx): Promise<Result> {
   const { id, cfg } = providerConfig(ctx.io, str(ctx.flags.provider), str(ctx.flags.model));
   const { text } = await extract(ctx.io, path);
   ctx.io.stderr.write(`Structuring with ${id} ${cfg.model}…\n`);
-  const result = await callProvider(() => ingestResume(text, getProvider(id), cfg, { label: str(ctx.flags.label) ?? basename(path, extname(path)) }));
+  const result = await callProvider(id, () => ingestResume(text, getProvider(id), cfg, { label: str(ctx.flags.label) ?? basename(path, extname(path)) }));
   await writeOut(ctx.io, out, `${JSON.stringify(result.profile, null, 2)}\n`);
   const stats = profileStats(result.profile);
   const repeats = repeatsIn(result.profile, result.duplicates);
@@ -377,11 +377,35 @@ function summarizeFit(f: ReturnType<typeof fitToTarget>) {
   return { dropped: f.dropped, added: f.added, restoredSkills: f.restoredSkills, droppedEntries: f.droppedEntries, emptyRolesFilled: f.emptyRolesFilled, fits: f.fits, reinstated: f.reinstated };
 }
 
+/** The npm package each provider's SDK ships as; it is an optional peer, not a dependency. */
+const PROVIDER_PACKAGES: Record<string, string> = {
+  [PROVIDERS.anthropic!.info.id]: '@anthropic-ai/sdk',
+  [PROVIDERS.openai!.info.id]: 'openai',
+  [PROVIDERS.google!.info.id]: '@google/genai',
+};
+
+/**
+ * `e` as a missing optional dependency, or null for any other error.
+ *
+ * A dynamic `import()` of a package that was never installed throws
+ * `ERR_MODULE_NOT_FOUND` with a "Cannot find package" message; this is what
+ * every provider's `complete()`, and the PDF/DOCX renderers, hit on a clean
+ * install.
+ */
+export function missingDependency(e: unknown, needs: string): CliError | null {
+  if (!(e instanceof Error)) return null;
+  const isMissing = (e as NodeJS.ErrnoException).code === 'ERR_MODULE_NOT_FOUND' || /Cannot find (package|module)/.test(e.message);
+  if (!isMissing) return null;
+  return new CliError('missing_dependency', `This needs ${needs}, which is not installed.`, `Install it next to sartor: npm install ${needs}`, EXIT.input);
+}
+
 /** Provider failures as CLI failures an agent can act on. */
-async function callProvider<T>(fn: () => Promise<T>): Promise<T> {
+async function callProvider<T>(id: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {
+    const missing = missingDependency(e, PROVIDER_PACKAGES[id] ?? id);
+    if (missing) throw missing;
     if (e instanceof ProviderError) {
       const hint = {
         auth: 'The API key was rejected. Check it, or use the agent workflow, which needs no key.',
@@ -403,7 +427,7 @@ export async function tailorRunCommand(ctx: Ctx): Promise<Result> {
   const template = parseTemplate(str(ctx.flags.template));
   const { id, cfg } = providerConfig(ctx.io, str(ctx.flags.provider), str(ctx.flags.model));
   ctx.io.stderr.write(`Tailoring with ${id} ${cfg.model}…\n`);
-  const outcome = await callProvider(() => runTailor(profile, jd, constraints, getProvider(id), cfg, { template }));
+  const outcome = await callProvider(id, () => runTailor(profile, jd, constraints, getProvider(id), cfg, { template }));
   const file: RunFile = {
     format: RUN_FORMAT,
     template: template.id,
@@ -544,10 +568,8 @@ export async function renderCommand(ctx: Ctx): Promise<Result> {
       bytes = new Uint8Array(await (await renderDocxBlob(doc, template)).arrayBuffer());
     }
   } catch (e) {
-    if (e instanceof Error && /Cannot find (package|module)/.test(e.message)) {
-      const needs = format === 'pdf' ? 'react @react-pdf/renderer' : 'docx';
-      throw new CliError('missing_dependency', `Rendering ${format.toUpperCase()} needs ${needs}, which is not installed.`, `Install it next to sartor: npm install ${needs}`, EXIT.input);
-    }
+    const missing = missingDependency(e, format === 'pdf' ? 'react @react-pdf/renderer' : 'docx');
+    if (missing) throw missing;
     throw e;
   }
   await writeOut(ctx.io, out, bytes);
