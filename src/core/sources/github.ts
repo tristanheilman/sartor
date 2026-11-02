@@ -67,7 +67,7 @@ export interface RepoEvidence {
     url: string;
   } | null;
   readme: { text: string; truncated: boolean; url: string } | null;
-  manifest: { filename: string; text: string; url: string } | null;
+  manifest: Array<{ filename: string; text: string; truncated: boolean; url: string }> | null;
 }
 
 function authHeaders(token: string): HeadersInit {
@@ -78,7 +78,12 @@ function authHeaders(token: string): HeadersInit {
   };
 }
 
-async function githubFetch(url: string, token: string, signal?: AbortSignal): Promise<Response> {
+async function githubFetch(
+  url: string,
+  token: string,
+  signal?: AbortSignal,
+  opts: { allowStatuses?: number[] } = {},
+): Promise<Response> {
   let res: Response;
   try {
     res = await fetch(url, { headers: authHeaders(token), signal });
@@ -86,11 +91,15 @@ async function githubFetch(url: string, token: string, signal?: AbortSignal): Pr
     throw new GitHubError('Could not reach GitHub.', 'network', err);
   }
 
+  if (res.ok || opts.allowStatuses?.includes(res.status)) {
+    return res;
+  }
+
   if (res.status === 401) {
     throw new GitHubError('GitHub rejected the token.', 'auth');
   }
   if (res.status === 403) {
-    if (res.headers.get('x-ratelimit-remaining') === '0') {
+    if (res.headers.get('x-ratelimit-remaining') === '0' || res.headers.get('retry-after') !== null) {
       throw new GitHubError('GitHub API rate limit exceeded.', 'rate-limit');
     }
     throw new GitHubError('GitHub rejected the request. The token may lack the needed scope.', 'auth');
@@ -101,10 +110,7 @@ async function githubFetch(url: string, token: string, signal?: AbortSignal): Pr
   if (res.status === 429) {
     throw new GitHubError('GitHub API rate limit exceeded.', 'rate-limit');
   }
-  if (!res.ok) {
-    throw new GitHubError(`GitHub returned ${res.status}.`, 'network');
-  }
-  return res;
+  throw new GitHubError(`GitHub returned ${res.status}.`, 'network');
 }
 
 function linkRel(link: string | null, rel: string): string | null {
@@ -169,6 +175,9 @@ async function getAuthenticatedLogin(token: string, signal?: AbortSignal): Promi
   return String(data.login);
 }
 
+/** GitHub answers the commits endpoint with 409 for a repo with no commits yet. */
+const EMPTY_REPO_STATUS = 409;
+
 async function getCommitDates(
   owner: string,
   repo: string,
@@ -176,7 +185,10 @@ async function getCommitDates(
   signal?: AbortSignal,
 ): Promise<{ first: string | null; last: string | null; url: string }> {
   const url = `${API_BASE}/repos/${owner}/${repo}/commits?per_page=1`;
-  const res = await githubFetch(url, token, signal);
+  const res = await githubFetch(url, token, signal, { allowStatuses: [EMPTY_REPO_STATUS] });
+  if (res.status === EMPTY_REPO_STATUS) {
+    return { first: null, last: null, url };
+  }
   const data = (await res.json()) as Array<Record<string, unknown>>;
   const last = data[0] ? commitDate(data[0]) : null;
 
@@ -199,18 +211,22 @@ async function getAuthorCommitCount(
   signal?: AbortSignal,
 ): Promise<{ count: number; url: string }> {
   const url = `${API_BASE}/repos/${owner}/${repo}/commits?author=${encodeURIComponent(login)}&per_page=1`;
-  const res = await githubFetch(url, token, signal);
+  const res = await githubFetch(url, token, signal, { allowStatuses: [EMPTY_REPO_STATUS] });
+  if (res.status === EMPTY_REPO_STATUS) {
+    return { count: 0, url };
+  }
   const data = (await res.json()) as unknown[];
   const lastPage = lastPageNumber(res.headers.get('link'));
   return { count: lastPage ?? data.length, url };
 }
 
-async function findManifest(
+async function findManifests(
   owner: string,
   repo: string,
   token: string,
   signal?: AbortSignal,
-): Promise<{ filename: string; text: string; url: string } | null> {
+): Promise<Array<{ filename: string; text: string; truncated: boolean; url: string }>> {
+  const manifests: Array<{ filename: string; text: string; truncated: boolean; url: string }> = [];
   for (const filename of MANIFEST_CANDIDATES) {
     const url = `${API_BASE}/repos/${owner}/${repo}/contents/${filename}`;
     let res: Response;
@@ -221,10 +237,10 @@ async function findManifest(
       throw err;
     }
     const data = (await res.json()) as Record<string, unknown>;
-    const { text } = decodeBase64Capped(String(data.content ?? ''), MANIFEST_BYTE_CAP);
-    return { filename, text, url: String(data.html_url ?? url) };
+    const { text, truncated } = decodeBase64Capped(String(data.content ?? ''), MANIFEST_BYTE_CAP);
+    manifests.push({ filename, text, truncated, url: String(data.html_url ?? url) });
   }
-  return null;
+  return manifests;
 }
 
 function splitFullName(fullName: string): [owner: string, repo: string] {
@@ -301,7 +317,8 @@ export async function readRepoEvidence(
       if (!(err instanceof GitHubError && err.kind === 'not-found')) throw err;
     }
 
-    evidence.manifest = await findManifest(owner, repo, token, signal);
+    const manifests = await findManifests(owner, repo, token, signal);
+    evidence.manifest = manifests.length > 0 ? manifests : null;
   }
 
   return evidence;

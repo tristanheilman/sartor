@@ -114,6 +114,16 @@ describe('listRepos', () => {
     await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'rate-limit' });
   });
 
+  it('maps a 403 secondary rate limit (retry-after, remaining not reported) to a rate-limit error', async () => {
+    stubFetch(() => jsonResponse({ message: 'secondary rate limit' }, { status: 403, headers: { 'retry-after': '30' } }));
+    await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'rate-limit' });
+  });
+
+  it('maps a plain 403 with no rate-limit headers to an auth error', async () => {
+    stubFetch(() => jsonResponse({ message: 'Forbidden' }, { status: 403 }));
+    await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'auth' });
+  });
+
   it('maps a 404 to a not-found error', async () => {
     stubFetch(() => jsonResponse({ message: 'Not Found' }, { status: 404 }));
     await expect(listRepos('tok')).rejects.toMatchObject({ kind: 'not-found' });
@@ -199,11 +209,52 @@ describe('readRepoEvidence', () => {
       truncated: false,
       url: 'https://github.com/octocat/sartor/blob/main/README.md',
     });
-    expect(evidence.manifest).toEqual({
-      filename: 'package.json',
-      text: '{"name":"sartor"}',
-      url: 'https://github.com/octocat/sartor/blob/main/package.json',
+    expect(evidence.manifest).toEqual([
+      {
+        filename: 'package.json',
+        text: '{"name":"sartor"}',
+        truncated: false,
+        url: 'https://github.com/octocat/sartor/blob/main/package.json',
+      },
+    ]);
+  });
+
+  it('collects every manifest candidate present, not only the first', async () => {
+    stubFetch((url) => {
+      if (url === 'https://api.github.com/repos/octocat/sartor') return jsonResponse(repoJson);
+      if (url.includes('/contents/package.json')) {
+        return jsonResponse({
+          content: Buffer.from('{"name":"sartor"}').toString('base64'),
+          html_url: 'https://github.com/octocat/sartor/blob/main/package.json',
+        });
+      }
+      if (url.includes('/contents/pyproject.toml')) {
+        return jsonResponse({
+          content: Buffer.from('[tool.poetry]\nname = "sartor"').toString('base64'),
+          html_url: 'https://github.com/octocat/sartor/blob/main/pyproject.toml',
+        });
+      }
+      if (url.includes('/contents/')) return jsonResponse({ message: 'Not Found' }, { status: 404 });
+      if (url.includes('/readme')) return jsonResponse({ message: 'Not Found' }, { status: 404 });
+      throw new Error(`unexpected url ${url}`);
     });
+
+    const evidence = await readRepoEvidence('tok', 'octocat/sartor', { tiers: [2] });
+
+    expect(evidence.manifest).toEqual([
+      {
+        filename: 'package.json',
+        text: '{"name":"sartor"}',
+        truncated: false,
+        url: 'https://github.com/octocat/sartor/blob/main/package.json',
+      },
+      {
+        filename: 'pyproject.toml',
+        text: '[tool.poetry]\nname = "sartor"',
+        truncated: false,
+        url: 'https://github.com/octocat/sartor/blob/main/pyproject.toml',
+      },
+    ]);
   });
 
   it('caps the README at a byte limit and reports truncation', async () => {
@@ -231,6 +282,25 @@ describe('readRepoEvidence', () => {
     expect(evidence.commits).toBeNull();
     expect(captured.some((c) => c.url.includes('/languages'))).toBe(false);
     expect(captured.some((c) => c.url.includes('/commits'))).toBe(false);
+  });
+
+  it('treats a 409 on the commits endpoint as an empty repo, not an error', async () => {
+    stubFetch((url) => {
+      if (url === 'https://api.github.com/repos/octocat/sartor') return jsonResponse(repoJson);
+      if (url.includes('/languages')) return jsonResponse({});
+      if (url === 'https://api.github.com/user') return jsonResponse({ login: 'octocat' });
+      if (url.includes('/commits')) return jsonResponse({ message: 'Git Repository is empty.' }, { status: 409 });
+      throw new Error(`unexpected url ${url}`);
+    });
+
+    const evidence = await readRepoEvidence('tok', 'octocat/sartor', { tiers: [1] });
+
+    expect(evidence.commits).toEqual({
+      firstCommitDate: null,
+      lastCommitDate: null,
+      authorCommitCount: 0,
+      url: 'https://api.github.com/repos/octocat/sartor/commits?per_page=1',
+    });
   });
 
   it('throws when tier 3 is requested', async () => {
