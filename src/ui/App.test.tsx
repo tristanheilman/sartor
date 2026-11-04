@@ -279,6 +279,42 @@ describe('App', () => {
     await waitFor(async () => expect(await loadDraft()).toBeNull());
   });
 
+  it('fills the posting textarea from a #posting= fragment and clears the URL', async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('Sartor')).toBeDefined());
+
+    // Earlier tests in this file may have left a saved profile behind in the
+    // shared fake IndexedDB — either way, get to a screen with a profile.
+    const jobNav = screen.queryByRole('button', { name: /^job posting$/i });
+    if (jobNav) {
+      fireEvent.click(jobNav);
+    } else {
+      fireEvent.click(screen.getByRole('button', { name: /build one from scratch/i }));
+      await waitFor(() => expect(screen.getByLabelText(/full name/i)).toBeDefined());
+      fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Dana Reyes' } });
+      fireEvent.click(screen.getByRole('button', { name: /save profile and continue/i }));
+    }
+    await waitFor(() => expect(screen.getByRole('heading', { name: /the job posting/i })).toBeDefined());
+    cleanup();
+
+    const posting = {
+      title: 'Engineer',
+      company: 'Acme',
+      location: '',
+      url: '',
+      text: 'We are hiring a software engineer to build delightful things.',
+    };
+    window.history.pushState(null, '', `#posting=${encodeURIComponent(JSON.stringify(posting))}`);
+
+    render(<App />);
+    await waitFor(() =>
+      expect((screen.getByLabelText(/paste the posting/i) as HTMLTextAreaElement).value).toBe(
+        posting.text,
+      ),
+    );
+    expect(window.location.hash).toBe('');
+  });
+
   it('does not persist the second import until the merge review is committed', async () => {
     render(<App />);
     await waitFor(() => expect(screen.getByText('Sartor')).toBeDefined());

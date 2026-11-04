@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AtsFetchError,
   DEFAULT_CONSTRAINTS,
@@ -32,6 +32,13 @@ export function JobPanel({
   const [text, setText] = useState(jd?.text ?? '');
   const [fetching, setFetching] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // `jd` can change from outside a keystroke here — a posting handed off from
+  // another tab, or from this tab's own `#posting=` fragment — and the
+  // textarea needs to show it the same way it would show a paste.
+  useEffect(() => {
+    setText(jd?.text ?? '');
+  }, [jd]);
 
   const target = detectAts(url);
 
