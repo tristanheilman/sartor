@@ -19,7 +19,7 @@ const SELECTORS = {
 export function matches(url: string, doc?: Document): boolean {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
-    if (host.endsWith('myworkdayjobs.com')) return true;
+    if (host === 'myworkdayjobs.com' || host.endsWith('.myworkdayjobs.com')) return true;
   } catch {
     // Not a parseable URL; fall through to the doc-based check below.
   }
@@ -42,11 +42,15 @@ export function extract(doc: Document, url: string): ExtractedPosting | null {
   };
 }
 
-/** Workday carries no company name in the markup itself; the employer is the
- * first label of the `*.myworkdayjobs.com` subdomain, e.g. `acme.wd5...` */
+/** Workday carries no company name in the markup itself; on a
+ * `*.myworkdayjobs.com` host the employer is the first label of the
+ * subdomain, e.g. `acme.wd5...`. Custom domains give no such signal, so this
+ * guesses nothing rather than turning a domain label into the wrong name. */
 function companyFromHost(url: string): string {
   try {
-    const subdomain = new URL(url).hostname.split('.')[0];
+    const host = new URL(url).hostname;
+    if (!host.endsWith('.myworkdayjobs.com')) return '';
+    const subdomain = host.slice(0, -'.myworkdayjobs.com'.length).split('.')[0];
     if (!subdomain) return '';
     return subdomain
       .split(/[-_]/)

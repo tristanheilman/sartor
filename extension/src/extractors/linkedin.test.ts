@@ -23,6 +23,10 @@ describe('linkedin matches', () => {
   it('does not match other hosts', () => {
     expect(matches('https://example.com/jobs/1')).toBe(false);
   });
+
+  it('does not match a host that merely ends with linkedin.com', () => {
+    expect(matches('https://notlinkedin.com/jobs/view/1234567')).toBe(false);
+  });
 });
 
 describe('linkedin extract', () => {
@@ -36,6 +40,7 @@ describe('linkedin extract', () => {
     expect(result?.location).toBe('Remote');
     expect(result?.text).toContain('building backend services in a typed language');
     expect(result?.text).not.toContain('Staff Backend Engineer');
+    expect(result?.text).not.toContain('Show more');
   });
 
   it('returns null when the description container is missing', () => {

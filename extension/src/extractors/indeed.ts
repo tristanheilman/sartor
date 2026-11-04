@@ -18,7 +18,7 @@ const SELECTORS = {
 export function matches(url: string): boolean {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
-    return host.endsWith('indeed.com');
+    return host === 'indeed.com' || host.endsWith('.indeed.com');
   } catch {
     return false;
   }

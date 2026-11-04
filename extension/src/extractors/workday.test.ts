@@ -49,6 +49,13 @@ describe('workday extract', () => {
     const doc = parse('workday-posting-broken.html');
     expect(extract(doc, URL)).toBeNull();
   });
+
+  it('guesses no company name on a custom domain', () => {
+    const doc = parse('workday-posting.html');
+    const result = extract(doc, CUSTOM_DOMAIN_URL);
+
+    expect(result?.company).toBe('');
+  });
 });
 
 describe('dispatcher fallback', () => {

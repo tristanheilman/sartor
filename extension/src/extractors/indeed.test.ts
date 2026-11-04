@@ -23,6 +23,10 @@ describe('indeed matches', () => {
   it('does not match other hosts', () => {
     expect(matches('https://example.com/jobs/1')).toBe(false);
   });
+
+  it('does not match a host that merely ends with indeed.com', () => {
+    expect(matches('https://notindeed.com/viewjob?jk=abc123')).toBe(false);
+  });
 });
 
 describe('indeed extract', () => {

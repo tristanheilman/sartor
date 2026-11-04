@@ -12,20 +12,23 @@ const SELECTORS = {
   title: 'h1.top-card-layout__title, h1.topcard__title',
   company: '.topcard__org-name-link, .top-card-layout__second-subline a',
   location: '.topcard__flavor--bullet, .top-card-layout__second-subline .topcard__flavor--bullet',
-  description: '.show-more-less-html__markup, .description__text',
+  // Ordered most-specific first: `.show-more-less-html__markup` is the inner
+  // markup container without the "Show more"/"Show less" toggle that its
+  // `.description__text` wrapper also carries.
+  description: ['.show-more-less-html__markup', '.description__text'],
 };
 
 export function matches(url: string): boolean {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
-    return host.endsWith('linkedin.com');
+    return host === 'linkedin.com' || host.endsWith('.linkedin.com');
   } catch {
     return false;
   }
 }
 
 export function extract(doc: Document, url: string): ExtractedPosting | null {
-  const description = doc.querySelector(SELECTORS.description);
+  const description = SELECTORS.description.map((selector) => doc.querySelector(selector)).find(Boolean) ?? null;
   if (!description) return null;
 
   const text = normalizeText(htmlToText(description.innerHTML));

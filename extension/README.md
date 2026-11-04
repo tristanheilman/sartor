@@ -46,8 +46,13 @@ extension/
   src/
     content.ts       Runs on user gesture. Extracts JD text from the page.
     extractors/      Per-site: linkedin.ts, indeed.ts, workday.ts, generic.ts
-    bridge.ts        postMessage to the Sartor tab. Never a remote endpoint.
+    bridge.ts        postMessage to the Sartor tab. Never a remote endpoint. Not yet built.
 ```
+
+`content.ts` extracts the posting via the dispatcher in `extractors/index.ts`
+already. What is still missing is the rest of the handoff: background.js
+injecting it on the action click, and `bridge.ts` passing the result to the
+Sartor tab.
 
 Principles it must hold to:
 
