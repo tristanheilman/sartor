@@ -65,8 +65,26 @@ Principles it must hold to:
    textarea as a paste, so the user sees exactly what will be sent to the model
    before anything is sent.
 
+## Supported sites
+
+`extractors/index.ts` picks the first matching extractor for the page:
+
+- **LinkedIn** (`extractors/linkedin.ts`) — reads the posting's title, company,
+  location and description straight off `linkedin.com` job pages.
+- **Indeed** (`extractors/indeed.ts`) — same, for `indeed.com` job pages.
+- **Workday** (`extractors/workday.ts`) — for any `*.myworkdayjobs.com`
+  subdomain, and for a custom domain that still renders Workday's
+  `data-automation-id` markup. Workday pages carry no company name, so it is
+  guessed from the job-board subdomain instead.
+- **Everything else** falls back to `extractors/generic.ts`, the
+  readability-style heuristic described below. The same fallback runs when a
+  matched site extractor cannot find its selectors — a layout change degrades
+  to the generic heuristic rather than returning the wrong text.
+
 ## Contributing
 
-The highest-value first step is `extractors/generic.ts`: a readability-style
+The highest-value first step was `extractors/generic.ts`: a readability-style
 main-content heuristic that works acceptably on most postings, so per-site
-extractors become an optimisation rather than a prerequisite.
+extractors are an optimisation rather than a prerequisite. Adding a new site
+extractor means a new file in `extractors/` exporting `matches(url)` and
+`extract(doc, url)`, registered in `extractors/index.ts`.
