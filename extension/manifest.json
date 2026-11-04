@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "Sartor — capture job description",
   "version": "0.0.0",
-  "description": "Reads the job description from the page you already have open and hands it to Sartor. Scaffold only — not yet implemented.",
+  "description": "Reads the job description from the page you already have open and hands it to Sartor.",
 
-  "// permissions": "activeTab only: the content script runs on a user click, on the tab they are looking at. No broad host permissions, no background access, and deliberately no network permissions — the extension can only postMessage to a local Sartor tab.",
+  "// permissions": "activeTab only: the content script runs on a user click, on the tab they are looking at. No broad host permissions, no background access, and deliberately no network permissions — the extension opens a new tab with the posting in a URL fragment, which never reaches a server.",
   "permissions": ["activeTab", "scripting"],
 
   "action": {
@@ -12,8 +12,7 @@
   },
 
   "background": {
-    "service_worker": "src/background.js",
-    "type": "module"
+    "service_worker": "dist/background.js"
   },
 
   "icons": {}
