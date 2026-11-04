@@ -14,8 +14,10 @@ import type { JobDescription } from '../index';
 export const POSTING_CHANNEL_NAME = 'sartor-posting';
 
 /** Comfortably larger than any real posting, small enough to reject garbage
- * before it reaches `decodeURIComponent` or `JSON.parse`. */
-const MAX_FRAGMENT_LENGTH = 100_000;
+ * before it reaches `decodeURIComponent` or `JSON.parse`. The extension
+ * checks a posting against this same cap before it ever opens a tab, so a
+ * long posting degrades to the paste badge instead of an empty posting box. */
+export const MAX_FRAGMENT_LENGTH = 100_000;
 
 type PostingMessage = { type: 'posting'; jd: JobDescription } | { type: 'ack' };
 
@@ -43,9 +45,18 @@ export function parsePostingFragment(hash: string): JobDescription | null {
     return null;
   }
 
+  return validatePosting(parsed);
+}
+
+/** The same shape and field checks the fragment parser applies, reused for
+ * postings arriving over the `BroadcastChannel` — those come from this app's
+ * own other tab today, but should not be trusted any more than the fragment
+ * is. */
+function validatePosting(parsed: unknown): JobDescription | null {
   if (typeof parsed !== 'object' || parsed === null) return null;
   const raw = parsed as Record<string, unknown>;
   if (typeof raw.text !== 'string' || raw.text.trim().length === 0) return null;
+  if (raw.text.length > MAX_FRAGMENT_LENGTH) return null;
 
   const asString = (value: unknown): string => (typeof value === 'string' ? value : '');
 
@@ -85,8 +96,9 @@ export function openPostingChannel(): PostingChannel {
     if (event.data.type === 'ack') {
       onAck?.();
     } else {
+      const jd = validatePosting(event.data.jd);
       channel.postMessage({ type: 'ack' } satisfies PostingMessage);
-      handler?.(event.data.jd);
+      if (jd) handler?.(jd);
     }
   };
 

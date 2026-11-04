@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StoreProvider, useStore, useActiveProvider } from './store';
 import { ProfileEditor } from './components/ProfileEditor';
 import { Aurora } from './components/Aurora';
@@ -44,6 +44,16 @@ function Shell() {
   const [jd, setJd] = useState<JobDescription | null>(null);
   const [handoffSent, setHandoffSent] = useState(false);
 
+  // Read once, during render rather than inside the effect below: StrictMode
+  // mounts that effect, cleans it up, then mounts it again, and the first
+  // mount's `window.location.hash` read-and-clear would otherwise leave
+  // nothing for the second mount to find. A ref read during render (not a
+  // side effect — it never touches `window`) survives that remount.
+  const fragmentJdRef = useRef<JobDescription | null | undefined>(undefined);
+  if (fragmentJdRef.current === undefined) {
+    fragmentJdRef.current = parsePostingFragment(window.location.hash);
+  }
+
   // Picks up a posting the extension captured: either from a tab that is
   // already open (another tab's `channel.send` below), or from this tab's own
   // `#posting=` fragment, which a GitHub Pages server never sees because
@@ -55,7 +65,7 @@ function Shell() {
       setStep('job');
     });
 
-    const fragmentJd = parsePostingFragment(window.location.hash);
+    const fragmentJd = fragmentJdRef.current;
     if (fragmentJd) {
       history.replaceState(null, '', window.location.pathname + window.location.search);
       void channel.send(fragmentJd).then((acked) => {

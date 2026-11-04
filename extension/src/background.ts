@@ -16,6 +16,7 @@
  */
 import type { ExtractedPosting } from './extractors/generic';
 import { RESULT_KEY } from './shared';
+import { MAX_FRAGMENT_LENGTH } from '../../src/ui/postingHandoff';
 
 const APP_URL_PROD = 'https://tristanheilman.github.io/sartor/';
 /** Swap in for `APP_URL_PROD` below when developing against `npm run dev`. */
@@ -45,19 +46,21 @@ async function handleClick(tab: chrome.tabs.Tab): Promise<void> {
 
   const posting = injection?.result ?? null;
   if (!posting) {
-    showPasteInstead(tabId);
+    showPasteInstead(tabId, "Couldn't read a posting on this page — paste it into Sartor instead.");
     return;
   }
 
   const fragment = encodeURIComponent(JSON.stringify(posting));
+  if (fragment.length > MAX_FRAGMENT_LENGTH) {
+    showPasteInstead(tabId, 'That posting is too long to hand off — paste it into Sartor instead.');
+    return;
+  }
+
   await chrome.tabs.create({ url: `${APP_URL}#posting=${fragment}` });
 }
 
-function showPasteInstead(tabId: number): void {
+function showPasteInstead(tabId: number, title: string): void {
   void chrome.action.setBadgeText({ tabId, text: '!' });
   void chrome.action.setBadgeBackgroundColor({ tabId, color: '#b45309' });
-  void chrome.action.setTitle({
-    tabId,
-    title: "Couldn't read a posting on this page — paste it into Sartor instead.",
-  });
+  void chrome.action.setTitle({ tabId, title });
 }
