@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AtsFetchError,
   DEFAULT_CONSTRAINTS,
@@ -32,6 +32,17 @@ export function JobPanel({
   const [text, setText] = useState(jd?.text ?? '');
   const [fetching, setFetching] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // The exact `jd` value this component last produced itself (a keystroke or
+  // an ATS fetch), so the sync effect below can tell its own update apart
+  // from one that arrived from outside — a posting handed off from another
+  // tab, or from this tab's own `#posting=` fragment.
+  const ownJd = useRef<JobDescription | null>(jd);
+
+  useEffect(() => {
+    if (jd !== ownJd.current) {
+      setText(jd?.text ?? '');
+    }
+  }, [jd]);
 
   const target = detectAts(url);
 
@@ -42,6 +53,7 @@ export function JobPanel({
     try {
       const fetched = await fetchFromAts(target);
       setText(fetched.text);
+      ownJd.current = fetched;
       onJd(fetched);
       setNotice(`Loaded from ${fetched.source}${fetched.title ? `: ${fetched.title}` : ''}.`);
     } catch (err) {
@@ -70,8 +82,11 @@ export function JobPanel({
           placeholder="Paste the full job description — requirements, responsibilities, everything."
           value={text}
           onChange={(e) => {
-            setText(e.target.value);
-            onJd(e.target.value.trim() ? fromPaste(e.target.value) : null);
+            const value = e.target.value;
+            setText(value);
+            const next = value.trim() ? fromPaste(value) : null;
+            ownJd.current = next;
+            onJd(next);
           }}
         />
 

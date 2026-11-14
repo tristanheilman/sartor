@@ -62,6 +62,7 @@
     "build": "npm run build:lib && npm run build:app",
     "build:lib": "tsup && npm run build:types",
     "build:app": "vite build",
+    "build:extension": "tsup --config tsup.extension.config.ts",
     "preview": "vite preview",
     "test": "vitest run",
     "eval": "vitest run src/core/eval --disableConsoleIntercept",
