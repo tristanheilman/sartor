@@ -31,20 +31,26 @@ async function handleClick(tab: chrome.tabs.Tab): Promise<void> {
   const tabId = tab.id;
   if (tabId === undefined) return;
 
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['dist/content.js'] });
+  let posting: ExtractedPosting | null = null;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['dist/content.js'] });
 
-  const [injection] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (key: string) => {
-      const win = window as unknown as Record<string, unknown>;
-      const result = win[key];
-      delete win[key];
-      return (result ?? null) as ExtractedPosting | null;
-    },
-    args: [RESULT_KEY],
-  });
+    const [injection] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (key: string) => {
+        const win = window as unknown as Record<string, unknown>;
+        const result = win[key];
+        delete win[key];
+        return (result ?? null) as ExtractedPosting | null;
+      },
+      args: [RESULT_KEY],
+    });
+    posting = injection?.result ?? null;
+  } catch {
+    // Pages the extension can't script (chrome://, the Web Store) reject.
+    posting = null;
+  }
 
-  const posting = injection?.result ?? null;
   if (!posting) {
     showPasteInstead(tabId, "Couldn't read a posting on this page — paste it into Sartor instead.");
     return;
