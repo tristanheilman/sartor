@@ -103,5 +103,39 @@ describe('proposeFromEvidence', () => {
     expect(out.profile.projects[0]!.id).toMatch(/^prj_[0-9a-f]{16}$/);
     expect(out.profile.projects[0]!.id).not.toBe('prj_model');
     expect(out.profile.projects[0]!.bullets[0]!.id).toMatch(/^blt_[0-9a-f]{16}$/);
+    const id = out.profile.projects[0]!.bullets[0]!.id;
+    expect(out.provenance[id]!.impact).toBe('blank');
+  });
+
+  it('blanks a description with a number absent from the evidence', async () => {
+    const r = response([]);
+    r.projects[0]!.description = 'Serves 10k users';
+    const out = await proposeFromEvidence(evidence, stub(r), cfg);
+    expect(out.profile.projects[0]!.description).toBe('');
+    expect(out.dropped.join('\n')).toContain('10');
+  });
+
+  it('does not accept a number that only appears in a manifest version', async () => {
+    const out = await proposeFromEvidence(
+      evidence,
+      stub(response([{ text: 'Made builds 4x faster', artifact: 'commits', ref: 'all' }])),
+      cfg,
+    );
+    expect(out.profile.projects[0]!.bullets).toHaveLength(0);
+  });
+
+  it('drops a bullet whose manifest or README reference is not found', async () => {
+    const out = await proposeFromEvidence(
+      evidence,
+      stub(
+        response([
+          { text: 'Used Rust', artifact: 'manifest', ref: 'Cargo.toml' },
+          { text: 'Documented usage', artifact: 'readme', ref: 'Nope' },
+        ]),
+      ),
+      cfg,
+    );
+    expect(out.profile.projects[0]!.bullets).toHaveLength(0);
+    expect(out.dropped).toHaveLength(2);
   });
 });

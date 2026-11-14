@@ -26,8 +26,8 @@ You are summarising, not embellishing. Rules:
   accomplishment per bullet, past tense, starting with a strong verb.
 - State only what the evidence shows. Never infer scale, audience, or quality.
 - Business impact — revenue, users, latency, cost, uptime, adoption — is NOT in
-  repository evidence. Never estimate it and never write it. Leave it out: the
-  person fills it in themselves.
+  repository evidence. Never estimate it and never write it. Leave it out: it is
+  reported to the person as a blank for them to fill in.
 - Use a number only if it appears verbatim in the evidence you were given.
   Do not compute, round, or convert numbers.
 - Every bullet names the repo (its full name, "owner/name"), the kind of
@@ -118,6 +118,8 @@ export interface BulletProvenance {
   ref: string;
   /** Taken from the evidence, never from the model. */
   url: string;
+  /** Business impact is never proposed; always a blank for the person to fill in. */
+  impact: 'blank';
 }
 
 export interface ProposedEntries {
@@ -132,6 +134,11 @@ export interface ProposedEntries {
 function numbersIn(text: string): string[] {
   const found = text.match(/\d[\d,]*(?:\.\d+)?/g) ?? [];
   return found.map((n) => n.replace(/,/g, '').replace(/\.0+$/, ''));
+}
+
+/** Text a number may legitimately come from. Manifests are left out: version pins are not claims. */
+function numberSourceText(e: RepoEvidence): string {
+  return [e.repo.description ?? '', e.readme?.text ?? '', String(e.commits?.authorCommitCount ?? '')].join('\n');
 }
 
 function evidenceText(e: RepoEvidence): string {
@@ -154,12 +161,14 @@ function artifactSource(
   kind: ArtifactKind,
   ref: string,
 ): { url: string } | null {
-  if (kind === 'readme') return e.readme ? { url: e.readme.url } : null;
+  if (kind === 'readme') {
+    const section = ref.trim().toLowerCase();
+    return e.readme && section && e.readme.text.toLowerCase().includes(section) ? { url: e.readme.url } : null;
+  }
   if (kind === 'commits') return e.commits ? { url: e.commits.url } : null;
-  if (!e.manifest?.length) return null;
   const wanted = ref.trim().toLowerCase();
-  const hit = e.manifest.find((m) => m.filename.toLowerCase() === wanted) ?? e.manifest[0]!;
-  return { url: hit.url };
+  const hit = e.manifest?.find((m) => m.filename.toLowerCase() === wanted);
+  return hit ? { url: hit.url } : null;
 }
 
 const month = (iso: string | null) => (iso && /^\d{4}-\d{2}/.test(iso) ? iso.slice(0, 7) : '');
@@ -202,17 +211,20 @@ export async function proposeFromEvidence(
       dropped.push(`Project "${raw.name || raw.repo}": not one of the repositories read.`);
       continue;
     }
-    if (usedRepos.has(ev.repo.fullName)) continue;
+    if (usedRepos.has(ev.repo.fullName)) {
+      dropped.push(`Project "${raw.name || raw.repo}": ${ev.repo.fullName} already has a project.`);
+      continue;
+    }
     usedRepos.add(ev.repo.fullName);
 
-    const allowed = new Set(numbersIn(evidenceText(ev)));
+    const allowed = new Set(numbersIn(numberSourceText(ev)));
     const bullets: Profile['projects'][number]['bullets'] = [];
     for (const b of raw.bullets) {
       const text = b.text.trim();
       if (!text) continue;
       const source = artifactSource(ev, b.artifact, b.ref);
       if (!source) {
-        dropped.push(`"${text}": cites ${b.artifact} evidence that was not read for ${ev.repo.fullName}.`);
+        dropped.push(`"${text}": cites ${b.artifact} evidence ("${b.ref}") that was not found for ${ev.repo.fullName}.`);
         continue;
       }
       const stray = numbersIn(text).filter((n) => !allowed.has(n));
@@ -222,13 +234,26 @@ export async function proposeFromEvidence(
       }
       const id = ids.bullet();
       bullets.push({ id, text, tags: [], variants: [] });
-      provenance[id] = { repo: ev.repo.fullName, artifact: b.artifact, ref: b.ref.trim(), url: source.url };
+      provenance[id] = {
+        repo: ev.repo.fullName,
+        artifact: b.artifact,
+        ref: b.ref.trim(),
+        url: source.url,
+        impact: 'blank',
+      };
+    }
+
+    let description = raw.description.trim();
+    const strayDesc = numbersIn(description).filter((n) => !allowed.has(n));
+    if (strayDesc.length > 0) {
+      dropped.push(`Description of ${ev.repo.fullName}: states ${strayDesc.join(', ')}, which is not in the evidence.`);
+      description = '';
     }
 
     projects.push({
       id: ids.project(),
       name: raw.name.trim() || ev.repo.name,
-      description: raw.description.trim(),
+      description,
       url: ev.repo.url,
       startDate: month(ev.commits?.firstCommitDate ?? null),
       endDate: month(ev.commits?.lastCommitDate ?? null),
@@ -237,15 +262,17 @@ export async function proposeFromEvidence(
     });
   }
 
+  const allText = evidence.map(evidenceText).join('\n').toLowerCase();
   for (const e of evidence) {
     for (const w of evidenceText(e).toLowerCase().split(/[^a-z0-9+#.\-_/]+/)) knownWords.add(w);
   }
+  const isKnown = (k: string) => (/\s/.test(k) ? allText.includes(k) : knownWords.has(k));
   const skills = parsed.data.skills
     .map((g) => ({
       id: ids.skill(),
       name: g.name.trim() || 'Skills',
       // A skill the evidence never mentions would be the model's guess.
-      keywords: g.keywords.map((k) => k.trim()).filter((k) => k && knownWords.has(k.toLowerCase())),
+      keywords: g.keywords.map((k) => k.trim()).filter((k) => k && isKnown(k.toLowerCase())),
     }))
     .filter((g) => g.keywords.length > 0);
 
