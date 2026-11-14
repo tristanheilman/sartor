@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StoreProvider, useStore, useActiveProvider } from './store';
 import { ProfileEditor } from './components/ProfileEditor';
 import { Aurora } from './components/Aurora';
@@ -12,6 +12,7 @@ import { ReviewPanel } from './components/ReviewPanel';
 import { ExportPanel } from './components/ExportPanel';
 import { ExportHistoryPanel } from './components/ExportHistoryPanel';
 import { HistoryPanel } from './components/HistoryPanel';
+import { openPostingChannel, parsePostingFragment } from './postingHandoff';
 import {
   DEFAULT_CONSTRAINTS,
   TEMPLATES,
@@ -40,6 +41,45 @@ function Shell() {
   const store = useStore();
   const { ready: keyReady } = useActiveProvider();
   const [step, setStep] = useState<Step>('profile');
+  const [jd, setJd] = useState<JobDescription | null>(null);
+  const [handoffSent, setHandoffSent] = useState(false);
+
+  // Read once, during render rather than inside the effect below: StrictMode
+  // mounts that effect, cleans it up, then mounts it again, and the first
+  // mount's `window.location.hash` read-and-clear would otherwise leave
+  // nothing for the second mount to find. A ref read during render (not a
+  // side effect — it never touches `window`) survives that remount.
+  const fragmentJdRef = useRef<JobDescription | null | undefined>(undefined);
+  if (fragmentJdRef.current === undefined) {
+    fragmentJdRef.current = parsePostingFragment(window.location.hash);
+  }
+
+  // Picks up a posting the extension captured: either from a tab that is
+  // already open (another tab's `channel.send` below), or from this tab's own
+  // `#posting=` fragment, which a GitHub Pages server never sees because
+  // fragments never leave the browser.
+  useEffect(() => {
+    const channel = openPostingChannel();
+    channel.onPosting((incoming) => {
+      setJd(incoming);
+      setStep('job');
+    });
+
+    const fragmentJd = fragmentJdRef.current;
+    if (fragmentJd) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      void channel.send(fragmentJd).then((acked) => {
+        if (acked) {
+          setHandoffSent(true);
+        } else {
+          setJd(fragmentJd);
+          setStep('job');
+        }
+      });
+    }
+
+    return () => channel.close();
+  }, []);
 
   if (store.failure) {
     return (
@@ -81,6 +121,11 @@ function Shell() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <Aurora />
+      {handoffSent && (
+        <div className="mb-4 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900">
+          Sent to your open Sartor tab; you can close this one.
+        </div>
+      )}
       <header className="mb-7 flex items-center justify-between gap-4">
         <h1 className="text-xl font-semibold tracking-tight">Sartor</h1>
         <SettingsButton />
@@ -112,6 +157,8 @@ function Shell() {
         {activeStep === 'job' && (
           <JobStep
             keyReady={keyReady}
+            jd={jd}
+            onJd={setJd}
             onDone={() => setStep('review')}
           />
         )}
@@ -327,10 +374,19 @@ function ProfileStep({ onDone }: { onDone(): void }) {
   );
 }
 
-function JobStep({ keyReady, onDone }: { keyReady: boolean; onDone(): void }) {
+function JobStep({
+  keyReady,
+  jd,
+  onJd,
+  onDone,
+}: {
+  keyReady: boolean;
+  jd: JobDescription | null;
+  onJd(jd: JobDescription | null): void;
+  onDone(): void;
+}) {
   const { profile, setRun, runs, run: currentRun, openRun, removeRun, settings } = useStore();
   const { provider, config } = useActiveProvider();
-  const [jd, setJd] = useState<JobDescription | null>(null);
   const [constraints, setConstraints] = useState<TailorConstraints>(DEFAULT_CONSTRAINTS);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -362,7 +418,7 @@ function JobStep({ keyReady, onDone }: { keyReady: boolean; onDone(): void }) {
     <div className="space-y-4">
       <JobPanel
         jd={jd}
-        onJd={setJd}
+        onJd={onJd}
         constraints={constraints}
         onConstraints={setConstraints}
         onRun={() => void run()}
