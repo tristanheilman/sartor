@@ -13,6 +13,19 @@ import {
 import type { Award, Certificate, Education, Profile, Project, SkillGroup, Work } from '../../index';
 
 /**
+ * Where a GitHub-proposed bullet came from. Structurally the same as core's
+ * `BulletProvenance`; declared here because the app reaches core only through
+ * published entry points.
+ */
+export interface BulletProvenance {
+  repo: string;
+  artifact: 'readme' | 'manifest' | 'commits';
+  ref: string;
+  url: string;
+  impact: 'blank';
+}
+
+/**
  * The merge confirmation screen: what `planMerge` proposes, shown for a
  * decision before anything is applied.
  *
@@ -26,15 +39,58 @@ export function MergePanel({
   base,
   plan,
   sourceLabel,
+  provenance,
   onCommit,
   onCancel,
 }: {
   base: Profile;
   plan: ProfileMerge;
   sourceLabel?: string;
+  /**
+   * Where GitHub-proposed bullets came from, keyed by bullet ID. Display-only:
+   * it is never written to the profile.
+   */
+  provenance?: Record<string, BulletProvenance>;
   onCommit(next: Profile): void;
   onCancel(): void;
 }) {
+  // Impact the person typed for a GitHub bullet, by candidate key. Blank unless
+  // they write something; nothing is ever filled in for them.
+  const [impacts, setImpacts] = useState<Record<string, string>>({});
+
+  const fromGitHub = useMemo(() => {
+    if (!provenance) return 0;
+    let n = 0;
+    for (const { key } of SECTION_META) {
+      for (const c of plan[key] as EntryCandidate<unknown>[]) {
+        for (const b of c.bullets) if (provenance[b.incoming.id]) n++;
+      }
+    }
+    return n;
+  }, [plan, provenance]);
+
+  const commit = () => {
+    const typed = Object.entries(impacts).filter(([, v]) => v.trim());
+    let toApply = plan;
+    if (typed.length > 0) {
+      const byKey = new Map(typed.map(([k, v]) => [k, v.trim()]));
+      const next: Record<string, unknown> = { ...plan };
+      for (const { key } of SECTION_META) {
+        next[key] = (plan[key] as EntryCandidate<unknown>[]).map((c) => ({
+          ...c,
+          bullets: c.bullets.map((b) => {
+            const extra = byKey.get(b.key);
+            return extra
+              ? { ...b, incoming: { ...b.incoming, text: `${b.incoming.text.trim()} ${extra}` } }
+              : b;
+          }),
+        }));
+      }
+      toApply = next as unknown as ProfileMerge;
+    }
+    onCommit(applyMerge(base, toApply, { decisions, sourceLabel }));
+  };
+
   const [decisions, setDecisions] = useState<Record<string, MergeAction>>({});
   const setDecision = (key: string, action: MergeAction) =>
     setDecisions((prev) => ({ ...prev, [key]: action }));
@@ -55,6 +111,7 @@ export function MergePanel({
           {summary.basicsChanged > 0 &&
             ` · ${summary.basicsChanged} basics field${summary.basicsChanged === 1 ? '' : 's'}`}{' '}
           · {summary.skipped} skipped
+          {fromGitHub > 0 && ` · ${fromGitHub} from GitHub`}
         </p>
       </div>
 
@@ -89,6 +146,9 @@ export function MergePanel({
                   candidate={candidate as EntryCandidate<unknown>}
                   decisions={decisions}
                   onDecision={setDecision}
+                  provenance={provenance}
+                  impacts={impacts}
+                  onImpact={(k, v) => setImpacts((prev) => ({ ...prev, [k]: v }))}
                 />
               ))}
             </div>
@@ -100,7 +160,7 @@ export function MergePanel({
         <button
           type="button"
           className="btn-primary"
-          onClick={() => onCommit(applyMerge(base, plan, { decisions, sourceLabel }))}
+          onClick={commit}
         >
           Commit merge
         </button>
@@ -187,11 +247,17 @@ function EntryRow({
   candidate,
   decisions,
   onDecision,
+  provenance,
+  impacts,
+  onImpact,
 }: {
   section: MergeSection;
   candidate: EntryCandidate<unknown>;
   decisions: Record<string, MergeAction>;
   onDecision(key: string, action: MergeAction): void;
+  provenance?: Record<string, BulletProvenance>;
+  impacts: Record<string, string>;
+  onImpact(key: string, value: string): void;
 }) {
   const value = decisions[candidate.key] ?? candidate.suggested;
 
@@ -230,6 +296,9 @@ function EntryRow({
               bullet={bullet}
               value={decisions[bullet.key] ?? bullet.suggested}
               onChange={(a) => onDecision(bullet.key, a)}
+              provenance={provenance?.[bullet.incoming.id]}
+              impact={impacts[bullet.key] ?? ''}
+              onImpact={(v) => onImpact(bullet.key, v)}
             />
           ))}
         </ul>
@@ -261,14 +330,26 @@ function FieldRow({
   );
 }
 
+const ARTIFACT_LABEL: Record<BulletProvenance['artifact'], string> = {
+  readme: 'README',
+  manifest: 'Manifest',
+  commits: 'Commits',
+};
+
 function BulletRow({
   bullet,
   value,
   onChange,
+  provenance,
+  impact,
+  onImpact,
 }: {
   bullet: BulletCandidate;
   value: MergeAction;
   onChange(action: MergeAction): void;
+  provenance?: BulletProvenance;
+  impact: string;
+  onImpact(value: string): void;
 }) {
   // A bullet only has something to merge *into* when it is a reworded
   // version of one already on this entry — `planMerge`'s own signal for that
@@ -280,6 +361,29 @@ function BulletRow({
       <div className="flex-1">
         <p>{bullet.incoming.text}</p>
         <p className="mt-0.5 text-xs text-stone-500">{bullet.reason}</p>
+        {provenance && (
+          <div className="mt-1 text-xs text-stone-500" data-testid="provenance">
+            <span>{provenance.repo}</span> · <span>{ARTIFACT_LABEL[provenance.artifact]}</span>
+            {provenance.ref && <span> ({provenance.ref})</span>} ·{' '}
+            <a href={provenance.url} target="_blank" rel="noopener noreferrer" className="underline">
+              View source
+            </a>
+            {provenance.impact === 'blank' && (
+              <div className="mt-1">
+                <label className="text-amber-700">
+                  Add your own impact — no number or outcome is in the repository
+                  <input
+                    type="text"
+                    value={impact}
+                    onChange={(e) => onImpact(e.target.value)}
+                    placeholder="Your own number or wording (optional)"
+                    className="mt-0.5 block w-full rounded-md border border-stone-300 px-2 py-1 text-xs text-stone-800"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <ActionButtons
         value={value}

@@ -127,4 +127,114 @@ describe('MergePanel', () => {
       sourceLabel: 'resume-2025.pdf',
     });
   });
+
+  describe('GitHub provenance', () => {
+    const prov = (url: string, artifact: 'readme' | 'manifest' | 'commits', ref: string) => ({
+      repo: 'jordan/ledger-kit',
+      artifact,
+      ref,
+      url,
+      impact: 'blank' as const,
+    });
+
+    function githubIncoming(): Profile {
+      return profileSchema.parse({
+        id: 'prf_gh',
+        label: 'GitHub',
+        createdAt: '2025-06-01T00:00:00.000Z',
+        updatedAt: '2025-06-01T00:00:00.000Z',
+        projects: [
+          {
+            id: 'prj_gh',
+            name: 'ledger-kit',
+            description: '',
+            bullets: [
+              { id: 'blt_gh1', text: 'Built a sharded ledger library in TypeScript.' },
+              { id: 'blt_gh2', text: 'Published the package manifest with typed exports.' },
+            ],
+          },
+          {
+            id: 'prj_resume',
+            name: 'Resume Project',
+            description: '',
+            bullets: [{ id: 'blt_resume', text: 'Wrote the onboarding guide for new engineers.' }],
+          },
+        ],
+      });
+    }
+
+    const provenance = {
+      blt_gh1: prov('https://github.com/jordan/ledger-kit#design', 'readme', 'Design'),
+      blt_gh2: prov('https://github.com/jordan/ledger-kit/blob/main/package.json', 'manifest', 'package.json'),
+    };
+
+    const ghPlan = () => planMerge(baseProfile(), githubIncoming());
+
+    it('shows repo, artifact and a safe link under each provenance bullet', () => {
+      render(
+        <MergePanel base={baseProfile()} plan={ghPlan()} provenance={provenance} onCommit={() => {}} onCancel={() => {}} />,
+      );
+      const rows = screen.getAllByTestId('provenance');
+      expect(rows).toHaveLength(2);
+      for (const [row, p] of [
+        [rows[0]!, provenance.blt_gh1],
+        [rows[1]!, provenance.blt_gh2],
+      ] as const) {
+        expect(within(row).getByText('jordan/ledger-kit')).toBeTruthy();
+        const link = within(row).getByRole('link');
+        expect(link.getAttribute('href')).toBe(p.url);
+        expect(link.getAttribute('target')).toBe('_blank');
+        expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+      }
+      expect(screen.getByRole('status').textContent).toContain('2 from GitHub');
+    });
+
+    it('renders a resume-import bullet with no provenance row', () => {
+      render(
+        <MergePanel base={baseProfile()} plan={ghPlan()} provenance={provenance} onCommit={() => {}} onCancel={() => {}} />,
+      );
+      const article = screen.getByText('Resume Project').closest('article')!;
+      expect(within(article).queryByTestId('provenance')).toBeNull();
+      expect(within(article).queryByText(/add your own impact/i)).toBeNull();
+    });
+
+    it('marks the impact blank and keeps it blank when accepted unedited', () => {
+      let committed: Profile | null = null;
+      render(
+        <MergePanel
+          base={baseProfile()}
+          plan={ghPlan()}
+          provenance={{ blt_gh1: provenance.blt_gh1 }}
+          onCommit={(n) => {
+            committed = n;
+          }}
+          onCancel={() => {}}
+        />,
+      );
+      expect(screen.getByText(/add your own impact/i)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Commit merge' }));
+      const texts = committed!.projects.flatMap((p) => p.bullets.map((b) => b.text));
+      expect(texts).toContain('Built a sharded ledger library in TypeScript.');
+      expect(texts.some((t) => /\d/.test(t))).toBe(false);
+    });
+
+    it('uses only what the person types into the impact blank', () => {
+      let committed: Profile | null = null;
+      render(
+        <MergePanel
+          base={baseProfile()}
+          plan={ghPlan()}
+          provenance={{ blt_gh1: provenance.blt_gh1 }}
+          onCommit={(n) => {
+            committed = n;
+          }}
+          onCancel={() => {}}
+        />,
+      );
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Cut settlement time.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Commit merge' }));
+      const texts = committed!.projects.flatMap((p) => p.bullets.map((b) => b.text));
+      expect(texts).toContain('Built a sharded ledger library in TypeScript. Cut settlement time.');
+    });
+  });
 });
