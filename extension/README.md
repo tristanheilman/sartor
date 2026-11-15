@@ -96,8 +96,24 @@ Principles this holds to:
 3. Turn on Developer mode
 4. Click "Load unpacked" and select the `extension/` directory
 
+## Supported sites
+
+| Site | Matched on | Fields |
+| --- | --- | --- |
+| LinkedIn | `linkedin.com` and subdomains | title, company, location, description |
+| Indeed | `indeed.com` and subdomains | title, company, location, description |
+| Workday | `*.myworkdayjobs.com` (any tenant), `data-automation-id` attributes | title, company (page's `og:site_name`), location, description |
+
+On any other site, or when a site extractor finds no description container
+(a layout change, a search page), the generic heuristic in
+`extractors/generic.ts` runs instead. It fills the title and the text but
+leaves company and location empty. If that fails too, the badge nudges the
+user to paste.
+
 ## Contributing
 
-Per-site extractors (LinkedIn, Indeed, Workday) are the highest-value next
-step. `extractors/generic.ts` is the fallback every posting can already lean
-on, so a per-site extractor is an optimisation rather than a prerequisite.
+Each site extractor (`extractors/linkedin.ts`, `indeed.ts`, `workday.ts`)
+keeps its selectors in one named object at the top of its file, so a layout
+change is a one-line fix. `extractors/index.ts` is the dispatcher: the first
+matching site extractor runs, and on `null` or a throw it falls back to the
+generic one.
