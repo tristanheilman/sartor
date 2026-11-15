@@ -91,10 +91,17 @@ Principles this holds to:
 
 ## Load it unpacked
 
-1. `npm run build:extension`
-2. Open `chrome://extensions`
-3. Turn on Developer mode
-4. Click "Load unpacked" and select the `extension/` directory
+1. Run `npm run build:extension`. It bundles `extension/src` into
+   `extension/dist/` and copies `manifest.json` beside the built scripts.
+2. Open `chrome://extensions`.
+3. Turn on Developer mode.
+4. Click "Load unpacked" and pick the `extension/dist` folder.
+5. Open the Sartor app in one tab and a job posting in another.
+6. On the posting tab, click the Sartor toolbar button.
+
+The manifest asks for `activeTab` and `scripting` only: no host permissions,
+no standing content scripts, no network permissions. `src/manifest.test.ts`
+fails if that changes.
 
 ## Supported sites
 

@@ -362,8 +362,9 @@ What ships in 0.1:
   `plugin/`, installed from this repository as described in
   [Claude Code plugin](#claude-code-plugin).
 
-The browser extension is scaffolded but not implemented. See
-[`extension/README.md`](extension/README.md) for why that is the right answer for
+The browser extension captures a job description from LinkedIn, Indeed and
+Workday pages and hands it to the app; load it unpacked with the steps in
+[`extension/README.md`](extension/README.md), which also explains why that is the right answer for
 LinkedIn, Indeed, and Workday, and why a server-side scraping proxy is not.
 
 Architecture notes, including the master-profile-as-superset idea that the whole
