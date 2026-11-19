@@ -1,3 +1,4 @@
+import { copyFileSync } from 'node:fs';
 import { defineConfig } from 'tsup';
 
 /**
@@ -22,4 +23,12 @@ export default defineConfig({
   treeshake: true,
   target: 'es2022',
   outDir: 'extension/dist',
+  // Without this tsup names iife output `*.global.js`; the manifest and
+  // `executeScript` refer to plain `background.js` / `content.js`.
+  outExtension: () => ({ js: '.js' }),
+  // The manifest's paths are relative to the folder it sits in, so it is
+  // copied next to the built scripts and `extension/dist` loads unpacked.
+  onSuccess: async () => {
+    copyFileSync('extension/manifest.json', 'extension/dist/manifest.json');
+  },
 });

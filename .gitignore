@@ -1,5 +1,6 @@
 node_modules/
 dist/
+extension/dist/
 dist-app/
 dist-ssr/
 *.tgz
