@@ -33,7 +33,7 @@ async function handleClick(tab: chrome.tabs.Tab): Promise<void> {
 
   let posting: ExtractedPosting | null = null;
   try {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['dist/content.js'] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
 
     const [injection] = await chrome.scripting.executeScript({
       target: { tabId },
